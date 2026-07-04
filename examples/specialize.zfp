@@ -1,0 +1,12 @@
+# カーソルを各行へ移動すると、その時点のゴールが表示されます。
+theorem universal_contradiction :
+  forall a,
+  forall b,
+    ((forall x, not (x in b)) -> (a in b -> b in a)).
+intro a.
+intro b.
+intro H.
+intro Ha.
+specialize H a as Hna.
+contradiction.
+qed.

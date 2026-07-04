@@ -1,0 +1,123 @@
+definition pair p x y :=
+  forall z, z in p <-> (z = x or z = y).
+definition ordpair p x y :=
+  forall q, pair q x y -> pair p x q.
+
+theorem pair_eq :
+  forall p1,
+  forall x1,
+  forall y1,
+  forall p2,
+  forall x2,
+  forall y2,
+    ordpair p1 x1 y1 ->
+    (ordpair p2 x2 y2 ->
+      ((x1 = x2) and (y1 = y2) <-> (p1 = p2))).
+intro p1.
+intro x1.
+intro y1.
+intro p2.
+intro x2.
+intro y2.
+intro H1.
+intro H2.
+split.
+  intro Heq.
+  cases Heq.
+  apply extensionality.
+  intro z.
+  specialize pairing x1 y1 as H.
+  cases H x1y1 Hx1y1.
+  specialize H1 x1y1 as Ha.
+  rule cut Hax :
+     forall z, z in p1 <-> (z = x1 or z = x1y1).
+    apply Ha.
+    exact Hx1y1.
+  specialize pairing x2 y2 as H'.
+  cases H' x2y2 Hx2y2.
+  rule cut Hb : (∀z, z ∈ p2 ↔ z = x2 ∨ z = x2y2).
+    apply H2.
+    exact Hx2y2.
+  split.
+    intro Hz.
+    specialize Hax z as Haxz.
+    rule cut Hzor :
+       z = x1 or z = x1y1.
+      cases Haxz.
+      apply Haxz_forward.
+      exact Hz.
+    specialize Hb x2 as Hbx2.
+    cases Hbx2.
+    rule disj_elim HL HR :
+       z = x1;
+        z = x1y1.
+      exact Hzor.
+    rule equal_elim x1 z a : a in p2.
+      rule equal_elim z x1 a : a = z.
+        exact HL.
+      refl.
+    rule equal_elim x2 x1 a : a in p2.
+      rule equal_elim x1 x2 a : a = x1.
+        exact Heq_left.
+      refl.
+    apply Hbx2_backward.
+      left.
+      refl.
+    specialize Hb z as Hbz.
+    cases Hbz.
+    apply Hbz_backward.
+    right.
+    rule equal_elim x1y1 z a : a = x2y2.
+      rule equal_elim z x1y1 a : a = z.
+        exact HR.
+      refl.
+    apply extensionality.
+    intro w.
+    split.
+      intro Hw.
+      specialize Hx2y2 w as Hwx2y2.
+      cases Hwx2y2.
+      apply Hwx2y2_backward.
+      specialize Hx1y1 w as Hwx1y1.
+      cases Hwx1y1.
+      rule cut Hweq : w = x1 or w = y1.
+        apply Hwx1y1_forward.
+        exact Hw.
+      rule disj_elim HwL HwR :
+         w = x1;
+         w = y1.
+        exact Hweq.
+      left.
+      rule equal_elim x1 x2 a : w = a.
+        exact Heq_left.
+      exact HwL.
+    right.
+    rule equal_elim y1 y2 a : w = a.
+      exact Heq_right.
+    exact HwR.
+    intro Hw.
+    specialize Hx2y2 w as Hwx2y2.
+    cases Hwx2y2.
+    rule cut Hweq : w = x2 or w = y2.
+      apply Hwx2y2_forward.
+      exact Hw.
+    specialize Hx1y1 w as Hwx1y1.
+    cases Hwx1y1.
+    apply Hwx1y1_backward.
+    rule disj_elim HwL HwR :
+        w = x2;
+          w = y2.
+      exact Hweq.
+      left.
+      rule equal_elim x2 x1 a : w = a.
+        rule equal_elim x1 x2 a : a = x1.
+          exact Heq_left.
+        refl.
+      exact HwL.
+    right.
+    rule equal_elim y2 y1 a : w = a.
+      rule equal_elim y1 y2 a : a = y1.
+        exact Heq_right.
+      refl.
+    exact HwR.
+  intro Hz.

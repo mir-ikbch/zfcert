@@ -1,0 +1,3 @@
+(executable
+ (name main)
+ (libraries unix proof_state_extracted))

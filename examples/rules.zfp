@@ -1,0 +1,12 @@
+theorem equality_transport_by_rules :
+  forall s,
+  forall t,
+    (s = t -> (s in s -> s in t)).
+rule all_intro s.
+rule all_intro t.
+rule impl_intro Heq.
+rule impl_intro Hmem.
+rule equal_elim s t x : s in x.
+rule hypothesis Heq.
+rule hypothesis Hmem.
+qed.

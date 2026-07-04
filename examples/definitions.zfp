@@ -1,0 +1,10 @@
+Definition is_empty x :=
+  forall y, not (y in x).
+Definition empty_alias x := is_empty x.
+
+theorem definition_identity :
+  forall a, (empty_alias a -> is_empty a).
+intro a.
+intro H.
+exact H.
+qed.

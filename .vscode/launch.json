@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run ZFCert Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "sourceMaps": false,
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/node-pty/**"
+      ],
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/vscode-zfcert",
+        "${workspaceFolder}"
+      ],
+      "outFiles": []
+    }
+  ]
+}

@@ -1,0 +1,175 @@
+{
+  "name": "zfcert",
+  "displayName": "ZFCert",
+  "description": "Interactive first-order logic and ZFC proofs backed by the OCaml kernel.",
+  "version": "0.2.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "theorem prover",
+    "first-order logic",
+    "ZFC",
+    "OCaml"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:zfcert",
+    "onView:zfcert.goals",
+    "onCommand:zfcert.runToCursor",
+    "onCommand:zfcert.checkProof",
+    "onCommand:zfcert.restartKernel",
+    "onCommand:zfcert.stopKernel",
+    "onCommand:zfcert.selectWorkspaceRoot",
+    "onCommand:zfcert.showGoals"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "zfcert",
+        "aliases": [
+          "ZFCert Proof",
+          "zfcert"
+        ],
+        "extensions": [
+          ".zfp"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "zfcert",
+        "scopeName": "source.zfcert",
+        "path": "./syntaxes/zfcert.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "zfcert",
+        "path": "./snippets/zfcert.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "zfcert.runToCursor",
+        "title": "ZFCert: Run to Cursor",
+        "icon": "$(debug-alt-small)"
+      },
+      {
+        "command": "zfcert.checkProof",
+        "title": "ZFCert: Check Entire Proof",
+        "icon": "$(pass)"
+      },
+      {
+        "command": "zfcert.restartKernel",
+        "title": "ZFCert: Restart Kernel"
+      },
+      {
+        "command": "zfcert.stopKernel",
+        "title": "ZFCert: Stop Kernel"
+      },
+      {
+        "command": "zfcert.selectWorkspaceRoot",
+        "title": "ZFCert: Select Project Folder"
+      },
+      {
+        "command": "zfcert.showGoals",
+        "title": "ZFCert: Show Goals"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "zfcert.runToCursor",
+        "key": "ctrl+alt+enter",
+        "mac": "cmd+alt+enter",
+        "when": "editorLangId == zfcert"
+      },
+      {
+        "command": "zfcert.checkProof",
+        "key": "ctrl+alt+shift+enter",
+        "mac": "cmd+alt+shift+enter",
+        "when": "editorLangId == zfcert"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "zfcert.runToCursor",
+          "when": "editorLangId == zfcert",
+          "group": "navigation@1"
+        },
+        {
+          "command": "zfcert.checkProof",
+          "when": "editorLangId == zfcert",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "zfcert.showGoals"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "zfcert",
+          "title": "ZFCert",
+          "icon": "media/zfcert.svg"
+        }
+      ]
+    },
+    "views": {
+      "zfcert": [
+        {
+          "type": "webview",
+          "id": "zfcert.goals",
+          "name": "Goals"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ZFCert",
+      "properties": {
+        "zfcert.serverUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8099",
+          "description": "URL of the OCaml ZFCert kernel."
+        },
+        "zfcert.autoStartKernel": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the local OCaml kernel automatically when it is not reachable."
+        },
+        "zfcert.workspaceRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Directory containing dune-project. Empty uses the current VS Code workspace."
+        },
+        "zfcert.dunePath": {
+          "type": "string",
+          "default": "dune",
+          "description": "Path to the dune executable used to start the kernel."
+        },
+        "zfcert.analyzeOnType": {
+          "type": "boolean",
+          "default": true,
+          "description": "Refresh goals automatically after edits and cursor movement."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "check": "node --check extension.js && node --check kernelClient.js",
+    "test": "node test/kernelClient.test.js",
+    "test:integration": "node test/integration.test.js",
+    "package": "node package-vsix.js"
+  }
+}

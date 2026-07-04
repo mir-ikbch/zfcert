@@ -1,0 +1,52 @@
+{
+  "Proposition definition": {
+    "prefix": "definition",
+    "body": "Definition ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.",
+    "description": "Give a transparent name to a proposition, optionally with arguments"
+  },
+  "Primitive rule proof": {
+    "prefix": "ruleproof",
+    "body": [
+      "theorem ${1:rule_identity} : forall x, x = x.",
+      "rule all_intro x.",
+      "rule equal_refl.",
+      "qed."
+    ],
+    "description": "Create a proof using only primitive natural-deduction rules"
+  },
+  "Cut rule": {
+    "prefix": "rule cut",
+    "body": "rule cut ${1:H} : ${2:P}.",
+    "description": "Apply the primitive Cut rule"
+  },
+  "Equality elimination rule": {
+    "prefix": "rule equal_elim",
+    "body": "rule equal_elim ${1:s} ${2:t} ${3:x} : ${4:P}.",
+    "description": "Apply the primitive equality-elimination rule"
+  },
+  "Theorem": {
+    "prefix": "theorem",
+    "body": [
+      "theorem ${1:name} : ${2:forall x, x = x}.",
+      "${3:intro x}.",
+      "${4:refl}.",
+      "qed."
+    ],
+    "description": "Create a ZFCert theorem"
+  },
+  "Specialize universal fact": {
+    "prefix": "specialize",
+    "body": "specialize ${1:H} ${2:a} as ${3:H_a}.",
+    "description": "Instantiate a universally quantified fact"
+  },
+  "Separation instance": {
+    "prefix": "separation",
+    "body": "separation ${1:S} ${2:a} ${3:x} : ${4:not (x in x)}.",
+    "description": "Create a separation schema instance"
+  },
+  "Replacement instance": {
+    "prefix": "replacement",
+    "body": "replacement ${1:R} ${2:a} ${3:x} ${4:y} : ${5:y = x}.",
+    "description": "Create a replacement schema instance"
+  }
+}

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZFCert — 集合論の証明室</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="ZFCert ホーム">
+        <span class="brand-mark">∈</span>
+        <span><strong>ZFCert</strong><small>first-order proof studio</small></span>
+      </a>
+      <div class="kernel-status"><span class="status-dot"></span> Coq-extracted kernel</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">ZFC · FIRST-ORDER LOGIC</p>
+          <h1>集合論を、<br><em>一行ずつ確かめる。</em></h1>
+          <p class="lead">小さな検証カーネルを信頼の境界に据えた、ブラウザで動く定理証明支援系です。</p>
+        </div>
+        <div class="hero-symbol" aria-hidden="true">∀x</div>
+      </section>
+
+      <section class="workspace" aria-label="証明ワークスペース">
+        <div class="editor-panel">
+          <div class="panel-head">
+            <div>
+              <span class="step-number">01</span>
+              <h2>Proof script</h2>
+            </div>
+            <select id="example-select" aria-label="例題を選択">
+              <option value="identity">等号の反射律</option>
+              <option value="implication">含意の恒等律</option>
+              <option value="conjunction">連言の交換</option>
+              <option value="extensionality">外延性の利用</option>
+              <option value="existence">存在証人</option>
+              <option value="empty">空集合の公理</option>
+              <option value="separation">分出公理図式</option>
+              <option value="definition">命題の定義</option>
+              <option value="rules">基本推論規則だけの証明</option>
+            </select>
+          </div>
+          <div class="editor-wrap">
+            <div id="line-numbers" class="line-numbers" aria-hidden="true"></div>
+            <textarea id="proof-editor" spellcheck="false" aria-label="証明スクリプト">theorem equality_reflexive :
+  forall x, x = x.
+intro x.
+refl.
+qed.</textarea>
+          </div>
+          <div class="editor-footer">
+            <span>1手ずつ進めるか、全体を検証できます</span>
+            <div class="footer-actions">
+              <button id="interactive-button" class="secondary-button" type="button">
+                <span>Start interactive</span>
+              </button>
+              <button id="verify-button" type="button">
+                <span>Verify proof</span>
+                <span class="button-arrow">→</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="result-panel">
+          <div class="panel-head">
+            <div>
+              <span class="step-number">02</span>
+              <h2>Kernel result</h2>
+            </div>
+          </div>
+          <div id="result" class="result idle" aria-live="polite">
+            <div class="result-icon">∴</div>
+            <p class="result-kicker">READY</p>
+            <h3>証明を待っています</h3>
+            <p>左のスクリプトを検証すると、カーネルの判定がここに表示されます。</p>
+          </div>
+          <div class="interactive-card">
+            <div class="interactive-heading">
+              <p class="syntax-title">Interactive goal</p>
+              <span id="goal-count" class="goal-count">未開始</span>
+            </div>
+            <div id="goal-view" class="goal-view">
+              <p>「Start interactive」で定理の先頭から始めます。</p>
+            </div>
+            <div class="tactic-row">
+              <input id="tactic-input" type="text" autocomplete="off"
+                aria-label="次のタクティク" placeholder="例: intro x.">
+              <button id="step-button" type="button">Run step →</button>
+            </div>
+            <div class="quick-tactics" aria-label="よく使うタクティク">
+              <button type="button" data-tactic="intro x.">intro x.</button>
+              <button type="button" data-tactic="intro H.">intro H.</button>
+              <button type="button" data-tactic="assumption.">assumption.</button>
+              <button type="button" data-tactic="refl.">refl.</button>
+              <button type="button" data-tactic="split.">split.</button>
+              <button type="button" data-tactic="qed.">qed.</button>
+            </div>
+          </div>
+          <div class="syntax-card">
+            <p class="syntax-title">Tactics</p>
+            <div class="syntax-grid">
+              <code>intro H.</code><span>含意・全称導入</span>
+              <code>exact H.</code><span>事実で閉じる</span>
+              <code>apply H.</code><span>逆向き推論</span>
+              <code>specialize H a as Ha.</code><span>全称除去</span>
+              <code>refl.</code><span>等号反射律</span>
+              <code>split.</code><span>連言・同値</span>
+              <code>cases H.</code><span>仮定を分解</span>
+              <code>left. / right.</code><span>選言導入</span>
+              <code>use x.</code><span>存在証人</span>
+              <code>separation ….</code><span>分出図式</span>
+              <code>replacement ….</code><span>置換図式</span>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="axioms-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">FOUNDATION</p>
+            <h2>ZFC axiom library</h2>
+          </div>
+          <p>公理と公理図式を明示し、証明の信頼境界を見える状態に保ちます。</p>
+        </div>
+        <div id="axiom-list" class="axiom-list">
+          <div class="loading">公理系を読み込み中…</div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>ZFCert / experimental proof assistant</span>
+      <span>Coq → OCaml · verified transitions</span>
+    </footer>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

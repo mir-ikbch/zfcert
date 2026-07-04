@@ -1,0 +1,11 @@
+.DS_Store
+_build/
+coq/*.vo
+coq/*.vos
+coq/*.vok
+coq/*.glob
+coq/.*.aux
+vscode-zfcert/node_modules/
+extracted/*.cmi
+extracted/*.cmo
+zfprover-vscode-*.vsix

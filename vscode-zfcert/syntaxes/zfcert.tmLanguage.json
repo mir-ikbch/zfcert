@@ -1,0 +1,119 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ZFCert Proof",
+  "scopeName": "source.zfcert",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#tactics"
+    },
+    {
+      "include": "#logic"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#labels"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.zfcert",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "name": "meta.definition.zfcert",
+          "match": "\\b(Definition)\\s+([A-Za-z_][A-Za-z0-9_']*)(?=\\s|:=)",
+          "captures": {
+            "1": {
+              "name": "storage.type.zfcert"
+            },
+            "2": {
+              "name": "entity.name.constant.zfcert"
+            }
+          }
+        },
+        {
+          "name": "meta.theorem.zfcert",
+          "match": "\\b(theorem)\\s+([A-Za-z_][A-Za-z0-9_']*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.zfcert"
+            },
+            "2": {
+              "name": "entity.name.function.theorem.zfcert"
+            }
+          }
+        },
+        {
+          "name": "keyword.control.qed.zfcert",
+          "match": "\\bqed\\b"
+        }
+      ]
+    },
+    "tactics": {
+      "patterns": [
+        {
+          "name": "support.function.tactic.zfcert",
+          "match": "\\b(rule|intro|exact|apply|specialize|cases|use|refl|split|constructor|assumption|contradiction|left|right|separation|replacement)\\b"
+        },
+        {
+          "name": "support.function.rule.zfcert",
+          "match": "\\b(axiom|hypothesis|falsum_elim|impl_intro|impl_elim|conj_intro|conj_elim_l|conj_elim_r|disj_intro_l|disj_intro_r|disj_elim|all_intro|all_elim|ex_intro|ex_elim|equal_refl|equal_elim|cut)\\b"
+        },
+        {
+          "name": "support.constant.axiom.zfcert",
+          "match": "\\b(empty_set|extensionality|pairing|union|power_set|infinity|foundation|choice)\\b"
+        }
+      ]
+    },
+    "logic": {
+      "patterns": [
+        {
+          "name": "keyword.operator.quantifier.zfcert",
+          "match": "\\b(forall|exists)\\b|[∀∃]"
+        },
+        {
+          "name": "keyword.operator.logical.zfcert",
+          "match": "\\b(not|and|or|in|false)\\b|[¬∧∨∈⊥]"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.zfcert",
+          "match": ":=|<->|->|!=|=|[↔→&|~]"
+        },
+        {
+          "name": "punctuation.separator.zfcert",
+          "match": "[:,.]"
+        },
+        {
+          "name": "punctuation.parenthesis.zfcert",
+          "match": "[()]"
+        }
+      ]
+    },
+    "labels": {
+      "patterns": [
+        {
+          "name": "variable.other.assumption.zfcert",
+          "match": "\\b[A-Z][A-Za-z0-9_']*\\b"
+        }
+      ]
+    }
+  }
+}

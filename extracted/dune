@@ -1,0 +1,4 @@
+(library
+ (name proof_state_extracted)
+ (wrapped false)
+ (modules proof_state))
