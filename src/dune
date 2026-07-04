@@ -1,3 +1,4 @@
 (executable
  (name main)
+ (modules main zfcert_app parser syntax)
  (libraries unix zfcert_kernel))
