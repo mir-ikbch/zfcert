@@ -25,6 +25,8 @@ val formula_eqb : formula -> formula -> bool
 
 val neg : formula -> formula
 
+val iff : formula -> formula -> formula
+
 val up : (int -> int) -> int -> int
 
 val rename : (int -> int) -> formula -> formula
@@ -38,6 +40,10 @@ val instantiate : int -> formula -> formula
 type goal = { assumptions : formula list; conclusion : formula }
 
 type proof_state = goal list
+
+val start : formula -> proof_state
+
+val state_goals : proof_state -> goal list
 
 type rule =
 | RAxiom
@@ -101,3 +107,29 @@ val rule_step :
 
 val rule_run :
   (formula -> bool) -> rule list -> proof_state -> proof_state outcome
+
+val empty_set_axiom : formula
+
+val extensionality_axiom : formula
+
+val pairing_axiom : formula
+
+val union_axiom : formula
+
+val power_set_axiom : formula
+
+val foundation_axiom : formula
+
+val infinity_axiom : formula
+
+val insert_subset : int -> int
+
+val separation_instance : formula -> formula
+
+val replacement_alternate : int -> int
+
+val replacement_image : int -> int
+
+val replacement_instance : formula -> formula
+
+val choice_axiom : formula

@@ -18,6 +18,12 @@ Record goal : Type := Goal {
 
 Definition proof_state : Type := list goal.
 
+Definition start (C : formula) : proof_state :=
+  [Goal [] C].
+
+Definition state_goals (state : proof_state) : list goal :=
+  state.
+
 Inductive rule : Type :=
 | RAxiom
 | RHypothesis (hypothesis : nat)

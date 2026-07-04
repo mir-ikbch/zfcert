@@ -85,6 +85,11 @@ let formula_eqb a b =
 let neg a =
   Impl (a, Falsum)
 
+(** val iff : formula -> formula -> formula **)
+
+let iff a b =
+  Conj ((Impl (a, b)), (Impl (b, a)))
+
 (** val up : (int -> int) -> int -> int **)
 
 let up xi n =
@@ -126,6 +131,16 @@ let instantiate t a =
 type goal = { assumptions : formula list; conclusion : formula }
 
 type proof_state = goal list
+
+(** val start : formula -> proof_state **)
+
+let start c =
+  { assumptions = []; conclusion = c } :: []
+
+(** val state_goals : proof_state -> goal list **)
+
+let state_goals state =
+  state
 
 type rule =
 | RAxiom
@@ -389,3 +404,117 @@ let rec rule_run is_axiom rules state =
     (match rule_step is_axiom primitive state with
      | Success next -> rule_run is_axiom rest next
      | Failure error -> Failure error)
+
+(** val empty_set_axiom : formula **)
+
+let empty_set_axiom =
+  Ex (All (neg (Member (0, (Stdlib.Int.succ 0)))))
+
+(** val extensionality_axiom : formula **)
+
+let extensionality_axiom =
+  All (All (Impl ((All
+    (iff (Member (0, (Stdlib.Int.succ (Stdlib.Int.succ 0)))) (Member (0,
+      (Stdlib.Int.succ 0))))), (Equal ((Stdlib.Int.succ 0), 0)))))
+
+(** val pairing_axiom : formula **)
+
+let pairing_axiom =
+  All (All (Ex (All
+    (iff (Member (0, (Stdlib.Int.succ 0))) (Disj ((Equal (0, (Stdlib.Int.succ
+      (Stdlib.Int.succ (Stdlib.Int.succ 0))))), (Equal (0, (Stdlib.Int.succ
+      (Stdlib.Int.succ 0))))))))))
+
+(** val union_axiom : formula **)
+
+let union_axiom =
+  All (Ex (All
+    (iff (Member (0, (Stdlib.Int.succ 0))) (Ex (Conj ((Member
+      ((Stdlib.Int.succ 0), 0)), (Member (0, (Stdlib.Int.succ
+      (Stdlib.Int.succ (Stdlib.Int.succ 0)))))))))))
+
+(** val power_set_axiom : formula **)
+
+let power_set_axiom =
+  All (Ex (All
+    (iff (Member (0, (Stdlib.Int.succ 0))) (All (Impl ((Member (0,
+      (Stdlib.Int.succ 0))), (Member (0, (Stdlib.Int.succ (Stdlib.Int.succ
+      (Stdlib.Int.succ 0)))))))))))
+
+(** val foundation_axiom : formula **)
+
+let foundation_axiom =
+  All (Impl ((Ex (Member (0, (Stdlib.Int.succ 0)))), (Ex (Conj ((Member (0,
+    (Stdlib.Int.succ 0))), (All (Impl ((Member (0, (Stdlib.Int.succ 0))),
+    (neg (Member (0, (Stdlib.Int.succ (Stdlib.Int.succ 0)))))))))))))
+
+(** val infinity_axiom : formula **)
+
+let infinity_axiom =
+  Ex (Conj ((Ex (Conj ((All (neg (Member (0, (Stdlib.Int.succ 0))))), (Member
+    (0, (Stdlib.Int.succ 0)))))), (All (Impl ((Member (0, (Stdlib.Int.succ
+    0))), (Ex (Conj ((Member (0, (Stdlib.Int.succ (Stdlib.Int.succ 0)))),
+    (All
+    (iff (Member (0, (Stdlib.Int.succ 0))) (Disj ((Member (0,
+      (Stdlib.Int.succ (Stdlib.Int.succ 0)))), (Equal (0, (Stdlib.Int.succ
+      (Stdlib.Int.succ 0))))))))))))))))
+
+(** val insert_subset : int -> int **)
+
+let insert_subset n =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> 0)
+    (fun k -> Stdlib.Int.succ (Stdlib.Int.succ k))
+    n
+
+(** val separation_instance : formula -> formula **)
+
+let separation_instance p =
+  All (Ex (All
+    (iff (Member (0, (Stdlib.Int.succ 0))) (Conj ((Member (0,
+      (Stdlib.Int.succ (Stdlib.Int.succ 0)))), (rename insert_subset p))))))
+
+(** val replacement_alternate : int -> int **)
+
+let replacement_alternate n =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> 0)
+    (fun n0 ->
+    (fun fO fS n -> if n=0 then fO () else fS (n-1))
+      (fun _ -> Stdlib.Int.succ (Stdlib.Int.succ 0))
+      (fun k -> Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ k)))
+      n0)
+    n
+
+(** val replacement_image : int -> int **)
+
+let replacement_image n =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> Stdlib.Int.succ 0)
+    (fun n0 ->
+    (fun fO fS n -> if n=0 then fO () else fS (n-1))
+      (fun _ -> 0)
+      (fun k -> Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ
+      (Stdlib.Int.succ k))))
+      n0)
+    n
+
+(** val replacement_instance : formula -> formula **)
+
+let replacement_instance p =
+  Impl ((All (Ex (Conj (p, (All (Impl ((rename replacement_alternate p),
+    (Equal (0, (Stdlib.Int.succ 0)))))))))), (All (Ex (All
+    (iff (Member (0, (Stdlib.Int.succ 0))) (Ex (Conj ((Member (0,
+      (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ 0))))),
+      (rename replacement_image p)))))))))
+
+(** val choice_axiom : formula **)
+
+let choice_axiom =
+  All (Impl ((All (Impl ((Member (0, (Stdlib.Int.succ 0))), (Ex (Member (0,
+    (Stdlib.Int.succ 0))))))), (Ex (All (Impl ((Member (0, (Stdlib.Int.succ
+    (Stdlib.Int.succ 0)))), (Ex (Conj ((Conj ((Member (0, (Stdlib.Int.succ
+    0))), (Member (0, (Stdlib.Int.succ (Stdlib.Int.succ 0)))))), (All (Impl
+    ((Conj ((Member (0, (Stdlib.Int.succ (Stdlib.Int.succ 0)))), (Member (0,
+    (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ 0))))))), (Equal (0,
+    (Stdlib.Int.succ 0)))))))))))))))

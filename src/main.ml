@@ -2,7 +2,7 @@
 
 module StringMap = Map.Make (String)
 module StringSet = Set.Make (String)
-module Verified = Proof_state
+module Verified = Zfcert_kernel
 
 type formula =
   | Bottom
@@ -353,18 +353,23 @@ let axioms =
 let find_axiom name =
   List.find_opt (fun ax -> ax.key = String.lowercase_ascii name) axioms
 
-type goal = { context : (string * formula) list; target : formula }
+type display_goal = {
+  context : (string * formula) list;
+  target : formula;
+  environment : string list;
+}
 type proposition_definition = {
   definition_name : string;
   parameters : string list;
   body : formula;
 }
 
-type proof_state = {
+type session = {
   theorem_name : string;
   theorem : formula;
   definitions : proposition_definition list;
-  goals : goal list;
+  kernel_state : Verified.state;
+  display_goals : display_goal list;
   steps : string list;
 }
 
@@ -577,8 +582,7 @@ let add_free_name environment name =
   if List.mem name environment then environment else environment @ [name]
 
 let canonical_environment goal =
-  StringSet.union (context_free_vars goal.context) (free_vars goal.target)
-  |> StringSet.elements
+  goal.environment
 
 let db_variable bound environment name =
   match list_index name 0 bound with
@@ -635,35 +639,31 @@ let verified_error line =
   raise (Proof_error (line,
     "抽出済みCoqカーネルがタクティク遷移を拒否しました"))
 
-let verify_user_transition line command before rest generated
+let verify_user_transition line command kernel_state rest generated
     before_environment generated_environment =
-  let before_state =
-    db_goal before_environment before :: List.map db_goal_canonical rest
-  in
   let expected =
     List.map (db_goal generated_environment) generated @
     List.map db_goal_canonical rest
   in
-  match Verified.step (fun _ -> false) command before_state with
-  | Verified.Success actual when actual = expected -> ()
-  | Verified.Success _ | Verified.Failure _ -> verified_error line
+  ignore before_environment;
+  match Verified.step command kernel_state with
+  | Ok next when Verified.goals next = expected -> next
+  | Ok _ | Error _ -> verified_error line
 
-let verify_rule_transition_with_environments line checker rules before rest
-    generated before_environment =
-  let before_state =
-    db_goal before_environment before :: List.map db_goal_canonical rest
-  in
+let verify_rule_transition_with_environments line axioms rules kernel_state
+    rest generated before_environment =
   let expected =
     List.map (fun (goal, environment) -> db_goal environment goal) generated @
     List.map db_goal_canonical rest
   in
-  match Verified.rule_run checker rules before_state with
-  | Verified.Success actual when actual = expected -> ()
-  | Verified.Success _ | Verified.Failure _ -> verified_error line
+  ignore before_environment;
+  match Verified.rule_run ~axioms rules kernel_state with
+  | Ok next when Verified.goals next = expected -> next
+  | Ok _ | Error _ -> verified_error line
 
-let verify_rule_transition line checker rules before rest generated
+let verify_rule_transition line axioms rules kernel_state rest generated
     before_environment generated_environment =
-  verify_rule_transition_with_environments line checker rules before rest
+  verify_rule_transition_with_environments line axioms rules kernel_state rest
     (List.map (fun goal -> (goal, generated_environment)) generated)
     before_environment
 
@@ -763,10 +763,46 @@ let apply_fact fact goal =
   | None -> Error "この事実の結論は現在のゴールと一致しません"
   | Some sub ->
       let premises = List.map (instantiate_formula sub) premises in
-      Ok (List.map (fun target -> { context = goal.context; target }) premises, sub)
+      Ok (List.map
+        (fun target ->
+           { context = goal.context;
+             target;
+             environment = goal.environment;
+           })
+        premises, sub)
 
-let add_step state text goals =
-  { state with goals; steps = state.steps @ [text] }
+let add_step state text goals kernel_state =
+  { state with
+    kernel_state;
+    display_goals = goals;
+    steps = state.steps @ [text];
+  }
+
+let apply_user_transition line_no state command text generated rest
+    before_environment generated_environment =
+  let generated =
+    List.map
+      (fun goal -> { goal with environment = generated_environment })
+      generated
+  in
+  let kernel_state =
+    verify_user_transition line_no command state.kernel_state
+      rest generated before_environment generated_environment
+  in
+  add_step state text (generated @ rest) kernel_state
+
+let apply_rule_transition line_no state axioms rules text generated rest
+    before_environment generated_environment =
+  let generated =
+    List.map
+      (fun goal -> { goal with environment = generated_environment })
+      generated
+  in
+  let kernel_state =
+    verify_rule_transition line_no axioms rules state.kernel_state
+      rest generated before_environment generated_environment
+  in
+  add_step state text (generated @ rest) kernel_state
 
 let words text =
   text
@@ -840,28 +876,58 @@ let replacement_instance source input output predicate =
   in
   Imp (functional, image)
 
+let fixed_axiom_kind = function
+  | "empty_set" -> Some Verified.EmptySet
+  | "extensionality" -> Some Verified.Extensionality
+  | "pairing" -> Some Verified.Pairing
+  | "union" -> Some Verified.Union
+  | "power_set" -> Some Verified.PowerSet
+  | "foundation" -> Some Verified.Foundation
+  | "infinity" -> Some Verified.Infinity
+  | "choice" -> Some Verified.Choice
+  | _ -> None
+
+let local_predicate_db environment binders predicate =
+  let parameters =
+    List.filter (fun name -> not (List.mem name binders)) environment
+  in
+  db_formula binders parameters predicate
+
 let execute_rule line_no state argument =
-  match state.goals with
+  match state.display_goals with
   | [] -> raise (Proof_error (line_no, "証明はすでに完了しています"))
   | goal :: rest ->
       let rule_name, rule_argument = split_first_word argument in
       let rule_name = String.lowercase_ascii rule_name in
-      let finish ?(checker = fun _ -> false) primitive generated
+      let finish ?(axioms = []) primitive generated
           before_environment generated_environment description =
-        verify_rule_transition line_no checker [primitive]
-          goal rest generated before_environment generated_environment;
-        add_step state ("rule " ^ description) (generated @ rest)
+        apply_rule_transition line_no state axioms [primitive]
+          ("rule " ^ description) generated rest
+          before_environment generated_environment
       in
       begin match rule_name with
       | "axiom" ->
-          let is_axiom =
+          let axiom, rules =
             if trim rule_argument = "" then
-              List.exists
-                (fun axiom ->
-                   match axiom.parsed with
-                   | Some formula -> alpha_equal formula goal.target
-                   | None -> false)
-                axioms
+              let matching =
+                List.find_opt
+                  (fun axiom ->
+                     match axiom.parsed with
+                     | Some formula -> alpha_equal formula goal.target
+                     | None -> false)
+                  axioms
+              in
+              begin match matching with
+              | Some axiom ->
+                  begin match fixed_axiom_kind axiom.key with
+                  | Some kind ->
+                      (Verified.fixed_axiom kind, [Verified.RAxiom])
+                  | None -> verified_error line_no
+                  end
+              | None ->
+                  raise (Proof_error (line_no,
+                    "現在のゴールは登録済みの公理ではありません"))
+              end
             else
               let schema, schema_argument =
                 split_first_word rule_argument
@@ -870,12 +936,65 @@ let execute_rule line_no state argument =
                 split_schema_argument line_no state.definitions
                   schema_argument
               in
-              let instance =
+              let instance, axiom, rules =
                 match String.lowercase_ascii schema, names with
                 | "separation", [source; element] ->
-                    separation_instance source element predicate
+                    let instance =
+                      separation_instance source element predicate
+                    in
+                    let environment =
+                      add_free_name (canonical_environment goal) source
+                    in
+                    let predicate_db =
+                      local_predicate_db environment
+                        [element; source] predicate
+                    in
+                    let full =
+                      Verified.separation_instance predicate_db
+                    in
+                    let body =
+                      match full with
+                      | Verified.All body -> body
+                      | _ -> verified_error line_no
+                    in
+                    let source_index =
+                      Option.get (list_index source 0 environment)
+                    in
+                    (instance,
+                     Verified.separation_axiom predicate_db,
+                     [Verified.RAllElim (body, source_index);
+                      Verified.RAxiom])
                 | "replacement", [source; input; output] ->
-                    replacement_instance source input output predicate
+                    let instance =
+                      replacement_instance source input output predicate
+                    in
+                    let environment =
+                      add_free_name (canonical_environment goal) source
+                    in
+                    let predicate_db =
+                      local_predicate_db environment
+                        [output; input] predicate
+                    in
+                    let full =
+                      Verified.replacement_instance predicate_db
+                    in
+                    let functional, image_body =
+                      match full with
+                      | Verified.Impl
+                          (functional, Verified.All image_body) ->
+                          (functional, image_body)
+                      | _ -> verified_error line_no
+                    in
+                    let source_index =
+                      Option.get (list_index source 0 environment)
+                    in
+                    (instance,
+                     Verified.replacement_axiom predicate_db,
+                     [Verified.RImplIntro;
+                      Verified.RAllElim (image_body, source_index);
+                      Verified.RImplElim functional;
+                      Verified.RAxiom;
+                      Verified.RHypothesis 0])
                 | "separation", _ ->
                     raise (Proof_error (line_no,
                       "rule axiom separation source x : P の形で指定します"))
@@ -886,15 +1005,18 @@ let execute_rule line_no state argument =
                     raise (Proof_error (line_no,
                       "rule axiom の引数には separation または replacement を指定します"))
               in
-              alpha_equal instance goal.target
+              if not (alpha_equal instance goal.target) then
+                raise (Proof_error (line_no,
+                  "指定した公理図式は現在のゴールと一致しません"));
+              (axiom, rules)
           in
-          if not is_axiom then
-            raise (Proof_error (line_no,
-              "現在のゴールは登録済みの公理ではありません"));
           let environment = canonical_environment goal in
-          let target = db_formula [] environment goal.target in
-          finish ~checker:(fun candidate -> candidate = target)
-            Verified.RAxiom [] environment environment "axiom"
+          let kernel_state =
+            verify_rule_transition line_no [axiom] rules
+              state.kernel_state rest []
+              environment environment
+          in
+          add_step state "rule axiom" rest kernel_state
       | "hypothesis" ->
           let name = trim rule_argument in
           begin match context_index name goal.context with
@@ -926,6 +1048,7 @@ let execute_rule line_no state argument =
               let next = {
                 context = (name, premise) :: goal.context;
                 target;
+                environment = goal.environment;
               } in
               let environment = canonical_environment goal in
               finish Verified.RImplIntro [next]
@@ -1034,9 +1157,11 @@ let execute_rule line_no state argument =
           let generated = [
             { goal with target = Or (left, right) };
             { context = (left_name, left) :: goal.context;
-              target = goal.target };
+              target = goal.target;
+              environment = goal.environment };
             { context = (right_name, right) :: goal.context;
-              target = goal.target };
+              target = goal.target;
+              environment = goal.environment };
           ] in
           let environment =
             canonical_environment goal
@@ -1145,6 +1270,7 @@ let execute_rule line_no state argument =
           let second = {
             context = (hypothesis, body) :: goal.context;
             target = goal.target;
+            environment = goal.environment;
           } in
           let before_environment =
             extend_environment (canonical_environment goal) existential
@@ -1152,16 +1278,25 @@ let execute_rule line_no state argument =
           let generated_environment =
             witness :: before_environment
           in
+          let first = {
+            first with environment = before_environment;
+          } in
+          let second = {
+            second with environment = generated_environment;
+          } in
           let primitive_body =
             body_db line_no before_environment witness body
           in
-          verify_rule_transition_with_environments line_no
-            (fun _ -> false) [Verified.RExElim primitive_body]
-            goal rest
-            [(first, before_environment);
-             (second, generated_environment)]
-            before_environment;
-          add_step state "rule ex_elim" (first :: second :: rest)
+          let kernel_state =
+            verify_rule_transition_with_environments line_no
+              [] [Verified.RExElim primitive_body]
+              state.kernel_state rest
+              [(first, before_environment);
+               (second, generated_environment)]
+              before_environment
+          in
+          add_step state "rule ex_elim"
+            (first :: second :: rest) kernel_state
       | "equal_refl" ->
           begin match goal.target with
           | Eq (left, right) when left = right ->
@@ -1229,7 +1364,8 @@ let execute_rule line_no state argument =
           let generated = [
             { goal with target = lemma };
             { context = (hypothesis, lemma) :: goal.context;
-              target = goal.target };
+              target = goal.target;
+              environment = goal.environment };
           ] in
           let environment =
             extend_environment (canonical_environment goal) lemma
@@ -1244,7 +1380,7 @@ let execute_rule line_no state argument =
       end
 
 let execute_tactic line_no state line =
-  match state.goals with
+  match state.display_goals with
   | [] -> raise (Proof_error (line_no, "証明はすでに完了しています"))
   | goal :: rest ->
       let command, argument = split_first_word line in
@@ -1279,12 +1415,34 @@ let execute_tactic line_no state line =
                   (free_vars instance)
                   (canonical_environment goal)
               in
+              let next = { next with environment } in
               let instance_db = db_formula [] environment instance in
-              verify_rule_transition line_no
-                (fun candidate -> candidate = instance_db)
-                [Verified.RCut instance_db; Verified.RAxiom]
-                goal rest [next] environment environment;
-              add_step state ("separation " ^ fact_name) (next :: rest)
+              let predicate_db =
+                local_predicate_db environment
+                  [element; source] predicate
+              in
+              let full =
+                Verified.separation_instance predicate_db
+              in
+              let body =
+                match full with
+                | Verified.All body -> body
+                | _ -> verified_error line_no
+              in
+              let source_index =
+                Option.get (list_index source 0 environment)
+              in
+              let kernel_state =
+                verify_rule_transition line_no
+                  [Verified.separation_axiom predicate_db]
+                  [Verified.RCut instance_db;
+                   Verified.RAllElim (body, source_index);
+                   Verified.RAxiom]
+                  state.kernel_state rest [next]
+                  environment environment
+              in
+              add_step state ("separation " ^ fact_name)
+                (next :: rest) kernel_state
           | _ ->
               raise (Proof_error (line_no,
                 "separation S source x : P の形で指定します"))
@@ -1329,12 +1487,39 @@ let execute_tactic line_no state line =
                   (free_vars instance)
                   (canonical_environment goal)
               in
+              let next = { next with environment } in
               let instance_db = db_formula [] environment instance in
-              verify_rule_transition line_no
-                (fun candidate -> candidate = instance_db)
-                [Verified.RCut instance_db; Verified.RAxiom]
-                goal rest [next] environment environment;
-              add_step state ("replacement " ^ fact_name) (next :: rest)
+              let predicate_db =
+                local_predicate_db environment
+                  [output; input] predicate
+              in
+              let full =
+                Verified.replacement_instance predicate_db
+              in
+              let functional_db, image_body =
+                match full with
+                | Verified.Impl
+                    (functional, Verified.All image_body) ->
+                    (functional, image_body)
+                | _ -> verified_error line_no
+              in
+              let source_index =
+                Option.get (list_index source 0 environment)
+              in
+              let kernel_state =
+                verify_rule_transition line_no
+                  [Verified.replacement_axiom predicate_db]
+                  [Verified.RCut instance_db;
+                   Verified.RImplIntro;
+                   Verified.RAllElim (image_body, source_index);
+                   Verified.RImplElim functional_db;
+                   Verified.RAxiom;
+                   Verified.RHypothesis 0]
+                  state.kernel_state rest [next]
+                  environment environment
+              in
+              add_step state ("replacement " ^ fact_name)
+                (next :: rest) kernel_state
           | _ ->
               raise (Proof_error (line_no,
                 "replacement R source x y : P の形で指定します"))
@@ -1345,11 +1530,15 @@ let execute_tactic line_no state line =
               if argument = "" then raise (Proof_error (line_no, "仮定の名前が必要です"));
               if List.mem_assoc argument goal.context then
                 raise (Proof_error (line_no, "同じ名前の仮定がすでにあります"));
-              let next = { context = (argument, premise) :: goal.context; target } in
+              let next = {
+                context = (argument, premise) :: goal.context;
+                target;
+                environment = goal.environment;
+              } in
               let environment = canonical_environment goal in
-              verify_user_transition line_no Verified.TacIntro
-                goal rest [next] environment environment;
-              add_step state ("intro " ^ argument) (next :: rest)
+              apply_user_transition line_no state Verified.TacIntro
+                ("intro " ^ argument) [next] rest
+                environment environment
           | Forall (x, body) ->
               let chosen = if argument = "" then x else argument in
               if StringSet.mem chosen (context_free_vars goal.context) then
@@ -1357,18 +1546,22 @@ let execute_tactic line_no state line =
               let next = { goal with target = subst x chosen body } in
               let before_environment = canonical_environment goal in
               let generated_environment = chosen :: before_environment in
-              verify_user_transition line_no Verified.TacIntro
-                goal rest [next] before_environment generated_environment;
-              add_step state ("intro " ^ chosen) (next :: rest)
+              apply_user_transition line_no state Verified.TacIntro
+                ("intro " ^ chosen) [next] rest
+                before_environment generated_environment
           | Not premise ->
               if argument = "" then raise (Proof_error (line_no, "仮定の名前が必要です"));
               if List.mem_assoc argument goal.context then
                 raise (Proof_error (line_no, "同じ名前の仮定がすでにあります"));
-              let next = { context = (argument, premise) :: goal.context; target = Bottom } in
+              let next = {
+                context = (argument, premise) :: goal.context;
+                target = Bottom;
+                environment = goal.environment;
+              } in
               let environment = canonical_environment goal in
-              verify_user_transition line_no Verified.TacIntro
-                goal rest [next] environment environment;
-              add_step state ("intro " ^ argument) (next :: rest)
+              apply_user_transition line_no state Verified.TacIntro
+                ("intro " ^ argument) [next] rest
+                environment environment
           | _ -> raise (Proof_error (line_no, "intro は含意・否定・全称量化のゴールに使います"))
           end
       | "assumption" ->
@@ -1380,9 +1573,9 @@ let execute_tactic line_no state line =
           begin match find 0 goal.context with
           | Some index ->
               let environment = canonical_environment goal in
-              verify_user_transition line_no (Verified.TacExact index)
-                goal rest [] environment environment;
-              add_step state "assumption" rest
+              apply_user_transition line_no state
+                (Verified.TacExact index) "assumption" [] rest
+                environment environment
           | None ->
               raise (Proof_error (line_no, "現在のゴールと一致する仮定がありません"))
           end
@@ -1391,18 +1584,24 @@ let execute_tactic line_no state line =
           | None -> raise (Proof_error (line_no, "事実 " ^ argument ^ " が見つかりません"))
           | Some fact when alpha_equal fact goal.target ->
               let environment = canonical_environment goal in
-              begin match context_index argument goal.context with
+              let kernel_state =
+                match context_index argument goal.context with
               | Some index ->
                   verify_user_transition line_no (Verified.TacExact index)
-                    goal rest [] environment environment
-              | None ->
-                  let target_db = db_formula [] environment goal.target in
-                  verify_rule_transition line_no
-                    (fun candidate -> candidate = target_db)
-                    [Verified.RAxiom] goal rest []
+                    state.kernel_state rest []
                     environment environment
-              end;
-              add_step state ("exact " ^ argument) rest
+              | None ->
+                  let axiom =
+                    match fixed_axiom_kind
+                      (String.lowercase_ascii argument) with
+                    | Some kind -> Verified.fixed_axiom kind
+                    | None -> verified_error line_no
+                  in
+                  verify_rule_transition line_no [axiom]
+                    [Verified.RAxiom] state.kernel_state rest []
+                    environment environment
+              in
+              add_step state ("exact " ^ argument) rest kernel_state
           | Some _ -> raise (Proof_error (line_no, argument ^ " の型は現在のゴールと一致しません"))
           end
       | "apply" ->
@@ -1456,21 +1655,25 @@ let execute_tactic line_no state line =
                          Verified.RImplElim
                            (db_formula [] environment premise.target))
                   in
-                  let close_command, checker =
+                  let close_command, axioms =
                     match context_index argument goal.context with
                     | Some index ->
-                        (Verified.RHypothesis index,
-                         (fun _ -> false))
+                        (Verified.RHypothesis index, [])
                     | None ->
-                        (Verified.RAxiom,
-                         (fun candidate -> candidate = original_fact_db))
+                        let axiom =
+                          match fixed_axiom_kind
+                            (String.lowercase_ascii argument) with
+                          | Some kind -> Verified.fixed_axiom kind
+                          | None -> verified_error line_no
+                        in
+                        (Verified.RAxiom, [axiom])
                   in
                   let commands =
                     implication_commands @ all_commands @ [close_command]
                   in
-                  verify_rule_transition line_no checker commands
-                    goal rest new_goals environment environment;
-                  add_step state ("apply " ^ argument) (new_goals @ rest)
+                  apply_rule_transition line_no state axioms commands
+                    ("apply " ^ argument) new_goals rest
+                    environment environment
               end
           end
       | "specialize" ->
@@ -1543,23 +1746,26 @@ let execute_tactic line_no state line =
               let instantiated_db, all_commands =
                 specialization_plan original_fact_db term_indices []
               in
-              let close_command, checker =
+              let close_command, axioms =
                 match context_index source goal.context with
                 | Some index ->
-                    (Verified.RHypothesis index,
-                     (fun _ -> false))
+                    (Verified.RHypothesis index, [])
                 | None ->
-                    (Verified.RAxiom,
-                     (fun candidate -> candidate = original_fact_db))
+                    let axiom =
+                      match fixed_axiom_kind
+                        (String.lowercase_ascii source) with
+                      | Some kind -> Verified.fixed_axiom kind
+                      | None -> verified_error line_no
+                    in
+                    (Verified.RAxiom, [axiom])
               in
               let commands =
                 Verified.RCut instantiated_db ::
                 all_commands @ [close_command]
               in
-              verify_rule_transition line_no checker commands
-                goal rest [next] environment environment;
-              add_step state ("specialize " ^ source ^ " as " ^ new_name)
-                (next :: rest)
+              apply_rule_transition line_no state axioms commands
+                ("specialize " ^ source ^ " as " ^ new_name)
+                [next] rest environment environment
           | _ ->
               raise (Proof_error (line_no,
                 "specialize H a as H_a の形で、具体化する項を指定します"))
@@ -1586,10 +1792,12 @@ let execute_tactic line_no state line =
                   let context = (right_name, b) :: (left_name, a) :: goal.context in
                   let next = { goal with context } in
                   let environment = canonical_environment goal in
-                  verify_user_transition line_no (Verified.TacCases
-                    (Option.get (context_index fact_name goal.context)))
-                    goal rest [next] environment environment;
-                  add_step state ("cases " ^ fact_name) (next :: rest)
+                  apply_user_transition line_no state
+                    (Verified.TacCases
+                      (Option.get
+                        (context_index fact_name goal.context)))
+                    ("cases " ^ fact_name) [next] rest
+                    environment environment
               | Some (Iff (a, b)) ->
                   let forward_name, backward_name =
                     match names with
@@ -1605,10 +1813,12 @@ let execute_tactic line_no state line =
                   in
                   let next = { goal with context } in
                   let environment = canonical_environment goal in
-                  verify_user_transition line_no (Verified.TacCases
-                    (Option.get (context_index fact_name goal.context)))
-                    goal rest [next] environment environment;
-                  add_step state ("cases " ^ fact_name) (next :: rest)
+                  apply_user_transition line_no state
+                    (Verified.TacCases
+                      (Option.get
+                        (context_index fact_name goal.context)))
+                    ("cases " ^ fact_name) [next] rest
+                    environment environment
               | Some (Exists (bound, body)) ->
                   let witness, hypothesis =
                     match names with
@@ -1626,10 +1836,12 @@ let execute_tactic line_no state line =
                   let next = { goal with context } in
                   let before_environment = canonical_environment goal in
                   let generated_environment = witness :: before_environment in
-                  verify_user_transition line_no (Verified.TacCases
-                    (Option.get (context_index fact_name goal.context)))
-                    goal rest [next] before_environment generated_environment;
-                  add_step state ("cases " ^ fact_name) (next :: rest)
+                  apply_user_transition line_no state
+                    (Verified.TacCases
+                      (Option.get
+                        (context_index fact_name goal.context)))
+                    ("cases " ^ fact_name) [next] rest
+                    before_environment generated_environment
               | Some _ ->
                   raise (Proof_error (line_no, "cases は連言・同値・存在量化された仮定に使います"))
               end
@@ -1639,9 +1851,8 @@ let execute_tactic line_no state line =
           begin match goal.target with
           | Eq (a, b) when a = b ->
               let environment = canonical_environment goal in
-              verify_user_transition line_no Verified.TacRefl
-                goal rest [] environment environment;
-              add_step state "refl" rest
+              apply_user_transition line_no state Verified.TacRefl
+                "refl" [] rest environment environment
           | _ -> raise (Proof_error (line_no, "refl は t = t の形のゴールにだけ使えます"))
           end
       | "split" | "constructor" ->
@@ -1651,20 +1862,16 @@ let execute_tactic line_no state line =
                 [{ goal with target = a }; { goal with target = b }]
               in
               let environment = canonical_environment goal in
-              verify_user_transition line_no Verified.TacSplit
-                goal rest generated environment environment;
-              add_step state "split"
-                (generated @ rest)
+              apply_user_transition line_no state Verified.TacSplit
+                "split" generated rest environment environment
           | Iff (a, b) ->
               let generated =
                 [{ goal with target = Imp (a, b) };
                  { goal with target = Imp (b, a) }]
               in
               let environment = canonical_environment goal in
-              verify_user_transition line_no Verified.TacSplit
-                goal rest generated environment environment;
-              add_step state "split"
-                (generated @ rest)
+              apply_user_transition line_no state Verified.TacSplit
+                "split" generated rest environment environment
           | _ -> raise (Proof_error (line_no, "split は連言または同値のゴールに使います"))
           end
       | "left" ->
@@ -1672,9 +1879,8 @@ let execute_tactic line_no state line =
           | Or (a, _) ->
               let next = { goal with target = a } in
               let environment = canonical_environment goal in
-              verify_user_transition line_no Verified.TacLeft
-                goal rest [next] environment environment;
-              add_step state "left" (next :: rest)
+              apply_user_transition line_no state Verified.TacLeft
+                "left" [next] rest environment environment
           | _ -> raise (Proof_error (line_no, "left は選言のゴールに使います"))
           end
       | "right" ->
@@ -1682,9 +1888,8 @@ let execute_tactic line_no state line =
           | Or (_, b) ->
               let next = { goal with target = b } in
               let environment = canonical_environment goal in
-              verify_user_transition line_no Verified.TacRight
-                goal rest [next] environment environment;
-              add_step state "right" (next :: rest)
+              apply_user_transition line_no state Verified.TacRight
+                "right" [next] rest environment environment
           | _ -> raise (Proof_error (line_no, "right は選言のゴールに使います"))
           end
       | "use" ->
@@ -1698,9 +1903,9 @@ let execute_tactic line_no state line =
               let term_index =
                 Option.get (list_index argument 0 environment)
               in
-              verify_user_transition line_no (Verified.TacUse term_index)
-                goal rest [next] environment environment;
-              add_step state ("use " ^ argument) (next :: rest)
+              apply_user_transition line_no state
+                (Verified.TacUse term_index) ("use " ^ argument)
+                [next] rest environment environment
           | _ -> raise (Proof_error (line_no, "use は存在量化のゴールに使います"))
           end
       | "contradiction" ->
@@ -1718,9 +1923,9 @@ let execute_tactic line_no state line =
           in
           if has_bottom || has_pair then begin
             let environment = canonical_environment goal in
-            verify_user_transition line_no Verified.TacContradiction
-              goal rest [] environment environment;
-            add_step state "contradiction" rest
+            apply_user_transition line_no state
+              Verified.TacContradiction "contradiction"
+              [] rest environment environment
           end
           else raise (Proof_error (line_no, "矛盾する仮定が見つかりません"))
       | _ -> raise (Proof_error (line_no, "未知のタクティクです: " ^ command))
@@ -1835,7 +2040,8 @@ let analyze_script script =
         theorem_name = "";
         theorem = Bottom;
         definitions;
-        goals = [];
+        kernel_state = Verified.start Verified.Falsum;
+        display_goals = [];
         steps = [];
       }, false)
   | [] -> raise (Proof_error (1, "証明スクリプトが空です"))
@@ -1857,17 +2063,27 @@ let analyze_script script =
         try parse_formula statement |> unfold header_line definitions
         with Parse_error (_, message) -> raise (Proof_error (header_line, message))
       in
+      let environment =
+        free_vars theorem |> StringSet.elements
+      in
       let initial = {
         theorem_name = name;
         theorem;
         definitions;
-        goals = [{ context = []; target = theorem }];
+        kernel_state =
+          Verified.start (db_formula [] environment theorem);
+        display_goals = [{
+          context = [];
+          target = theorem;
+          environment;
+        }];
         steps = [];
       } in
       let rec run state = function
         | [] -> (state, false)
         | (line_no, line) :: rest when String.lowercase_ascii line = "qed" ->
-            if state.goals <> [] then
+            if state.display_goals <> []
+               || not (Verified.solved state.kernel_state) then
               raise (Proof_error (line_no, "未解決のゴールが残っているため qed できません"));
             if rest <> [] then
               raise (Proof_error (fst (List.hd rest), "qed の後に余分な入力があります"));
@@ -1879,7 +2095,9 @@ let analyze_script script =
 
 let check_script script =
   let state, _ = analyze_script script in
-  if state.goals = [] then state
+  if state.theorem_name = "" then state
+  else if state.display_goals = []
+          && Verified.solved state.kernel_state then state
   else
     let line = List.length (String.split_on_char '\n' script) in
     raise (Proof_error (line, "未解決のゴールが残っています"))
@@ -1957,8 +2175,10 @@ let step_json state has_qed =
       (definitions_json state.definitions)
       (quote "命題定義を読み込みました。続けて theorem を書けます")
   else
-    let complete = state.goals = [] in
-    let goals = List.map goal_json state.goals |> String.concat "," in
+    let complete = Verified.solved state.kernel_state in
+    let goals =
+      List.map goal_json state.display_goals |> String.concat ","
+    in
     let message =
       if has_qed then "証明が完了し、カーネルによって検証されました"
       else if complete then "すべてのゴールが解決しました。qed で証明を完了できます"
@@ -2136,7 +2356,7 @@ let run_self_tests () =
       (terminate_lines
         "theorem interactive : forall x, x = x\nintro x")
   in
-  if has_qed || List.length interactive.goals <> 1 then
+  if has_qed || List.length interactive.display_goals <> 1 then
     failwith "interactive analysis did not preserve the current goal";
   let invalid =
     "theorem bad : forall x, forall y, x = y\nintro x\nintro y\nrefl\nqed"

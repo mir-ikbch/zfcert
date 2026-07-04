@@ -1,4 +1,4 @@
 (library
- (name proof_state_extracted)
- (wrapped false)
- (modules proof_state))
+ (name zfcert_kernel)
+ (modules zfcert_kernel proof_state)
+ (private_modules proof_state))

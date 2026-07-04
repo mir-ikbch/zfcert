@@ -77,6 +77,18 @@ make extract
 生成物は`extracted/proof_state.ml`で、`step`, `run`, `rule_step`,
 `rule_run`を含みます。単独のOCamlコンパイルも確認しています。
 
+抽出された`Proof_state`モジュールはDuneのprivate moduleとして隠蔽されています。
+外部へ公開するのは[extracted/zfcert_kernel.mli](extracted/zfcert_kernel.mli)だけで、
+証明状態は構築子を持たない抽象型`Zfcert_kernel.state`です。初期状態は抽出された
+`start`、以後の状態は抽出された`step`・`run`・`rule_step`・`rule_run`の返り値
+としてのみ取得できます。
+
+OCamlサーバーが保持する論理状態の正本もこの抽象`state`です。仮定名や表示用の
+論理式は`display_goal`として別に保持しますが、各遷移後に抽出カーネルのgoal viewと
+一致することを確認し、`qed`では抽出状態自身が空であることを検査します。
+公理判定関数を外側から渡すAPIも公開せず、固定ZFC公理または分出・置換から作られた
+抽象的な公理能力だけを`rule_run`へ渡します。
+
 ## VS Code拡張
 
 [zfcert-vscode-0.2.0.vsix](zfcert-vscode-0.2.0.vsix) をVS Codeの
@@ -250,3 +262,5 @@ replacement R a x y : y = x.
 構文解析、捕獲回避代入、α同値、自然演繹規則、公理の具体化を OCaml カーネルが検査します。
 外延性・対・和・冪集合・無限・正則性・選択はカーネル公理として登録されています。
 分出・置換は専用タクティクで公理図式のインスタンスを生成します。
+外側のパーサー・HTTP・Web・VS Codeコードから抽出状態の表現やraw公理判定器へは
+アクセスできません。
