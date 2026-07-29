@@ -37,6 +37,17 @@ async function main() {
   const complete = await client.check(proof);
   assert.strictEqual(complete.ok, true);
   assert.strictEqual(complete.theorem, "universal_contradiction");
+  assert.strictEqual(
+    complete.message,
+    "The proof was verified by the extracted kernel."
+  );
+
+  const rejected = await client.check("bogus.");
+  assert.strictEqual(rejected.ok, false);
+  assert.strictEqual(
+    rejected.message,
+    "After definitions, use: theorem name : formula."
+  );
 
   const definitionsProof = fs.readFileSync(
     path.join(__dirname, "..", "..", "examples", "definitions.zfp"),

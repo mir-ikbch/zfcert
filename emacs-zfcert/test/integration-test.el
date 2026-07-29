@@ -23,7 +23,7 @@
                         "∀a, ∀b,"
                         (alist-get 'statement complete))
                        (equal (alist-get 'message complete)
-                              "証明がカーネルによって検証されました"))
+                              "The proof was verified by the extracted kernel."))
             (error "Complete proof was rejected: %S" complete)))
         (goto-char (point-min))
         (search-forward "specialize H a as Hna.")

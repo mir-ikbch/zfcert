@@ -80,8 +80,8 @@ function setExample(name) {
   editor.value = examples[name];
   updateLineNumbers();
   interactiveActive = false;
-  goalCount.textContent = "未開始";
-  goalView.innerHTML = `<p>「Start interactive」で定理の先頭から始めます。</p>`;
+  goalCount.textContent = "Not started";
+  goalView.innerHTML = `<p>Select “Start interactive” to begin at the theorem declaration.</p>`;
 }
 
 function escapeHtml(value) {
@@ -107,7 +107,7 @@ async function verify() {
       result.innerHTML = `
         <div class="result-icon">✓</div>
         <p class="result-kicker">${data.definitions.length} DEFINITIONS</p>
-        <h3>命題定義を読み込みました</h3>
+        <h3>Proposition definitions loaded</h3>
         <p>${data.definitions.map((definition) =>
           `<code>${escapeHtml(
             [definition.name, ...(definition.parameters || [])].join(" ")
@@ -125,7 +125,7 @@ async function verify() {
       result.innerHTML = `
         <div class="result-icon">!</div>
         <p class="result-kicker">REJECTED · LINE ${data.line}</p>
-        <h3>証明を検証できません</h3>
+        <h3>The proof could not be verified</h3>
         <p>${escapeHtml(data.message)}</p>`;
     }
   } catch (error) {
@@ -133,7 +133,7 @@ async function verify() {
     result.innerHTML = `
       <div class="result-icon">!</div>
       <p class="result-kicker">CONNECTION ERROR</p>
-      <h3>カーネルに接続できません</h3>
+      <h3>Cannot connect to the kernel</h3>
       <p>${escapeHtml(error.message)}</p>`;
   } finally {
     verifyButton.disabled = false;
@@ -147,7 +147,7 @@ function renderInteractive(data) {
     result.innerHTML = `
       <div class="result-icon">!</div>
       <p class="result-kicker">STEP REJECTED · LINE ${data.line}</p>
-      <h3>その手は使えません</h3>
+      <h3>The step was rejected</h3>
       <p>${escapeHtml(data.message)}</p>`;
     return;
   }
@@ -169,7 +169,7 @@ function renderInteractive(data) {
   }
 
   if (data.qed) {
-    goalCount.textContent = "証明完了";
+    goalCount.textContent = "Proof complete";
     goalView.innerHTML = `<span class="goal-target">✓ ${escapeHtml(data.statement)}</span>`;
     result.className = "result success";
     result.innerHTML = `
@@ -190,8 +190,8 @@ function renderInteractive(data) {
   if (data.complete) {
     goalCount.textContent = "0 goals";
     goalView.innerHTML = `
-      <span class="goal-target">すべて解決しました</span>
-      <p>最後に <code>qed</code> を実行してください。</p>`;
+      <span class="goal-target">All goals solved</span>
+      <p>Run <code>qed.</code> to finish the proof.</p>`;
     return;
   }
 
@@ -201,7 +201,7 @@ function renderInteractive(data) {
     ? `<ul class="goal-context">${goal.context.map((entry) =>
         `<li><strong>${escapeHtml(entry.name)}</strong> : ${escapeHtml(entry.formula)}</li>`
       ).join("")}</ul>`
-    : `<p class="goal-context">仮定はありません</p>`;
+    : `<p class="goal-context">No assumptions</p>`;
   goalView.innerHTML = `
     ${context}
     <span class="goal-target">⊢ ${escapeHtml(goal.target)}</span>`;
@@ -245,7 +245,11 @@ function prefixThroughTheorem(text) {
 async function startInteractive() {
   const prefix = prefixThroughTheorem(editor.value);
   if (!prefix) {
-    renderInteractive({ ok: false, line: 1, message: "完結した theorem 文が見つかりません" });
+    renderInteractive({
+      ok: false,
+      line: 1,
+      message: "No complete theorem declaration was found."
+    });
     return false;
   }
 
@@ -312,7 +316,7 @@ async function loadAxioms() {
         <span class="axiom-badge">${axiom.kernel ? "KERNEL AXIOM" : "SCHEMA"}</span>
       </article>`).join("");
   } catch {
-    list.innerHTML = `<div class="loading">公理系を読み込めませんでした。</div>`;
+    list.innerHTML = `<div class="loading">Could not load the axiom library.</div>`;
   }
 }
 

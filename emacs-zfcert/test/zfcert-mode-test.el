@@ -44,9 +44,9 @@
 
 (ert-deftest zfcert-render-result-shows-rejection ()
   (zfcert--render-result
-   '((ok . nil) (line . 3) (message . "未知のタクティクです")))
+   '((ok . nil) (line . 3) (message . "Unknown tactic.")))
   (with-current-buffer "*ZFCert Goals*"
     (should (string-match-p "Rejected · line 3" (buffer-string)))
-    (should (string-match-p "未知のタクティクです" (buffer-string)))))
+    (should (string-match-p "Unknown tactic." (buffer-string)))))
 
 ;;; zfcert-mode-test.el ends here

@@ -1,4 +1,4 @@
-# カーソルを各行へ移動すると、その時点のゴールが表示されます。
+# Move the cursor between lines to inspect the current proof state.
 theorem universal_contradiction :
   forall a,
   forall b,
