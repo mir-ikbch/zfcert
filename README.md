@@ -93,11 +93,36 @@ OCamlサーバーが保持する論理状態の正本もこの抽象`state`で�
 
 - `src/syntax.ml`: 論理式の構文木、表示、自由変数、捕獲回避代入、α同値
 - `src/parser.ml`: 字句解析、論理式の優先順位解析、複数行の文と終端`.`の解析
-- `src/zfcert_app.ml`: 定義の展開、タクティク実行、抽出カーネルとの照合、HTTPサーバー
-- `src/main.ml`: コマンドライン起動だけを行うエントリポイント
+- `src/kernel_bridge.ml`: 名前付き構文からde Bruijn表現への変換と抽出カーネル接続
+- `src/proof_session.ml`: 定義の展開、タクティク実行、対話的証明状態
+- `src/api_json.ml`: 証明状態とエラーのJSON表現
+- `src/http_server.ml`: HTTPと静的ファイルの入出力
+- `src/self_test.ml`: 証明カーネルの回帰試験
+- `src/cli.ml`: コマンドライン引数とサーバー起動
+- `src/main.ml`: `Cli.run`を呼ぶだけのエントリポイント
 
 `Parser`は`Syntax`だけに依存し、証明状態やHTTP層には依存しません。
-`Zfcert_app`の公開インターフェースも`run : unit -> unit`だけに絞っています。
+アプリケーション側で`Zfcert_kernel`を直接参照するのは`Kernel_bridge`だけです。
+名前付き論理式の番号付け、公理能力、抽出状態の遷移はこのファイルに集約され、
+`Proof_session`から先の層はraw抽出モジュールへアクセスしません。
+
+依存関係は次の一方向です。
+
+```text
+Web / VS Code / Emacs
+          |
+      HTTP + JSON
+          |
+    Proof_session
+          |
+    Kernel_bridge
+          |
+ Zfcert_kernel facade
+          |
+ Coq-extracted Proof_state
+```
+
+APIの成功・エラー・進捗メッセージとWeb UIは英語に統一しています。
 
 ## VS Code拡張
 

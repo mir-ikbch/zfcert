@@ -1,1 +1,1 @@
-let () = Zfcert_app.run ()
+let () = Cli.run ()

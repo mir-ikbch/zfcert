@@ -76,7 +76,7 @@ let lex input =
             | _ -> Ident word
           in
           loop !next (token :: tokens)
-      | _ -> raise (Parse_error (index, "解釈できない文字です"))
+      | _ -> raise (Parse_error (index, "Unrecognized character."))
   in
   Array.of_list (loop 0 [])
 
@@ -99,7 +99,7 @@ let expect state expected message =
 let expect_ident state =
   match take state with
   | Ident name -> name
-  | _ -> raise (Parse_error (state.position, "変数名が必要です"))
+  | _ -> raise (Parse_error (state.position, "Expected a variable name."))
 
 let rec parse_formula_state state = parse_iff state
 
@@ -144,15 +144,15 @@ and parse_prefix state =
   | TNot -> Not (parse_prefix state)
   | TForall ->
       let name = expect_ident state in
-      expect state Comma "全称量化子の変数の後に , が必要です";
+      expect state Comma "Expected , after the universally quantified variable.";
       Forall (name, parse_formula_state state)
   | TExists ->
       let name = expect_ident state in
-      expect state Comma "存在量化子の変数の後に , が必要です";
+      expect state Comma "Expected , after the existentially quantified variable.";
       Exists (name, parse_formula_state state)
   | Lparen ->
       let formula = parse_formula_state state in
-      expect state Rparen ") が必要です";
+      expect state Rparen "Expected ).";
       formula
   | TBottom -> Bottom
   | Ident left ->
@@ -177,14 +177,14 @@ and parse_prefix state =
             in
             Named (left, arguments [])
       end
-  | _ -> raise (Parse_error (state.position, "論理式が必要です"))
+  | _ -> raise (Parse_error (state.position, "Expected a formula."))
 
 let parse_formula input =
   let state = { tokens = lex input; position = 0 } in
   let formula = parse_formula_state state in
   if peek state <> Eof then
     raise (Parse_error
-      (state.position, "論理式の後に余分な入力があります"));
+      (state.position, "Unexpected input after the formula."));
   formula
 
 let split_statements script =
@@ -198,7 +198,7 @@ let split_statements script =
         raise
           (Statement_error
              (Option.value start_line ~default:line,
-              "文末に . が必要です"))
+              "Every statement must end with a period."))
     else
       let character = script.[index] in
       if in_comment then
@@ -215,7 +215,7 @@ let split_statements script =
             let statement = String.trim (Buffer.contents buffer) in
             Buffer.clear buffer;
             if statement = "" then
-              raise (Statement_error (line, "空の文があります"))
+              raise (Statement_error (line, "Empty statement."))
             else
               loop (index + 1) line None false
                 ((Option.value start_line ~default:line, statement)

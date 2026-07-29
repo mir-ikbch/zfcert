@@ -1,4 +1,13 @@
 (executable
  (name main)
- (modules main zfcert_app parser syntax)
+ (modules
+  main
+  cli
+  self_test
+  http_server
+  api_json
+  proof_session
+  kernel_bridge
+  parser
+  syntax)
  (libraries unix zfcert_kernel))
