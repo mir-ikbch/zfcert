@@ -1,59 +1,63 @@
+(** Thin OCaml facade over the Coq-extracted named proof state. *)
+
 module Raw = Proof_state
 
-type formula = Raw.formula =
-  | Falsum
-  | Equal of int * int
-  | Member of int * int
-  | Conj of formula * formula
-  | Disj of formula * formula
-  | Impl of formula * formula
-  | All of formula
-  | Ex of formula
+type formula = Raw.named_formula =
+  | NFalsum
+  | NEqual of string * string
+  | NMember of string * string
+  | NConj of formula * formula
+  | NDisj of formula * formula
+  | NImpl of formula * formula
+  | NNeg of formula
+  | NIff of formula * formula
+  | NAll of string * formula
+  | NEx of string * formula
 
-type rule = Raw.rule =
-  | RAxiom
-  | RHypothesis of int
-  | RFalsumElim
-  | RImplIntro
-  | RImplElim of formula
-  | RConjIntro
-  | RConjElimL of formula
-  | RConjElimR of formula
-  | RDisjIntroL
-  | RDisjIntroR
-  | RDisjElim of formula * formula
-  | RAllIntro
-  | RAllElim of formula * int
-  | RExIntro of int
-  | RExElim of formula
-  | REqualRefl
-  | REqualElim of formula * int * int
-  | RCut of formula
+type rule = Raw.named_rule =
+  | NRAxiom
+  | NRHypothesis of string
+  | NRFalsumElim
+  | NRImplIntro of string
+  | NRImplElim of formula
+  | NRConjIntro
+  | NRConjElimL of formula
+  | NRConjElimR of formula
+  | NRDisjIntroL
+  | NRDisjIntroR
+  | NRDisjElim of formula * formula * string * string
+  | NRAllIntro of string
+  | NRAllElim of string * formula
+  | NRExIntro of string
+  | NRExElim of string * string * formula
+  | NREqualRefl
+  | NREqualElim of string * string * formula
+  | NRCut of string * formula
 
-type tactic = Raw.tactic =
-  | TacRule of rule
-  | TacIntro
-  | TacExact of int
-  | TacApply of int
-  | TacSpecialize of int * int
-  | TacSplit
-  | TacLeft
-  | TacRight
-  | TacUse of int
-  | TacRefl
-  | TacContradiction
-  | TacCases of int
+type rule_request = Raw.named_rule_request =
+  | NPrimitiveRule of rule
+  | NDefaultAllIntroRule
+  | NFixedAxiomRule
+  | NSeparationAxiomRule of string * string * formula
+  | NReplacementAxiomRule of string * string * string * formula
 
-type error = Raw.step_error =
+type error =
   | NoGoals
-  | HypothesisNotFound
+  | HypothesisNotFound of string option
+  | HypothesisAlreadyUsed of string
+  | VariableAlreadyUsed of string
+  | UnknownVariable of string
   | FormulaMismatch
   | WrongGoalShape
+  | MetadataMismatch
 
-type state = Raw.proof_state
+type state = Raw.certified_state
+type axiom = Raw.named_axiom
+type certificate_step = Raw.certificate_step
+type certificate = Raw.certificate
 
 type goal_view = {
-  assumptions : formula list;
+  assumptions : (string * formula) list;
   conclusion : formula;
 }
 
@@ -67,55 +71,117 @@ type fixed_axiom =
   | Infinity
   | Choice
 
-type axiom = formula
-
-let start = Raw.start
-
-let goals state =
-  Raw.state_goals state
-  |> List.map (fun goal ->
-       {
-         assumptions = goal.Raw.assumptions;
-         conclusion = goal.Raw.conclusion;
-       })
-
-let solved state = Raw.state_goals state = []
+let error = function
+  | Raw.NCoreError Raw.NoGoals -> NoGoals
+  | Raw.NCoreError Raw.HypothesisNotFound ->
+      HypothesisNotFound None
+  | Raw.NCoreError Raw.FormulaMismatch -> FormulaMismatch
+  | Raw.NCoreError Raw.WrongGoalShape -> WrongGoalShape
+  | Raw.NUnknownVariable name -> UnknownVariable name
+  | Raw.NHypothesisNotFound name ->
+      HypothesisNotFound (Some name)
+  | Raw.NHypothesisAlreadyUsed name ->
+      HypothesisAlreadyUsed name
+  | Raw.NVariableAlreadyUsed name ->
+      VariableAlreadyUsed name
+  | Raw.NMetadataMismatch -> MetadataMismatch
+  | Raw.NWrongNamedShape -> WrongGoalShape
 
 let outcome = function
-  | Raw.Success state -> Ok state
-  | Raw.Failure error -> Error error
+  | Raw.NOk value -> Ok value
+  | Raw.NError failure -> Error (error failure)
 
-let checker axioms candidate =
-  List.exists (fun axiom -> Raw.formula_eqb axiom candidate) axioms
+let start formula =
+  Raw.certified_start formula |> outcome
 
-let step tactic state =
-  Raw.step (fun _ -> false) tactic state |> outcome
+let goals state =
+  match Raw.certified_goals state with
+  | Raw.NError failure -> Error (error failure)
+  | Raw.NOk goals ->
+      Ok
+        (List.map
+           (fun goal ->
+              {
+                assumptions =
+                  List.map
+                    (fun hypothesis ->
+                       (hypothesis.Raw.named_hypothesis_name,
+                        hypothesis.Raw.named_hypothesis_formula))
+                    goal.Raw.named_assumptions;
+                conclusion = goal.Raw.named_conclusion;
+              })
+           goals)
 
-let run tactics state =
-  Raw.run (fun _ -> false) tactics state |> outcome
+let solved = Raw.certified_solved
+
+let certificate_step ~axioms rule =
+  Raw.one_step axioms rule
+
+let run_certificate steps state =
+  Raw.certified_run steps state |> outcome
 
 let rule_step ~axioms rule state =
-  Raw.rule_step (checker axioms) rule state |> outcome
+  Raw.certified_step (Raw.one_step axioms rule) state |> outcome
 
 let rule_run ~axioms rules state =
-  Raw.rule_run (checker axioms) rules state |> outcome
+  rules
+  |> List.map (Raw.one_step axioms)
+  |> fun steps -> Raw.certified_run steps state
+  |> outcome
+
+let default_all_intro_rule_step state =
+  Raw.certified_execute_rule Raw.NDefaultAllIntroRule state |> outcome
+
+let fixed_axiom_rule_step state =
+  Raw.certified_execute_rule Raw.NFixedAxiomRule state |> outcome
+
+let separation_axiom_rule_step ~source ~element predicate state =
+  Raw.certified_execute_rule
+    (Raw.NSeparationAxiomRule (source, element, predicate)) state
+  |> outcome
+
+let replacement_axiom_rule_step ~source ~input ~output predicate state =
+  Raw.certified_execute_rule
+    (Raw.NReplacementAxiomRule (source, input, output, predicate)) state
+  |> outcome
+
+let separation_tactic_step ~fact ~source ~element predicate state =
+  Raw.certified_separation_tactic
+    fact source element predicate state
+  |> outcome
+
+let replacement_tactic_step
+    ~fact ~source ~input ~output predicate state =
+  Raw.certified_replacement_tactic
+    fact source input output predicate state
+  |> outcome
+
+let execute_rule request state =
+  Raw.certified_execute_rule request state |> outcome
+
+let finalize state =
+  Raw.certified_finalize state |> outcome
+
+let certificate_rules certificate =
+  List.map
+    (fun step -> step.Raw.certificate_rule)
+    certificate
+
+let current_certificate_rules state =
+  Raw.certified_certificate state |> certificate_rules
 
 let fixed_axiom = function
-  | EmptySet -> Raw.empty_set_axiom
-  | Extensionality -> Raw.extensionality_axiom
-  | Pairing -> Raw.pairing_axiom
-  | Union -> Raw.union_axiom
-  | PowerSet -> Raw.power_set_axiom
-  | Foundation -> Raw.foundation_axiom
-  | Infinity -> Raw.infinity_axiom
-  | Choice -> Raw.choice_axiom
+  | EmptySet -> Raw.NFixedAxiom Raw.NEmptySet
+  | Extensionality -> Raw.NFixedAxiom Raw.NExtensionality
+  | Pairing -> Raw.NFixedAxiom Raw.NPairing
+  | Union -> Raw.NFixedAxiom Raw.NUnion
+  | PowerSet -> Raw.NFixedAxiom Raw.NPowerSet
+  | Foundation -> Raw.NFixedAxiom Raw.NFoundation
+  | Infinity -> Raw.NFixedAxiom Raw.NInfinity
+  | Choice -> Raw.NFixedAxiom Raw.NChoice
 
-let separation_axiom predicate =
-  Raw.separation_instance predicate
+let separation_axiom ~source ~element predicate =
+  Raw.NSeparationAxiom (source, element, predicate)
 
-let replacement_axiom predicate =
-  Raw.replacement_instance predicate
-
-let instantiate = Raw.instantiate
-let separation_instance = Raw.separation_instance
-let replacement_instance = Raw.replacement_instance
+let replacement_axiom ~input ~output predicate =
+  Raw.NReplacementAxiom (input, output, predicate)

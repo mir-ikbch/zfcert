@@ -92,6 +92,17 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function certificateHtml(rules) {
+  if (!Array.isArray(rules) || rules.length === 0) return "";
+  return `
+    <details class="certificate">
+      <summary>Show checked primitive rules (${rules.length})</summary>
+      <ol>${rules.map((rule) =>
+        `<li><code>${escapeHtml(rule)}</code></li>`
+      ).join("")}</ol>
+    </details>`;
+}
+
 async function verify() {
   verifyButton.disabled = true;
   verifyButton.querySelector("span").textContent = "Checking…";
@@ -119,7 +130,8 @@ async function verify() {
         <div class="result-icon">✓</div>
         <p class="result-kicker">VERIFIED · ${data.steps} STEPS</p>
         <h3>${escapeHtml(data.theorem)}</h3>
-        <p><code>${escapeHtml(data.statement)}</code><br>${escapeHtml(data.message)}</p>`;
+        <p><code>${escapeHtml(data.statement)}</code><br>${escapeHtml(data.message)}</p>
+        ${certificateHtml(data.certificate)}`;
     } else {
       result.className = "result error";
       result.innerHTML = `
@@ -176,7 +188,8 @@ function renderInteractive(data) {
       <div class="result-icon">✓</div>
       <p class="result-kicker">VERIFIED · ${data.steps} STEPS</p>
       <h3>${escapeHtml(data.theorem)}</h3>
-      <p>${escapeHtml(data.message)}</p>`;
+      <p>${escapeHtml(data.message)}</p>
+      ${certificateHtml(data.certificate)}`;
     return;
   }
 

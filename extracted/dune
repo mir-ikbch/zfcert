@@ -1,4 +1,5 @@
 (library
  (name zfcert_kernel)
  (modules zfcert_kernel proof_state)
- (private_modules proof_state))
+ (private_modules proof_state)
+ (flags (:standard -w -39)))

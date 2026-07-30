@@ -32,3 +32,4 @@ val definitions : session -> proposition_definition list
 val goals : session -> display_goal list
 val step_count : session -> int
 val is_complete : session -> bool
+val certificate_rules : session -> string list option

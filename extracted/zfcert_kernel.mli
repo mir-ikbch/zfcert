@@ -1,57 +1,59 @@
 type formula =
-  | Falsum
-  | Equal of int * int
-  | Member of int * int
-  | Conj of formula * formula
-  | Disj of formula * formula
-  | Impl of formula * formula
-  | All of formula
-  | Ex of formula
+  | NFalsum
+  | NEqual of string * string
+  | NMember of string * string
+  | NConj of formula * formula
+  | NDisj of formula * formula
+  | NImpl of formula * formula
+  | NNeg of formula
+  | NIff of formula * formula
+  | NAll of string * formula
+  | NEx of string * formula
 
 type rule =
-  | RAxiom
-  | RHypothesis of int
-  | RFalsumElim
-  | RImplIntro
-  | RImplElim of formula
-  | RConjIntro
-  | RConjElimL of formula
-  | RConjElimR of formula
-  | RDisjIntroL
-  | RDisjIntroR
-  | RDisjElim of formula * formula
-  | RAllIntro
-  | RAllElim of formula * int
-  | RExIntro of int
-  | RExElim of formula
-  | REqualRefl
-  | REqualElim of formula * int * int
-  | RCut of formula
+  | NRAxiom
+  | NRHypothesis of string
+  | NRFalsumElim
+  | NRImplIntro of string
+  | NRImplElim of formula
+  | NRConjIntro
+  | NRConjElimL of formula
+  | NRConjElimR of formula
+  | NRDisjIntroL
+  | NRDisjIntroR
+  | NRDisjElim of formula * formula * string * string
+  | NRAllIntro of string
+  | NRAllElim of string * formula
+  | NRExIntro of string
+  | NRExElim of string * string * formula
+  | NREqualRefl
+  | NREqualElim of string * string * formula
+  | NRCut of string * formula
 
-type tactic =
-  | TacRule of rule
-  | TacIntro
-  | TacExact of int
-  | TacApply of int
-  | TacSpecialize of int * int
-  | TacSplit
-  | TacLeft
-  | TacRight
-  | TacUse of int
-  | TacRefl
-  | TacContradiction
-  | TacCases of int
+type rule_request =
+  | NPrimitiveRule of rule
+  | NDefaultAllIntroRule
+  | NFixedAxiomRule
+  | NSeparationAxiomRule of string * string * formula
+  | NReplacementAxiomRule of string * string * string * formula
 
 type error =
   | NoGoals
-  | HypothesisNotFound
+  | HypothesisNotFound of string option
+  | HypothesisAlreadyUsed of string
+  | VariableAlreadyUsed of string
+  | UnknownVariable of string
   | FormulaMismatch
   | WrongGoalShape
+  | MetadataMismatch
 
 type state
+type axiom
+type certificate_step
+type certificate
 
 type goal_view = {
-  assumptions : formula list;
+  assumptions : (string * formula) list;
   conclusion : formula;
 }
 
@@ -65,25 +67,94 @@ type fixed_axiom =
   | Infinity
   | Choice
 
-type axiom
-
-val start : formula -> state
-val goals : state -> goal_view list
+val start : formula -> (state, error) result
+val goals : state -> (goal_view list, error) result
 val solved : state -> bool
 
-val step : tactic -> state -> (state, error) result
-val run : tactic list -> state -> (state, error) result
+val certificate_step :
+  axioms:axiom list ->
+  rule ->
+  certificate_step
+
+val run_certificate :
+  certificate_step list ->
+  state ->
+  (state, error) result
 
 val rule_step :
-  axioms:axiom list -> rule -> state -> (state, error) result
+  axioms:axiom list ->
+  rule ->
+  state ->
+  (state, error) result
 
 val rule_run :
-  axioms:axiom list -> rule list -> state -> (state, error) result
+  axioms:axiom list ->
+  rule list ->
+  state ->
+  (state, error) result
+
+val default_all_intro_rule_step :
+  state ->
+  (state, error) result
+
+val fixed_axiom_rule_step :
+  state ->
+  (state, error) result
+
+val separation_axiom_rule_step :
+  source:string ->
+  element:string ->
+  formula ->
+  state ->
+  (state, error) result
+
+val replacement_axiom_rule_step :
+  source:string ->
+  input:string ->
+  output:string ->
+  formula ->
+  state ->
+  (state, error) result
+
+val separation_tactic_step :
+  fact:string ->
+  source:string ->
+  element:string ->
+  formula ->
+  state ->
+  (state, error) result
+
+val replacement_tactic_step :
+  fact:string ->
+  source:string ->
+  input:string ->
+  output:string ->
+  formula ->
+  state ->
+  (state, error) result
+
+val execute_rule :
+  rule_request ->
+  state ->
+  (state, error) result
+
+val finalize :
+  state ->
+  (certificate, error) result
+
+val certificate_rules : certificate -> rule list
+val current_certificate_rules : state -> rule list
 
 val fixed_axiom : fixed_axiom -> axiom
-val separation_axiom : formula -> axiom
-val replacement_axiom : formula -> axiom
 
-val instantiate : int -> formula -> formula
-val separation_instance : formula -> formula
-val replacement_instance : formula -> formula
+val separation_axiom :
+  source:string ->
+  element:string ->
+  formula ->
+  axiom
+
+val replacement_axiom :
+  input:string ->
+  output:string ->
+  formula ->
+  axiom

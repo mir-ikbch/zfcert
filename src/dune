@@ -7,7 +7,8 @@
   http_server
   api_json
   proof_session
-  kernel_bridge
+  rule_parser
+  kernel_syntax
   parser
   syntax)
  (libraries unix zfcert_kernel))

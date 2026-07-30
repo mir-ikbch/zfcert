@@ -51,6 +51,24 @@ exists rules,
 成功する有限列として実行できます。`map TacRule rules`を使うことで、同じ列を
 タクティクとして適用できることも`run_rule_list`で証明しています。
 
+[coq/NamedProofState.v](coq/NamedProofState.v) は、このde Bruijn核を文字列名で扱う
+抽出可能な層です。論理式の変数、仮定、量化子導入、`cut`などに必要な名前を
+Coq側で管理し、名前付きの`named_start`・`named_goals`・`named_step`・
+`named_rule_run`を提供します。各名前付き遷移について、成功後の状態が証明可能なら
+成功前も証明可能であることを、既存のde Bruijn核の健全性へ帰着して証明しています。
+
+[coq/NamedCommands.v](coq/NamedCommands.v) は、固定ZFC公理、分出、置換の
+表面コマンドを名前付きプリミティブ規則列へ展開します。公理図式のインスタンス、
+freshな内部仮定名、規則列はCoq側で生成され、各実行関数の健全性も
+`named_zfc_rule_run_sound`から証明されています。OCamlで解析された
+`named_rule_request`は、抽出された`named_execute_rule`が実行します。
+
+[coq/CertifiedSession.v](coq/CertifiedSession.v) は、公理能力を添えた
+プリミティブ規則列を計算可能な証明書として保持します。`certified_finalize`は
+初期命題から証明書を再実行し、成功時にはその命題について
+`derives zfc_theory [] ...`が成り立つことを`certified_finalize_sound`で
+証明しています。
+
 [coq/ZFC.v](coq/ZFC.v) には、空集合、外延性、対、和、冪集合、正則性、
 無限、分出公理図式、置換公理図式、選択を明示的な論理式として収録しています。
 任意の論理式を公理として受理する逃げ道はありません。
@@ -63,8 +81,9 @@ make coq
 
 すべての証明は `Admitted` なしで検査されます。[coq/Audit.v](coq/Audit.v) は
 主要定理の仮定を機械的に表示し、すべて `Closed under the global context` になることを
-確認します。抽出された`step`・`rule_run`は既存OCamlサーバーへ組み込まれており、
-名前付き構文をde Bruijn形式へ変換した後、各タクティク遷移を抽出カーネルで検査します。
+確認します。抽出された認証済みセッションは既存OCamlサーバーへ組み込まれており、
+`Proof_session`が生成したプリミティブ規則列は抽出カーネルの`certified_run`で
+検査・記録されます。現在のゴールも`Zfcert_kernel.goals`から名前付きのまま取得します。
 パーサー、名前解決、HTTP/UIは従来のOCamlコードが担当します。
 
 抽出用エントリポイントは[coq/ExtractProofState.v](coq/ExtractProofState.v)に分離して
@@ -74,27 +93,34 @@ make coq
 make extract
 ```
 
-生成物は`extracted/proof_state.ml`で、`step`, `run`, `rule_step`,
-`rule_run`を含みます。単独のOCamlコンパイルも確認しています。
+生成物は`extracted/proof_state.ml`で、名前付きの規則検査器に加え、
+`certified_start`, `certified_run`, `certified_finalize`と、
+固定公理・分出・置換を証明書へ展開する関数を含みます。
+単独のOCamlコンパイルも確認しています。
 
 抽出された`Proof_state`モジュールはDuneのprivate moduleとして隠蔽されています。
 外部へ公開するのは[extracted/zfcert_kernel.mli](extracted/zfcert_kernel.mli)だけで、
 証明状態は構築子を持たない抽象型`Zfcert_kernel.state`です。初期状態は抽出された
-`start`、以後の状態は抽出された`step`・`run`・`rule_step`・`rule_run`の返り値
-としてのみ取得できます。
+`certified_start`、以後の状態は抽出された認証済み規則実行関数の返り値としてのみ
+取得できます。この抽象状態は初期命題、現在のゴール、受理済みの規則証明書を一体で
+保持します。
 
-OCamlサーバーが保持する論理状態の正本もこの抽象`state`です。仮定名や表示用の
-論理式は`display_goal`として別に保持しますが、各遷移後に抽出カーネルのgoal viewと
-一致することを確認し、`qed`では抽出状態自身が空であることを検査します。
+OCamlサーバーが保持する論理状態の正本もこの抽象`state`です。セッションには
+表示用のゴールや名前メタデータを重複して保持しません。仮定とゴールは毎回
+`Zfcert_kernel.goals`から取得します。論理状態は抽出APIの返した値だけで更新し、
+`qed`では記録済みの全プリミティブ規則を初期命題から再実行し、全ゴールが閉じることを
+ダブルチェックします。Web UIでは検査後に`Show checked primitive rules`を開くと、
+この証明書を表示できます。
 公理判定関数を外側から渡すAPIも公開せず、固定ZFC公理または分出・置換から作られた
-抽象的な公理能力だけを`rule_run`へ渡します。
+抽象的な公理能力だけを各証明書ステップへ添付します。
 
 ## OCamlソースの構成
 
 - `src/syntax.ml`: 論理式の構文木、表示、自由変数、捕獲回避代入、α同値
 - `src/parser.ml`: 字句解析、論理式の優先順位解析、複数行の文と終端`.`の解析
-- `src/kernel_bridge.ml`: 名前付き構文からde Bruijn表現への変換と抽出カーネル接続
-- `src/proof_session.ml`: 定義の展開、タクティク実行、対話的証明状態
+- `src/kernel_syntax.ml`: パーサー構文と抽出された名前付き構文の単純な構築子変換
+- `src/rule_parser.ml`: `rule`文を型付きの名前付き規則要求へ変換する純粋なパーサー
+- `src/proof_session.ml`: 定義の展開、抽出APIの直接実行、対話的証明状態
 - `src/api_json.ml`: 証明状態とエラーのJSON表現
 - `src/http_server.ml`: HTTPと静的ファイルの入出力
 - `src/self_test.ml`: 証明カーネルの回帰試験
@@ -102,9 +128,15 @@ OCamlサーバーが保持する論理状態の正本もこの抽象`state`で�
 - `src/main.ml`: `Cli.run`を呼ぶだけのエントリポイント
 
 `Parser`は`Syntax`だけに依存し、証明状態やHTTP層には依存しません。
-アプリケーション側で`Zfcert_kernel`を直接参照するのは`Kernel_bridge`だけです。
-名前付き論理式の番号付け、公理能力、抽出状態の遷移はこのファイルに集約され、
-`Proof_session`から先の層はraw抽出モジュールへアクセスしません。
+`Kernel_syntax`は論理式の構築子を対応付けるだけで、変数の番号付けや
+証明状態の更新は行いません。
+`Rule_parser`は現在のゴールや証明状態を参照せず、文字列の構文と引数だけを解析します。
+ゴール形状、仮定名・変数名のfreshness、公理図式の適用は抽出カーネルが検査します。
+`Proof_session`は抽象型`Zfcert_kernel.state`を保持し、その状態を
+`Zfcert_kernel`の認証済み規則実行関数以外では変更できません。`apply`や複数項の
+`specialize`を含む表面タクティクはOCaml側で規則列を計画するだけであり、その列の
+実行、蓄積、終了時再検査は抽出コードが担当します。raw抽出モジュール
+`Proof_state`は引き続きprivate moduleであり、アプリケーション層からアクセスできません。
 
 依存関係は次の一方向です。
 
@@ -114,12 +146,14 @@ Web / VS Code / Emacs
       HTTP + JSON
           |
     Proof_session
-          |
-    Kernel_bridge
-          |
- Zfcert_kernel facade
-          |
- Coq-extracted Proof_state
+      /       |       \
+     v        v        v
+ Parser  Rule_parser  Zfcert_kernel facade
+              |              |
+              v              |
+        Kernel_syntax        |
+                             |
+               Coq-extracted Proof_state (private)
 ```
 
 APIの成功・エラー・進捗メッセージとWeb UIは英語に統一しています。

@@ -10,6 +10,9 @@ coq:
 	$(COQC) coq/ZFC.v
 	$(COQC) coq/ProofState.v
 	$(COQC) coq/TacticCompleteness.v
+	$(COQC) coq/NamedProofState.v
+	$(COQC) coq/NamedCommands.v
+	$(COQC) coq/CertifiedSession.v
 	$(COQC) coq/Audit.v
 
 extract: coq

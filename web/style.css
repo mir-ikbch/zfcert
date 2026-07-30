@@ -265,6 +265,36 @@ textarea {
 .result.error { background: rgba(195,91,56,.08); }
 .result.error .result-icon { color: white; border-color: var(--rust); background: var(--rust); }
 
+.certificate {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.certificate summary {
+  color: var(--green);
+  cursor: pointer;
+  font: 11px var(--mono);
+}
+
+.certificate ol {
+  max-height: 240px;
+  overflow: auto;
+  margin: 12px 0 0;
+  padding-left: 28px;
+}
+
+.certificate li {
+  padding: 3px 0;
+  color: #69706a;
+  font: 10px/1.5 var(--mono);
+}
+
+.certificate code {
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
 .interactive-card {
   padding: 24px 30px 27px;
   border-bottom: 1px solid var(--line);

@@ -5,9 +5,11 @@ open Syntax
 module StringMap = Map.Make (String)
 module StringSet = Syntax.StringSet
 
-(** [Verified] is the application-facing kernel boundary.  This module never
-    imports the extracted library directly, and [Verified.state] is abstract. *)
-module Verified = Kernel_bridge
+(** The extracted state is the authoritative logical state.  Its type is
+    abstract, so this module can only create and advance it through the
+    extracted kernel API. *)
+module Extracted = Zfcert_kernel
+module Kernel_syntax = Kernel_syntax
 
 exception Parse_error = Parser.Parse_error
 
@@ -80,7 +82,6 @@ let find_axiom name =
 type goal = {
   context : (string * formula) list;
   target : formula;
-  environment : string list;
 }
 
 type proposition_definition = {
@@ -93,8 +94,8 @@ type session = {
   theorem_name : string;
   theorem : formula;
   definitions : proposition_definition list;
-  kernel_state : Verified.state;
-  display_goals : goal list;
+  kernel_state : Extracted.state;
+  final_certificate : Extracted.certificate option;
   steps : string list;
 }
 
@@ -258,77 +259,68 @@ let split_schema_argument line_no definitions argument =
 let context_free_vars context =
   List.fold_left (fun acc (_, f) -> StringSet.union acc (free_vars f)) StringSet.empty context
 
-let rec list_index name index = function
-  | [] -> None
-  | item :: _ when item = name -> Some index
-  | _ :: rest -> list_index name (index + 1) rest
+let kernel_formula formula =
+  Kernel_syntax.to_kernel formula
 
-let add_free_name environment name =
-  if List.mem name environment then environment else environment @ [name]
+let materialize_goals line state =
+  match Extracted.goals state.kernel_state with
+  | Error error ->
+      raise (Proof_error (line,
+        "Could not read the extracted proof state: "
+        ^ (match error with
+           | Extracted.MetadataMismatch -> "name metadata are inconsistent"
+           | _ -> "the named kernel rejected its own goal state")))
+  | Ok goals ->
+      List.map
+        (fun (kernel_goal : Extracted.goal_view) ->
+           let context =
+             List.map
+               (fun (name, formula) ->
+                  (name, Kernel_syntax.of_kernel formula))
+               kernel_goal.assumptions
+           in
+           let target =
+             Kernel_syntax.of_kernel kernel_goal.conclusion
+           in
+           {
+             context;
+             target;
+           })
+        goals
 
-let canonical_environment goal =
-  goal.environment
+let kernel_error = function
+  | Extracted.NoGoals -> "the proof state has no goals"
+  | Extracted.HypothesisNotFound None -> "a hypothesis was not found"
+  | Extracted.HypothesisNotFound (Some name) ->
+      "hypothesis " ^ name ^ " was not found"
+  | Extracted.HypothesisAlreadyUsed name ->
+      "hypothesis " ^ name ^ " is already in use"
+  | Extracted.VariableAlreadyUsed name ->
+      "variable " ^ name ^ " is already in use"
+  | Extracted.UnknownVariable name ->
+      "variable " ^ name ^ " is unknown"
+  | Extracted.FormulaMismatch -> "a formula did not match"
+  | Extracted.WrongGoalShape -> "the goal has the wrong logical form"
+  | Extracted.MetadataMismatch ->
+      "the extracted name metadata are inconsistent"
 
-let db_formula bound environment formula =
-  match
-    Verified.encode_formula ~bound ~environment formula
-  with
-  | Ok encoded -> encoded
-  | Error message -> raise (Proof_error (1, message))
-
-let source_goal environment (goal : goal) =
-  {
-    Verified.assumptions =
-      List.map (fun (_, formula) -> formula) goal.context;
-    Verified.conclusion = goal.target;
-    Verified.environment;
-  }
-
-let source_goal_canonical goal =
-  source_goal (canonical_environment goal) goal
-
-let accept_kernel_result line = function
+let accept_kernel_result line operation = function
   | Ok state -> state
-  | Error message -> raise (Proof_error (line, message))
+  | Error error ->
+      raise (Proof_error (line,
+        "The extracted kernel rejected the " ^ operation ^ ": "
+        ^ kernel_error error ^ "."))
 
 let verified_error line =
-  raise (Proof_error (line, "Internal kernel-bridge invariant failed."))
+  raise (Proof_error (line, "Internal named-kernel invariant failed."))
 
-let verify_user_transition line command kernel_state rest generated
-    before_environment generated_environment =
-  let expected =
-    List.map (source_goal generated_environment) generated @
-    List.map source_goal_canonical rest
-  in
-  ignore before_environment;
-  Verified.checked_step command kernel_state ~expected
-  |> accept_kernel_result line
+let kernel_rule_run line axioms rules state =
+  Extracted.rule_run ~axioms rules state
+  |> accept_kernel_result line "rule"
 
-let verify_rule_transition_with_environments line axioms rules kernel_state
-    rest generated before_environment =
-  let expected =
-    List.map
-      (fun (goal, environment) -> source_goal environment goal)
-      generated
-    @ List.map source_goal_canonical rest
-  in
-  ignore before_environment;
-  Verified.checked_rule_run ~axioms rules kernel_state ~expected
-  |> accept_kernel_result line
-
-let verify_rule_transition line axioms rules kernel_state rest generated
-    before_environment generated_environment =
-  verify_rule_transition_with_environments line axioms rules kernel_state rest
-    (List.map (fun goal -> (goal, generated_environment)) generated)
-    before_environment
-
-let context_index name context =
-  let rec loop index = function
-    | [] -> None
-    | (label, _) :: _ when label = name -> Some index
-    | _ :: rest -> loop (index + 1) rest
-  in
-  loop 0 context
+let kernel_certificate_run line steps state =
+  Extracted.run_certificate steps state
+  |> accept_kernel_result line "rule program"
 
 let lookup_fact name context =
   match List.assoc_opt name context with
@@ -418,627 +410,91 @@ let apply_fact fact goal =
   | None -> Error "The conclusion of this fact does not match the current goal."
   | Some sub ->
       let premises = List.map (instantiate_formula sub) premises in
-      Ok (List.map
-        (fun target ->
-           { context = goal.context;
-             target;
-             environment = goal.environment;
-           })
-        premises, sub)
+      Ok (premises, sub)
 
-let add_step state text goals kernel_state =
+let add_step state text kernel_state =
   { state with
     kernel_state;
-    display_goals = goals;
+    final_certificate = None;
     steps = state.steps @ [text];
   }
 
-let apply_user_transition line_no state command text generated rest
-    before_environment generated_environment =
-  let generated =
-    List.map
-      (fun goal -> { goal with environment = generated_environment })
-      generated
-  in
+let apply_rule_transition line_no state axioms rules text =
   let kernel_state =
-    verify_user_transition line_no command state.kernel_state
-      rest generated before_environment generated_environment
+    kernel_rule_run line_no axioms rules state.kernel_state
   in
-  add_step state text (generated @ rest) kernel_state
+  add_step state text kernel_state
 
-let apply_rule_transition line_no state axioms rules text generated rest
-    before_environment generated_environment =
-  let generated =
-    List.map
-      (fun goal -> { goal with environment = generated_environment })
-      generated
-  in
+let apply_primitive_rules line_no state rules text =
+  apply_rule_transition line_no state [] rules text
+
+let checked_step ?(axioms = []) rule =
+  Extracted.certificate_step ~axioms rule
+
+let apply_certificate_program line_no state program text =
   let kernel_state =
-    verify_rule_transition line_no axioms rules state.kernel_state
-      rest generated before_environment generated_environment
+    kernel_certificate_run line_no program state.kernel_state
   in
-  add_step state text (generated @ rest) kernel_state
-
-let words text =
-  text
-  |> String.split_on_char ' '
-  |> List.map trim
-  |> List.filter (fun word -> word <> "")
+  add_step state text kernel_state
 
 let parse_formula_at line_no definitions text =
   try parse_formula (trim text) |> unfold line_no definitions
   with Parse_error (_, message) -> raise (Proof_error (line_no, message))
 
-let split_rule_formula line_no argument =
-  match String.index_opt argument ':' with
-  | None ->
-      raise (Proof_error (line_no,
-        "This rule requires a formula after :."))
-  | Some index ->
-      let parameters = trim (String.sub argument 0 index) in
-      let formula =
-        trim (String.sub argument (index + 1)
-          (String.length argument - index - 1))
-      in
-      if formula = "" then
-        raise (Proof_error (line_no, "Expected a formula after :."));
-      (words parameters, formula)
-
-let extend_environment environment formula =
-  StringSet.fold (fun name result -> add_free_name result name)
-    (free_vars formula) environment
-
-let body_db line_no environment binder body =
-  match db_formula [] environment (Forall (binder, body)) with
-  | Verified.All primitive_body -> primitive_body
-  | _ -> verified_error line_no
-
-let separation_instance source element predicate =
-  let used =
-    all_vars predicate
-    |> StringSet.add source
-    |> StringSet.add element
-  in
-  let subset = fresh_name "b" used in
-  Exists (subset,
-    Forall (element,
-      Iff (Mem (element, subset),
-        And (Mem (element, source), predicate))))
-
-let replacement_instance source input output predicate =
-  let used =
-    all_vars predicate
-    |> StringSet.add source
-    |> StringSet.add input
-    |> StringSet.add output
-  in
-  let alternate = fresh_name "z" used in
-  let image_set = fresh_name "b" (StringSet.add alternate used) in
-  let alternate_predicate = subst output alternate predicate in
-  let functional =
-    Forall (input,
-      Exists (output,
-        And (predicate,
-          Forall (alternate,
-            Imp (alternate_predicate, Eq (alternate, output))))))
-  in
-  let image =
-    Exists (image_set,
-      Forall (output,
-        Iff (Mem (output, image_set),
-          Exists (input,
-            And (Mem (input, source), predicate)))))
-  in
-  Imp (functional, image)
-
 let fixed_axiom_kind = function
-  | "empty_set" -> Some Verified.EmptySet
-  | "extensionality" -> Some Verified.Extensionality
-  | "pairing" -> Some Verified.Pairing
-  | "union" -> Some Verified.Union
-  | "power_set" -> Some Verified.PowerSet
-  | "foundation" -> Some Verified.Foundation
-  | "infinity" -> Some Verified.Infinity
-  | "choice" -> Some Verified.Choice
+  | "empty_set" -> Some Extracted.EmptySet
+  | "extensionality" -> Some Extracted.Extensionality
+  | "pairing" -> Some Extracted.Pairing
+  | "union" -> Some Extracted.Union
+  | "power_set" -> Some Extracted.PowerSet
+  | "foundation" -> Some Extracted.Foundation
+  | "infinity" -> Some Extracted.Infinity
+  | "choice" -> Some Extracted.Choice
   | _ -> None
 
-let local_predicate_db environment binders predicate =
-  let parameters =
-    List.filter (fun name -> not (List.mem name binders)) environment
-  in
-  db_formula binders parameters predicate
-
 let execute_rule line_no state argument =
-  match state.display_goals with
-  | [] -> raise (Proof_error (line_no, "The proof is already complete."))
-  | goal :: rest ->
-      let rule_name, rule_argument = split_first_word argument in
-      let rule_name = String.lowercase_ascii rule_name in
-      let finish ?(axioms = []) primitive generated
-          before_environment generated_environment description =
-        apply_rule_transition line_no state axioms [primitive]
-          ("rule " ^ description) generated rest
-          before_environment generated_environment
-      in
-      begin match rule_name with
-      | "axiom" ->
-          let axiom, rules =
-            if trim rule_argument = "" then
-              let matching =
-                List.find_opt
-                  (fun axiom ->
-                     match axiom.parsed with
-                     | Some formula -> alpha_equal formula goal.target
-                     | None -> false)
-                  axioms
-              in
-              begin match matching with
-              | Some axiom ->
-                  begin match fixed_axiom_kind axiom.key with
-                  | Some kind ->
-                      (Verified.fixed_axiom kind, [Verified.RAxiom])
-                  | None -> verified_error line_no
-                  end
-              | None ->
-                  raise (Proof_error (line_no,
-                    "The current goal is not a registered axiom."))
-              end
-            else
-              let schema, schema_argument =
-                split_first_word rule_argument
-              in
-              let names, predicate =
-                split_schema_argument line_no state.definitions
-                  schema_argument
-              in
-              let instance, axiom, rules =
-                match String.lowercase_ascii schema, names with
-                | "separation", [source; element] ->
-                    let instance =
-                      separation_instance source element predicate
-                    in
-                    let environment =
-                      add_free_name (canonical_environment goal) source
-                    in
-                    let predicate_db =
-                      local_predicate_db environment
-                        [element; source] predicate
-                    in
-                    let full =
-                      Verified.separation_instance predicate_db
-                    in
-                    let body =
-                      match full with
-                      | Verified.All body -> body
-                      | _ -> verified_error line_no
-                    in
-                    let source_index =
-                      Option.get (list_index source 0 environment)
-                    in
-                    (instance,
-                     Verified.separation_axiom predicate_db,
-                     [Verified.RAllElim (body, source_index);
-                      Verified.RAxiom])
-                | "replacement", [source; input; output] ->
-                    let instance =
-                      replacement_instance source input output predicate
-                    in
-                    let environment =
-                      add_free_name (canonical_environment goal) source
-                    in
-                    let predicate_db =
-                      local_predicate_db environment
-                        [output; input] predicate
-                    in
-                    let full =
-                      Verified.replacement_instance predicate_db
-                    in
-                    let functional, image_body =
-                      match full with
-                      | Verified.Impl
-                          (functional, Verified.All image_body) ->
-                          (functional, image_body)
-                      | _ -> verified_error line_no
-                    in
-                    let source_index =
-                      Option.get (list_index source 0 environment)
-                    in
-                    (instance,
-                     Verified.replacement_axiom predicate_db,
-                     [Verified.RImplIntro;
-                      Verified.RAllElim (image_body, source_index);
-                      Verified.RImplElim functional;
-                      Verified.RAxiom;
-                      Verified.RHypothesis 0])
-                | "separation", _ ->
-                    raise (Proof_error (line_no,
-                      "Use: rule axiom separation source x : P."))
-                | "replacement", _ ->
-                    raise (Proof_error (line_no,
-                      "Use: rule axiom replacement source x y : P."))
-                | _ ->
-                    raise (Proof_error (line_no,
-                      "rule axiom accepts only separation or replacement here."))
-              in
-              if not (alpha_equal instance goal.target) then
-                raise (Proof_error (line_no,
-                  "The requested schema instance does not match the current goal."));
-              (axiom, rules)
-          in
-          let environment = canonical_environment goal in
-          let kernel_state =
-            verify_rule_transition line_no [axiom] rules
-              state.kernel_state rest []
-              environment environment
-          in
-          add_step state "rule axiom" rest kernel_state
-      | "hypothesis" ->
-          let name = trim rule_argument in
-          begin match context_index name goal.context with
-          | None ->
-              raise (Proof_error (line_no,
-                "Hypothesis not found: " ^ name))
-          | Some index ->
-              let environment = canonical_environment goal in
-              finish (Verified.RHypothesis index) []
-                environment environment ("hypothesis " ^ name)
-          end
-      | "falsum_elim" ->
-          if trim rule_argument <> "" then
-            raise (Proof_error (line_no,
-              "rule falsum_elim takes no arguments."));
-          let next = { goal with target = Bottom } in
-          let environment = canonical_environment goal in
-          finish Verified.RFalsumElim [next]
-            environment environment "falsum_elim"
-      | "impl_intro" ->
-          begin match goal.target with
-          | Imp (premise, target) ->
-              let name = trim rule_argument in
-              if name = "" then
-                raise (Proof_error (line_no,
-                  "Use rule impl_intro H with a hypothesis name."));
-              if List.mem_assoc name goal.context then
-                raise (Proof_error (line_no,
-                  "A hypothesis with this name already exists."));
-              let next = {
-                context = (name, premise) :: goal.context;
-                target;
-                environment = goal.environment;
-              } in
-              let environment = canonical_environment goal in
-              finish Verified.RImplIntro [next]
-                environment environment ("impl_intro " ^ name)
-          | _ ->
-              raise (Proof_error (line_no,
-                "rule impl_intro requires an implication goal."))
-          end
-      | "impl_elim" ->
-          let _, formula_text = split_rule_formula line_no rule_argument in
-          let premise =
-            parse_formula_at line_no state.definitions formula_text
-          in
-          let generated = [
-            { goal with target = Imp (premise, goal.target) };
-            { goal with target = premise };
-          ] in
-          let environment =
-            extend_environment (canonical_environment goal) premise
-          in
-          let premise_db = db_formula [] environment premise in
-          finish (Verified.RImplElim premise_db) generated
-            environment environment "impl_elim"
-      | "conj_intro" ->
-          begin match goal.target with
-          | And (left, right) ->
-              let environment = canonical_environment goal in
-              finish Verified.RConjIntro
-                [{ goal with target = left }; { goal with target = right }]
-                environment environment "conj_intro"
-          | _ ->
-              raise (Proof_error (line_no,
-                "rule conj_intro requires a conjunction goal."))
-          end
-      | "conj_elim_l" ->
-          let _, formula_text = split_rule_formula line_no rule_argument in
-          let right =
-            parse_formula_at line_no state.definitions formula_text
-          in
-          let next = { goal with target = And (goal.target, right) } in
-          let environment =
-            extend_environment (canonical_environment goal) right
-          in
-          finish (Verified.RConjElimL (db_formula [] environment right))
-            [next] environment environment "conj_elim_l"
-      | "conj_elim_r" ->
-          let _, formula_text = split_rule_formula line_no rule_argument in
-          let left =
-            parse_formula_at line_no state.definitions formula_text
-          in
-          let next = { goal with target = And (left, goal.target) } in
-          let environment =
-            extend_environment (canonical_environment goal) left
-          in
-          finish (Verified.RConjElimR (db_formula [] environment left))
-            [next] environment environment "conj_elim_r"
-      | "disj_intro_l" ->
-          begin match goal.target with
-          | Or (left, _) ->
-              let environment = canonical_environment goal in
-              finish Verified.RDisjIntroL [{ goal with target = left }]
-                environment environment "disj_intro_l"
-          | _ ->
-              raise (Proof_error (line_no,
-                "rule disj_intro_l requires a disjunction goal."))
-          end
-      | "disj_intro_r" ->
-          begin match goal.target with
-          | Or (_, right) ->
-              let environment = canonical_environment goal in
-              finish Verified.RDisjIntroR [{ goal with target = right }]
-                environment environment "disj_intro_r"
-          | _ ->
-              raise (Proof_error (line_no,
-                "rule disj_intro_r requires a disjunction goal."))
-          end
-      | "disj_elim" ->
-          let names, formulas = split_rule_formula line_no rule_argument in
-          let left_name, right_name =
-            match names with
-            | [left_name; right_name] -> (left_name, right_name)
-            | _ ->
-                raise (Proof_error (line_no,
-                  "Use: rule disj_elim HL HR : P ; Q."))
-          in
-          let separator =
-            match String.index_opt formulas ';' with
-            | Some index -> index
-            | None ->
-                raise (Proof_error (line_no,
-                  "Separate the two formulas with ;."))
-          in
-          let left =
-            String.sub formulas 0 separator
-            |> parse_formula_at line_no state.definitions
-          in
-          let right =
-            String.sub formulas (separator + 1)
-              (String.length formulas - separator - 1)
-            |> parse_formula_at line_no state.definitions
-          in
-          if List.mem_assoc left_name goal.context
-             || List.mem_assoc right_name goal.context then
-            raise (Proof_error (line_no,
-              "Branch hypotheses must use fresh names."));
-          let generated = [
-            { goal with target = Or (left, right) };
-            { context = (left_name, left) :: goal.context;
-              target = goal.target;
-              environment = goal.environment };
-            { context = (right_name, right) :: goal.context;
-              target = goal.target;
-              environment = goal.environment };
-          ] in
-          let environment =
-            canonical_environment goal
-            |> fun result -> extend_environment result left
-            |> fun result -> extend_environment result right
-          in
-          finish
-            (Verified.RDisjElim
-              (db_formula [] environment left,
-               db_formula [] environment right))
-            generated environment environment "disj_elim"
-      | "all_intro" ->
-          begin match goal.target with
-          | Forall (bound, body) ->
-              let chosen =
-                let name = trim rule_argument in
-                if name = "" then bound else name
-              in
-              if StringSet.mem chosen (context_free_vars goal.context) then
-                raise (Proof_error (line_no,
-                  "The introduced variable occurs free in a hypothesis."));
-              let next = { goal with target = subst bound chosen body } in
-              let before_environment = canonical_environment goal in
-              let generated_environment =
-                chosen :: before_environment
-              in
-              finish Verified.RAllIntro [next]
-                before_environment generated_environment
-                ("all_intro " ^ chosen)
-          | _ ->
-              raise (Proof_error (line_no,
-                "rule all_intro requires a universally quantified goal."))
-          end
-      | "all_elim" ->
-          let parameters, formula_text =
-            split_rule_formula line_no rule_argument
-          in
-          let term, binder =
-            match parameters with
-            | [term; binder] -> (term, binder)
-            | _ ->
-                raise (Proof_error (line_no,
-                  "Use: rule all_elim term x : P."))
-          in
-          let body =
-            parse_formula_at line_no state.definitions formula_text
-          in
-          let universal = Forall (binder, body) in
-          let environment =
-            extend_environment (canonical_environment goal) universal
-            |> fun result -> add_free_name result term
-          in
-          let term_index =
-            Option.get (list_index term 0 environment)
-          in
-          let primitive_body = body_db line_no environment binder body in
-          finish (Verified.RAllElim (primitive_body, term_index))
-            [{ goal with target = universal }]
-            environment environment "all_elim"
-      | "ex_intro" ->
-          begin match goal.target with
-          | Exists (bound, body) ->
-              let term = trim rule_argument in
-              if term = "" then
-                raise (Proof_error (line_no,
-                  "Use rule ex_intro term to provide a witness."));
-              let environment =
-                add_free_name (canonical_environment goal) term
-              in
-              let term_index =
-                Option.get (list_index term 0 environment)
-              in
-              finish (Verified.RExIntro term_index)
-                [{ goal with target = subst bound term body }]
-                environment environment ("ex_intro " ^ term)
-          | _ ->
-              raise (Proof_error (line_no,
-                "rule ex_intro requires an existential goal."))
-          end
-      | "ex_elim" ->
-          let parameters, formula_text =
-            split_rule_formula line_no rule_argument
-          in
-          let witness, hypothesis =
-            match parameters with
-            | [witness; hypothesis] -> (witness, hypothesis)
-            | _ ->
-                raise (Proof_error (line_no,
-                  "Use: rule ex_elim x H : P."))
-          in
-          let forbidden =
-            StringSet.union (context_free_vars goal.context)
-              (free_vars goal.target)
-          in
-          if StringSet.mem witness forbidden then
-            raise (Proof_error (line_no,
-              "Existential elimination requires a fresh witness variable."));
-          if List.mem_assoc hypothesis goal.context then
-            raise (Proof_error (line_no,
-              "Existential elimination requires a fresh hypothesis name."));
-          let body =
-            parse_formula_at line_no state.definitions formula_text
-          in
-          let existential = Exists (witness, body) in
-          let first = { goal with target = existential } in
-          let second = {
-            context = (hypothesis, body) :: goal.context;
-            target = goal.target;
-            environment = goal.environment;
-          } in
-          let before_environment =
-            extend_environment (canonical_environment goal) existential
-          in
-          let generated_environment =
-            witness :: before_environment
-          in
-          let first = {
-            first with environment = before_environment;
-          } in
-          let second = {
-            second with environment = generated_environment;
-          } in
-          let primitive_body =
-            body_db line_no before_environment witness body
-          in
-          let kernel_state =
-            verify_rule_transition_with_environments line_no
-              [] [Verified.RExElim primitive_body]
-              state.kernel_state rest
-              [(first, before_environment);
-               (second, generated_environment)]
-              before_environment
-          in
-          add_step state "rule ex_elim"
-            (first :: second :: rest) kernel_state
-      | "equal_refl" ->
-          begin match goal.target with
-          | Eq (left, right) when left = right ->
-              let environment = canonical_environment goal in
-              finish Verified.REqualRefl []
-                environment environment "equal_refl"
-          | _ ->
-              raise (Proof_error (line_no,
-                "rule equal_refl requires a goal of the form t = t."))
-          end
-      | "equal_elim" ->
-          let parameters, formula_text =
-            split_rule_formula line_no rule_argument
-          in
-          let left, right, binder =
-            match parameters with
-            | [left; right; binder] -> (left, right, binder)
-            | _ ->
-                raise (Proof_error (line_no,
-                  "Use: rule equal_elim s t x : P."))
-          in
-          let predicate =
-            parse_formula_at line_no state.definitions formula_text
-          in
-          let quantified = Forall (binder, predicate) in
-          let environment =
-            extend_environment (canonical_environment goal) quantified
-            |> fun result -> add_free_name result left
-            |> fun result -> add_free_name result right
-          in
-          let left_index =
-            Option.get (list_index left 0 environment)
-          in
-          let right_index =
-            Option.get (list_index right 0 environment)
-          in
-          let primitive_predicate =
-            body_db line_no environment binder predicate
-          in
-          let generated = [
-            { goal with target = Eq (left, right) };
-            { goal with target = subst binder left predicate };
-          ] in
-          finish
-            (Verified.REqualElim
-              (primitive_predicate, left_index, right_index))
-            generated environment environment "equal_elim"
-      | "cut" ->
-          let names, formula_text =
-            split_rule_formula line_no rule_argument
-          in
-          let hypothesis =
-            match names with
-            | [name] -> name
-            | _ ->
-                raise (Proof_error (line_no,
-                  "Use: rule cut H : P."))
-          in
-          if List.mem_assoc hypothesis goal.context then
-            raise (Proof_error (line_no,
-              "Cut requires a fresh hypothesis name."));
-          let lemma =
-            parse_formula_at line_no state.definitions formula_text
-          in
-          let generated = [
-            { goal with target = lemma };
-            { context = (hypothesis, lemma) :: goal.context;
-              target = goal.target;
-              environment = goal.environment };
-          ] in
-          let environment =
-            extend_environment (canonical_environment goal) lemma
-          in
-          finish (Verified.RCut (db_formula [] environment lemma))
-            generated environment environment "cut"
-      | "" ->
-          raise (Proof_error (line_no, "Expected a rule name."))
-      | unknown ->
-          raise (Proof_error (line_no,
-            "Unknown inference rule: " ^ unknown))
-      end
+  let parse_formula text =
+    parse_formula_at line_no state.definitions text
+  in
+  let request =
+    try Rule_parser.parse ~parse_formula argument with
+    | Rule_parser.Error message ->
+        raise (Proof_error (line_no, message))
+  in
+  let kernel_state =
+    Extracted.execute_rule request state.kernel_state
+    |> accept_kernel_result line_no "rule"
+  in
+  add_step state (Rule_parser.description argument) kernel_state
+
+let specialize_rules line_no fact terms =
+  let rec build current remaining rules =
+    match remaining, current with
+    | [], _ -> (current, rules)
+    | term :: rest, Forall (binder, body) ->
+        let rule =
+          Extracted.NRAllElim (term, kernel_formula current)
+        in
+        build (subst binder term body) rest (rule :: rules)
+    | _ ->
+        raise (Proof_error (line_no,
+          "Too many terms were supplied for universal specialization."))
+  in
+  build fact terms []
+
+let close_fact line_no name context =
+  if List.mem_assoc name context then
+    (Extracted.NRHypothesis name, [])
+  else
+    match fixed_axiom_kind (String.lowercase_ascii name) with
+    | Some kind ->
+        (Extracted.NRAxiom, [Extracted.fixed_axiom kind])
+    | None -> verified_error line_no
 
 let execute_tactic line_no state line =
-  match state.display_goals with
+  match materialize_goals line_no state with
   | [] -> raise (Proof_error (line_no, "The proof is already complete."))
-  | goal :: rest ->
+  | goal :: _ ->
       let command, argument = split_first_word line in
       let command = String.lowercase_ascii command in
       begin match command with
@@ -1049,58 +505,16 @@ let execute_tactic line_no state line =
           in
           begin match names with
           | [fact_name; source; element] ->
-              if List.mem_assoc fact_name goal.context then
-                raise (Proof_error (line_no,
-                  "A fact with this name already exists."));
               if source = element then
                 raise (Proof_error (line_no,
                   "The source set and element variable must have different names."));
-              let used =
-                all_vars predicate
-                |> StringSet.add source
-                |> StringSet.add element
-              in
-              let subset = fresh_name "b" used in
-              let instance =
-                Exists (subset,
-                  Forall (element,
-                    Iff (Mem (element, subset),
-                      And (Mem (element, source), predicate))))
-              in
-              let next = { goal with context = (fact_name, instance) :: goal.context } in
-              let environment =
-                StringSet.fold (fun name env -> add_free_name env name)
-                  (free_vars instance)
-                  (canonical_environment goal)
-              in
-              let next = { next with environment } in
-              let instance_db = db_formula [] environment instance in
-              let predicate_db =
-                local_predicate_db environment
-                  [element; source] predicate
-              in
-              let full =
-                Verified.separation_instance predicate_db
-              in
-              let body =
-                match full with
-                | Verified.All body -> body
-                | _ -> verified_error line_no
-              in
-              let source_index =
-                Option.get (list_index source 0 environment)
-              in
               let kernel_state =
-                verify_rule_transition line_no
-                  [Verified.separation_axiom predicate_db]
-                  [Verified.RCut instance_db;
-                   Verified.RAllElim (body, source_index);
-                   Verified.RAxiom]
-                  state.kernel_state rest [next]
-                  environment environment
+                Extracted.separation_tactic_step
+                  ~fact:fact_name ~source ~element
+                  (kernel_formula predicate) state.kernel_state
+                |> accept_kernel_result line_no "separation tactic"
               in
-              add_step state ("separation " ^ fact_name)
-                (next :: rest) kernel_state
+              add_step state ("separation " ^ fact_name) kernel_state
           | _ ->
               raise (Proof_error (line_no,
                 "Use: separation S source x : P."))
@@ -1111,138 +525,50 @@ let execute_tactic line_no state line =
           in
           begin match names with
           | [fact_name; source; input; output] ->
-              if List.mem_assoc fact_name goal.context then
-                raise (Proof_error (line_no,
-                  "A fact with this name already exists."));
               if source = input || input = output || source = output then
                 raise (Proof_error (line_no,
                   "The source, input, and output variables must have distinct names."));
-              let used =
-                all_vars predicate
-                |> StringSet.add source
-                |> StringSet.add input
-                |> StringSet.add output
-              in
-              let alternate = fresh_name "z" used in
-              let image_set = fresh_name "b" (StringSet.add alternate used) in
-              let alternate_predicate = subst output alternate predicate in
-              let functional =
-                Forall (input,
-                  Exists (output,
-                    And (predicate,
-                      Forall (alternate,
-                        Imp (alternate_predicate, Eq (alternate, output))))))
-              in
-              let image =
-                Exists (image_set,
-                  Forall (output,
-                    Iff (Mem (output, image_set),
-                      Exists (input,
-                        And (Mem (input, source), predicate)))))
-              in
-              let instance = Imp (functional, image) in
-              let next = { goal with context = (fact_name, instance) :: goal.context } in
-              let environment =
-                StringSet.fold (fun name env -> add_free_name env name)
-                  (free_vars instance)
-                  (canonical_environment goal)
-              in
-              let next = { next with environment } in
-              let instance_db = db_formula [] environment instance in
-              let predicate_db =
-                local_predicate_db environment
-                  [output; input] predicate
-              in
-              let full =
-                Verified.replacement_instance predicate_db
-              in
-              let functional_db, image_body =
-                match full with
-                | Verified.Impl
-                    (functional, Verified.All image_body) ->
-                    (functional, image_body)
-                | _ -> verified_error line_no
-              in
-              let source_index =
-                Option.get (list_index source 0 environment)
-              in
               let kernel_state =
-                verify_rule_transition line_no
-                  [Verified.replacement_axiom predicate_db]
-                  [Verified.RCut instance_db;
-                   Verified.RImplIntro;
-                   Verified.RAllElim (image_body, source_index);
-                   Verified.RImplElim functional_db;
-                   Verified.RAxiom;
-                   Verified.RHypothesis 0]
-                  state.kernel_state rest [next]
-                  environment environment
+                Extracted.replacement_tactic_step
+                  ~fact:fact_name ~source ~input ~output
+                  (kernel_formula predicate) state.kernel_state
+                |> accept_kernel_result line_no "replacement tactic"
               in
-              add_step state ("replacement " ^ fact_name)
-                (next :: rest) kernel_state
+              add_step state ("replacement " ^ fact_name) kernel_state
           | _ ->
               raise (Proof_error (line_no,
                 "Use: replacement R source x y : P."))
           end
       | "intro" ->
           begin match goal.target with
-          | Imp (premise, target) ->
+          | Imp _ | Not _ ->
               if argument = "" then
                 raise (Proof_error (line_no, "Expected a hypothesis name."));
-              if List.mem_assoc argument goal.context then
-                raise (Proof_error (line_no,
-                  "A hypothesis with this name already exists."));
-              let next = {
-                context = (argument, premise) :: goal.context;
-                target;
-                environment = goal.environment;
-              } in
-              let environment = canonical_environment goal in
-              apply_user_transition line_no state Verified.TacIntro
-                ("intro " ^ argument) [next] rest
-                environment environment
-          | Forall (x, body) ->
+              apply_primitive_rules line_no state
+                [Extracted.NRImplIntro argument]
+                ("intro " ^ argument)
+          | Forall (x, _) ->
               let chosen = if argument = "" then x else argument in
               if StringSet.mem chosen (context_free_vars goal.context) then
                 raise (Proof_error (line_no,
                   "The introduced variable occurs free in a hypothesis."));
-              let next = { goal with target = subst x chosen body } in
-              let before_environment = canonical_environment goal in
-              let generated_environment = chosen :: before_environment in
-              apply_user_transition line_no state Verified.TacIntro
-                ("intro " ^ chosen) [next] rest
-                before_environment generated_environment
-          | Not premise ->
-              if argument = "" then
-                raise (Proof_error (line_no, "Expected a hypothesis name."));
-              if List.mem_assoc argument goal.context then
-                raise (Proof_error (line_no,
-                  "A hypothesis with this name already exists."));
-              let next = {
-                context = (argument, premise) :: goal.context;
-                target = Bottom;
-                environment = goal.environment;
-              } in
-              let environment = canonical_environment goal in
-              apply_user_transition line_no state Verified.TacIntro
-                ("intro " ^ argument) [next] rest
-                environment environment
+              apply_primitive_rules line_no state
+                [Extracted.NRAllIntro chosen]
+                ("intro " ^ chosen)
           | _ ->
               raise (Proof_error (line_no,
                 "intro requires an implication, negation, or universal goal."))
           end
       | "assumption" ->
-          let rec find index = function
+          let rec find = function
             | [] -> None
-            | (_, f) :: _ when alpha_equal f goal.target -> Some index
-            | _ :: tail -> find (index + 1) tail
+            | (name, f) :: _ when alpha_equal f goal.target -> Some name
+            | _ :: tail -> find tail
           in
-          begin match find 0 goal.context with
-          | Some index ->
-              let environment = canonical_environment goal in
-              apply_user_transition line_no state
-                (Verified.TacExact index) "assumption" [] rest
-                environment environment
+          begin match find goal.context with
+          | Some name ->
+              apply_primitive_rules line_no state
+                [Extracted.NRHypothesis name] "assumption"
           | None ->
               raise (Proof_error (line_no,
                 "No hypothesis matches the current goal."))
@@ -1253,25 +579,21 @@ let execute_tactic line_no state line =
               raise (Proof_error (line_no,
                 "Fact not found: " ^ argument))
           | Some fact when alpha_equal fact goal.target ->
-              let environment = canonical_environment goal in
-              let kernel_state =
-                match context_index argument goal.context with
-              | Some index ->
-                  verify_user_transition line_no (Verified.TacExact index)
-                    state.kernel_state rest []
-                    environment environment
-              | None ->
+              let axioms, rule =
+                if List.mem_assoc argument goal.context then
+                  ([], Extracted.NRHypothesis argument)
+                else
                   let axiom =
                     match fixed_axiom_kind
                       (String.lowercase_ascii argument) with
-                    | Some kind -> Verified.fixed_axiom kind
+                    | Some kind -> Extracted.fixed_axiom kind
                     | None -> verified_error line_no
                   in
-                  verify_rule_transition line_no [axiom]
-                    [Verified.RAxiom] state.kernel_state rest []
-                    environment environment
+                  ([axiom], Extracted.NRAxiom)
               in
-              add_step state ("exact " ^ argument) rest kernel_state
+              apply_certificate_program line_no state
+                [checked_step ~axioms rule]
+                ("exact " ^ argument)
           | Some _ ->
               raise (Proof_error (line_no,
                 "The type of " ^ argument ^ " does not match the current goal."))
@@ -1284,7 +606,7 @@ let execute_tactic line_no state line =
           | Some fact ->
               begin match apply_fact fact goal with
               | Error message -> raise (Proof_error (line_no, message))
-              | Ok (new_goals, substitutions) ->
+              | Ok (premises, substitutions) ->
                   let rec forall_names names = function
                     | Forall (name, body) -> forall_names (name :: names) body
                     | body -> (List.rev names, body)
@@ -1297,57 +619,24 @@ let execute_tactic line_no state line =
                            ~default:binder)
                       binders
                   in
-                  let environment =
-                    List.fold_left add_free_name
-                      (canonical_environment goal) terms
-                  in
-                  let term_indices =
-                    List.map
-                      (fun term ->
-                         match list_index term 0 environment with
-                         | Some index -> index
-                         | None -> verified_error line_no)
-                      terms
-                  in
-                  let original_fact_db = db_formula [] environment fact in
-                  let rec specialization_plan current indices commands =
-                    match indices, current with
-                    | [], _ -> (current, commands)
-                    | term_index :: tail, Verified.All body ->
-                        specialization_plan
-                          (Verified.instantiate term_index body)
-                          tail
-                          (Verified.RAllElim (body, term_index) :: commands)
-                    | _ -> verified_error line_no
-                  in
                   let _, all_commands =
-                    specialization_plan original_fact_db term_indices []
+                    specialize_rules line_no fact terms
                   in
                   let implication_commands =
-                    List.rev new_goals
+                    List.rev premises
                     |> List.map (fun premise ->
-                         Verified.RImplElim
-                           (db_formula [] environment premise.target))
+                         Extracted.NRImplElim (kernel_formula premise))
                   in
                   let close_command, axioms =
-                    match context_index argument goal.context with
-                    | Some index ->
-                        (Verified.RHypothesis index, [])
-                    | None ->
-                        let axiom =
-                          match fixed_axiom_kind
-                            (String.lowercase_ascii argument) with
-                          | Some kind -> Verified.fixed_axiom kind
-                          | None -> verified_error line_no
-                        in
-                        (Verified.RAxiom, [axiom])
+                    close_fact line_no argument goal.context
                   in
-                  let commands =
-                    implication_commands @ all_commands @ [close_command]
+                  let program =
+                    List.map checked_step
+                      (implication_commands @ all_commands)
+                    @ [checked_step ~axioms close_command]
                   in
-                  apply_rule_transition line_no state axioms commands
-                    ("apply " ^ argument) new_goals rest
-                    environment environment
+                  apply_certificate_program line_no state program
+                    ("apply " ^ argument)
               end
           end
       | "specialize" ->
@@ -1379,68 +668,23 @@ let execute_tactic line_no state line =
                     raise (Proof_error (line_no,
                       "Universally quantified fact not found: " ^ source))
               in
-              let instantiated =
-                List.fold_left
-                  (fun current term ->
-                     match current with
-                     | Forall (bound, body) -> subst bound term body
-                     | _ ->
-                         raise (Proof_error (line_no,
-                           "Too many terms were supplied for universal specialization.")))
-                  fact terms
-              in
-              let next = {
-                goal with
-                context = (new_name, instantiated) :: goal.context;
-              } in
-              let environment =
-                List.fold_left add_free_name
-                  (canonical_environment goal) terms
-              in
-              let term_indices =
-                List.map
-                  (fun term ->
-                     match list_index term 0 environment with
-                     | Some index -> index
-                     | None -> verified_error line_no)
-                  terms
-              in
-              let original_fact_db = db_formula [] environment fact in
-              let rec specialization_plan current indices commands =
-                match indices, current with
-                | [], _ -> (current, commands)
-                | term_index :: tail, Verified.All body ->
-                    specialization_plan
-                      (Verified.instantiate term_index body)
-                      tail
-                      (Verified.RAllElim (body, term_index) :: commands)
-                | _ ->
-                    raise (Proof_error (line_no,
-                      "Too many terms were supplied for universal specialization."))
-              in
-              let instantiated_db, all_commands =
-                specialization_plan original_fact_db term_indices []
+              let instantiated, all_commands =
+                specialize_rules line_no fact terms
               in
               let close_command, axioms =
-                match context_index source goal.context with
-                | Some index ->
-                    (Verified.RHypothesis index, [])
-                | None ->
-                    let axiom =
-                      match fixed_axiom_kind
-                        (String.lowercase_ascii source) with
-                      | Some kind -> Verified.fixed_axiom kind
-                      | None -> verified_error line_no
-                    in
-                    (Verified.RAxiom, [axiom])
+                close_fact line_no source goal.context
               in
-              let commands =
-                Verified.RCut instantiated_db ::
-                all_commands @ [close_command]
+              let prefix =
+                Extracted.NRCut
+                  (new_name, kernel_formula instantiated) ::
+                all_commands
               in
-              apply_rule_transition line_no state axioms commands
+              let program =
+                List.map checked_step prefix
+                @ [checked_step ~axioms close_command]
+              in
+              apply_certificate_program line_no state program
                 ("specialize " ^ source ^ " as " ^ new_name)
-                [next] rest environment environment
           | _ ->
               raise (Proof_error (line_no,
                 "Use specialize H term... as name with at least one term."))
@@ -1457,7 +701,7 @@ let execute_tactic line_no state line =
               | None ->
                   raise (Proof_error (line_no,
                     "Hypothesis not found: " ^ fact_name))
-              | Some (And (a, b)) ->
+              | Some (And (left_formula, right_formula)) ->
                   let left_name, right_name =
                     match names with
                     | [left_name; right_name] -> (left_name, right_name)
@@ -1469,16 +713,20 @@ let execute_tactic line_no state line =
                   if List.mem_assoc left_name goal.context || List.mem_assoc right_name goal.context then
                     raise (Proof_error (line_no,
                       "Case hypotheses must use fresh names."));
-                  let context = (right_name, b) :: (left_name, a) :: goal.context in
-                  let next = { goal with context } in
-                  let environment = canonical_environment goal in
-                  apply_user_transition line_no state
-                    (Verified.TacCases
-                      (Option.get
-                        (context_index fact_name goal.context)))
-                    ("cases " ^ fact_name) [next] rest
-                    environment environment
-              | Some (Iff (a, b)) ->
+                  apply_primitive_rules line_no state
+                    [ Extracted.NRCut
+                        (left_name, kernel_formula left_formula);
+                      Extracted.NRConjElimL
+                        (kernel_formula right_formula);
+                      Extracted.NRHypothesis fact_name;
+                      Extracted.NRCut
+                        (right_name, kernel_formula right_formula);
+                      Extracted.NRConjElimR
+                        (kernel_formula left_formula);
+                      Extracted.NRHypothesis fact_name
+                    ]
+                    ("cases " ^ fact_name)
+              | Some (Iff (left_formula, right_formula)) ->
                   let forward_name, backward_name =
                     match names with
                     | [forward_name; backward_name] -> (forward_name, backward_name)
@@ -1490,19 +738,22 @@ let execute_tactic line_no state line =
                   if List.mem_assoc forward_name goal.context || List.mem_assoc backward_name goal.context then
                     raise (Proof_error (line_no,
                       "Case hypotheses must use fresh names."));
-                  let context =
-                    (backward_name, Imp (b, a)) ::
-                    (forward_name, Imp (a, b)) :: goal.context
-                  in
-                  let next = { goal with context } in
-                  let environment = canonical_environment goal in
-                  apply_user_transition line_no state
-                    (Verified.TacCases
-                      (Option.get
-                        (context_index fact_name goal.context)))
-                    ("cases " ^ fact_name) [next] rest
-                    environment environment
-              | Some (Exists (bound, body)) ->
+                  let forward = Imp (left_formula, right_formula) in
+                  let backward = Imp (right_formula, left_formula) in
+                  apply_primitive_rules line_no state
+                    [ Extracted.NRCut
+                        (forward_name, kernel_formula forward);
+                      Extracted.NRConjElimL
+                        (kernel_formula backward);
+                      Extracted.NRHypothesis fact_name;
+                      Extracted.NRCut
+                        (backward_name, kernel_formula backward);
+                      Extracted.NRConjElimR
+                        (kernel_formula forward);
+                      Extracted.NRHypothesis fact_name
+                    ]
+                    ("cases " ^ fact_name)
+              | Some ((Exists _) as existential) ->
                   let witness, hypothesis =
                     match names with
                     | [witness; hypothesis] -> (witness, hypothesis)
@@ -1519,16 +770,12 @@ let execute_tactic line_no state line =
                   if List.mem_assoc hypothesis goal.context then
                     raise (Proof_error (line_no,
                       "The eliminated hypothesis must use a fresh name."));
-                  let context = (hypothesis, subst bound witness body) :: goal.context in
-                  let next = { goal with context } in
-                  let before_environment = canonical_environment goal in
-                  let generated_environment = witness :: before_environment in
-                  apply_user_transition line_no state
-                    (Verified.TacCases
-                      (Option.get
-                        (context_index fact_name goal.context)))
-                    ("cases " ^ fact_name) [next] rest
-                    before_environment generated_environment
+                  apply_primitive_rules line_no state
+                    [ Extracted.NRExElim
+                        (witness, hypothesis, kernel_formula existential);
+                      Extracted.NRHypothesis fact_name
+                    ]
+                    ("cases " ^ fact_name)
               | Some _ ->
                   raise (Proof_error (line_no,
                     "cases requires a conjunction, equivalence, or existential hypothesis."))
@@ -1540,52 +787,35 @@ let execute_tactic line_no state line =
       | "refl" ->
           begin match goal.target with
           | Eq (a, b) when a = b ->
-              let environment = canonical_environment goal in
-              apply_user_transition line_no state Verified.TacRefl
-                "refl" [] rest environment environment
+              apply_primitive_rules line_no state [Extracted.NREqualRefl]
+                "refl"
           | _ ->
               raise (Proof_error (line_no,
                 "refl requires a goal of the form t = t."))
           end
       | "split" | "constructor" ->
           begin match goal.target with
-          | And (a, b) ->
-              let generated =
-                [{ goal with target = a }; { goal with target = b }]
-              in
-              let environment = canonical_environment goal in
-              apply_user_transition line_no state Verified.TacSplit
-                "split" generated rest environment environment
-          | Iff (a, b) ->
-              let generated =
-                [{ goal with target = Imp (a, b) };
-                 { goal with target = Imp (b, a) }]
-              in
-              let environment = canonical_environment goal in
-              apply_user_transition line_no state Verified.TacSplit
-                "split" generated rest environment environment
+          | And _ | Iff _ ->
+              apply_primitive_rules line_no state [Extracted.NRConjIntro]
+                "split"
           | _ ->
               raise (Proof_error (line_no,
                 "split requires a conjunction or equivalence goal."))
           end
       | "left" ->
           begin match goal.target with
-          | Or (a, _) ->
-              let next = { goal with target = a } in
-              let environment = canonical_environment goal in
-              apply_user_transition line_no state Verified.TacLeft
-                "left" [next] rest environment environment
+          | Or _ ->
+              apply_primitive_rules line_no state [Extracted.NRDisjIntroL]
+                "left"
           | _ ->
               raise (Proof_error (line_no,
                 "left requires a disjunction goal."))
           end
       | "right" ->
           begin match goal.target with
-          | Or (_, b) ->
-              let next = { goal with target = b } in
-              let environment = canonical_environment goal in
-              apply_user_transition line_no state Verified.TacRight
-                "right" [next] rest environment environment
+          | Or _ ->
+              apply_primitive_rules line_no state [Extracted.NRDisjIntroR]
+                "right"
           | _ ->
               raise (Proof_error (line_no,
                 "right requires a disjunction goal."))
@@ -1595,43 +825,55 @@ let execute_tactic line_no state line =
             raise (Proof_error (line_no,
               "Expected a variable to use as the existential witness."));
           begin match goal.target with
-          | Exists (x, body) ->
-              let next = { goal with target = subst x argument body } in
-              let environment =
-                add_free_name (canonical_environment goal) argument
-              in
-              let term_index =
-                Option.get (list_index argument 0 environment)
-              in
-              apply_user_transition line_no state
-                (Verified.TacUse term_index) ("use " ^ argument)
-                [next] rest environment environment
+          | Exists _ ->
+              apply_primitive_rules line_no state
+                [Extracted.NRExIntro argument] ("use " ^ argument)
           | _ ->
               raise (Proof_error (line_no,
                 "use requires an existential goal."))
           end
       | "contradiction" ->
-          let has_bottom = List.exists (fun (_, f) -> alpha_equal f Bottom) goal.context in
-          let has_pair =
-            List.exists
-              (fun (_, f) ->
-                 List.exists
-                   (fun (_, g) ->
-                      match f, g with
-                      | Not a, b | b, Not a -> alpha_equal a b
-                      | _ -> false)
-                   goal.context)
+          let bottom =
+            List.find_opt
+              (fun (_, formula) -> alpha_equal formula Bottom)
               goal.context
           in
-          if has_bottom || has_pair then begin
-            let environment = canonical_environment goal in
-            apply_user_transition line_no state
-              Verified.TacContradiction "contradiction"
-              [] rest environment environment
+          begin match bottom with
+          | Some (name, _) ->
+              apply_primitive_rules line_no state
+                [ Extracted.NRFalsumElim;
+                  Extracted.NRHypothesis name
+                ]
+                "contradiction"
+          | None ->
+              let rec find_pair = function
+                | [] -> None
+                | (negative_name, Not premise) :: rest ->
+                    begin match
+                      List.find_opt
+                        (fun (_, formula) -> alpha_equal formula premise)
+                        goal.context
+                    with
+                    | Some (positive_name, _) ->
+                        Some (negative_name, positive_name, premise)
+                    | None -> find_pair rest
+                    end
+                | _ :: rest -> find_pair rest
+              in
+              begin match find_pair goal.context with
+              | Some (negative_name, positive_name, premise) ->
+                  apply_primitive_rules line_no state
+                    [ Extracted.NRFalsumElim;
+                      Extracted.NRImplElim (kernel_formula premise);
+                      Extracted.NRHypothesis negative_name;
+                      Extracted.NRHypothesis positive_name
+                    ]
+                    "contradiction"
+              | None ->
+                  raise (Proof_error (line_no,
+                    "No contradictory hypotheses were found."))
+              end
           end
-          else
-            raise (Proof_error (line_no,
-              "No contradictory hypotheses were found."))
       | _ ->
           raise (Proof_error (line_no, "Unknown tactic: " ^ command))
       end
@@ -1742,12 +984,16 @@ let analyze_script script =
   let definitions, proof = read_definitions [] meaningful in
   match proof with
   | [] when definitions <> [] ->
+      let kernel_state =
+        Extracted.start Extracted.NFalsum
+        |> accept_kernel_result 1 "initial goal"
+      in
       ({
         theorem_name = "";
         theorem = Bottom;
         definitions;
-        kernel_state = Verified.start Verified.Falsum;
-        display_goals = [];
+        kernel_state;
+        final_certificate = None;
         steps = [];
       }, false)
   | [] -> raise (Proof_error (1, "The proof script is empty."))
@@ -1770,33 +1016,32 @@ let analyze_script script =
         try parse_formula statement |> unfold header_line definitions
         with Parse_error (_, message) -> raise (Proof_error (header_line, message))
       in
-      let environment =
-        free_vars theorem |> StringSet.elements
+      let kernel_state =
+        Extracted.start (kernel_formula theorem)
+        |> accept_kernel_result header_line "initial goal"
       in
       let initial = {
         theorem_name = name;
         theorem;
         definitions;
-        kernel_state =
-          Verified.start (db_formula [] environment theorem);
-        display_goals = [{
-          context = [];
-          target = theorem;
-          environment;
-        }];
+        kernel_state;
+        final_certificate = None;
         steps = [];
       } in
       let rec run state = function
         | [] -> (state, false)
         | (line_no, line) :: rest when String.lowercase_ascii line = "qed" ->
-            if state.display_goals <> []
-               || not (Verified.solved state.kernel_state) then
+            if not (Extracted.solved state.kernel_state) then
               raise (Proof_error (line_no,
                 "qed cannot close a proof with unresolved goals."));
             if rest <> [] then
               raise (Proof_error (fst (List.hd rest),
                 "Unexpected input after qed."));
-            (state, true)
+            let certificate =
+              Extracted.finalize state.kernel_state
+              |> accept_kernel_result line_no "final certificate replay"
+            in
+            ({ state with final_certificate = Some certificate }, true)
         | (line_no, line) :: rest ->
             run (execute_tactic line_no state line) rest
       in
@@ -1805,8 +1050,17 @@ let analyze_script script =
 let check_script script =
   let state, _ = analyze_script script in
   if state.theorem_name = "" then state
-  else if state.display_goals = []
-          && Verified.solved state.kernel_state then state
+  else if Extracted.solved state.kernel_state then
+    begin match state.final_certificate with
+    | Some _ -> state
+    | None ->
+        let line = List.length (String.split_on_char '\n' script) in
+        let certificate =
+          Extracted.finalize state.kernel_state
+          |> accept_kernel_result line "final certificate replay"
+        in
+        { state with final_certificate = Some certificate }
+    end
   else
     let line = List.length (String.split_on_char '\n' script) in
     raise (Proof_error (line, "The proof has unresolved goals."))
@@ -1821,12 +1075,61 @@ type display_goal = {
 }
 
 let goals state =
-  List.map
-    (fun (goal : goal) ->
-       ({
-         context = goal.context;
-         target = goal.target;
-       } : display_goal))
-    state.display_goals
+  if state.theorem_name = "" then []
+  else
+    materialize_goals 1 state
+    |> List.map
+         (fun (goal : goal) ->
+            ({
+              context = goal.context;
+              target = goal.target;
+            } : display_goal))
 let step_count state = List.length state.steps
-let is_complete state = Verified.solved state.kernel_state
+let is_complete state = Extracted.solved state.kernel_state
+
+let display_kernel_formula formula =
+  formula
+  |> Kernel_syntax.of_kernel
+  |> formula_to_string
+
+let display_rule = function
+  | Extracted.NRAxiom -> "axiom"
+  | Extracted.NRHypothesis name -> "hypothesis " ^ name
+  | Extracted.NRFalsumElim -> "falsum_elim"
+  | Extracted.NRImplIntro name -> "impl_intro " ^ name
+  | Extracted.NRImplElim premise ->
+      "impl_elim : " ^ display_kernel_formula premise
+  | Extracted.NRConjIntro -> "conj_intro"
+  | Extracted.NRConjElimL right ->
+      "conj_elim_l : " ^ display_kernel_formula right
+  | Extracted.NRConjElimR left ->
+      "conj_elim_r : " ^ display_kernel_formula left
+  | Extracted.NRDisjIntroL -> "disj_intro_l"
+  | Extracted.NRDisjIntroR -> "disj_intro_r"
+  | Extracted.NRDisjElim (left, right, left_name, right_name) ->
+      Printf.sprintf "disj_elim %s %s : %s ; %s"
+        left_name right_name
+        (display_kernel_formula left)
+        (display_kernel_formula right)
+  | Extracted.NRAllIntro variable -> "all_intro " ^ variable
+  | Extracted.NRAllElim (term, universal) ->
+      Printf.sprintf "all_elim %s : %s"
+        term (display_kernel_formula universal)
+  | Extracted.NRExIntro term -> "ex_intro " ^ term
+  | Extracted.NRExElim (witness, hypothesis, existential) ->
+      Printf.sprintf "ex_elim %s %s : %s"
+        witness hypothesis (display_kernel_formula existential)
+  | Extracted.NREqualRefl -> "equal_refl"
+  | Extracted.NREqualElim (left, right, predicate) ->
+      Printf.sprintf "equal_elim %s %s : %s"
+        left right (display_kernel_formula predicate)
+  | Extracted.NRCut (hypothesis, lemma) ->
+      Printf.sprintf "cut %s : %s"
+        hypothesis (display_kernel_formula lemma)
+
+let certificate_rules state =
+  Option.map
+    (fun certificate ->
+       Extracted.certificate_rules certificate
+       |> List.map display_rule)
+    state.final_certificate

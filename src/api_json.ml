@@ -45,6 +45,12 @@ let definition definition =
 let definitions definitions =
   "[" ^ String.concat "," (List.map definition definitions) ^ "]"
 
+let certificate state =
+  match Proof_session.certificate_rules state with
+  | None -> "[]"
+  | Some rules ->
+      "[" ^ String.concat "," (List.map quote rules) ^ "]"
+
 let success state =
   if theorem_name state = "" then
     Printf.sprintf
@@ -53,11 +59,12 @@ let success state =
       (quote "Proposition definitions loaded.")
   else
     Printf.sprintf
-      {|{"ok":true,"definitionsOnly":false,"theorem":%s,"statement":%s,"definitions":%s,"steps":%d,"message":%s}|}
+      {|{"ok":true,"definitionsOnly":false,"theorem":%s,"statement":%s,"definitions":%s,"steps":%d,"certificate":%s,"message":%s}|}
       (quote (theorem_name state))
       (quote (Syntax.formula_to_string (theorem state)))
       (definitions (Proof_session.definitions state))
       (step_count state)
+      (certificate state)
       (quote "The proof was verified by the extracted kernel.")
 
 let context_entry (name, formula) =
@@ -95,7 +102,7 @@ let step state ~has_qed =
         "Enter a tactic for the current goal."
     in
     Printf.sprintf
-      {|{"ok":true,"definitionsOnly":false,"theorem":%s,"statement":%s,"definitions":%s,"steps":%d,"complete":%s,"qed":%s,"goals":[%s],"message":%s}|}
+      {|{"ok":true,"definitionsOnly":false,"theorem":%s,"statement":%s,"definitions":%s,"steps":%d,"complete":%s,"qed":%s,"goals":[%s],"certificate":%s,"message":%s}|}
       (quote (theorem_name state))
       (quote (Syntax.formula_to_string (theorem state)))
       (definitions (Proof_session.definitions state))
@@ -103,6 +110,7 @@ let step state ~has_qed =
       (if complete then "true" else "false")
       (if has_qed then "true" else "false")
       goals
+      (certificate state)
       (quote message)
 
 let error ~line message =
