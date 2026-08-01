@@ -1229,10 +1229,7 @@ let analyze_script script =
           (declarations @ [SkolemDeclaration declaration]) rest
     | rest -> (aliases, declarations, rest)
   in
-  let aliases, declarations, proof =
-    read_declarations [] [] meaningful
-  in
-  let global_environment, declaration_steps =
+  let apply_declarations environment steps declarations =
     List.fold_left
       (fun (environment, steps) declaration ->
          match declaration with
@@ -1254,76 +1251,85 @@ let analyze_script script =
                   declaration.skolem_source]
              in
              (environment, steps @ [description]))
-      (Extracted.empty_environment, []) declarations
+      (environment, steps) declarations
   in
-  match proof with
-  | [] when aliases <> [] || declarations <> [] ->
-      let kernel_state =
-        Extracted.start_in_environment global_environment Extracted.NFalsum
-        |> accept_kernel_result 1 "initial goal"
-      in
-      let declarations = {
-        theorem_name = "";
-        theorem = Bottom;
-        aliases;
-        global_environment;
-        kernel_state;
-        final_certificate = None;
-        steps = declaration_steps;
-      } in
-      (declarations, false)
-  | [] -> raise (Proof_error (1, "The proof script is empty."))
-  | (header_line, header) :: tactics ->
-      let lower_header = String.lowercase_ascii header in
-      let prefix = "theorem " in
-      if not (starts_with_at lower_header 0 prefix) then
-        raise (Proof_error (header_line,
-          "After aliases, choices, and Skolem declarations, use: theorem name : formula."));
-      let content = trim (String.sub header (String.length prefix) (String.length header - String.length prefix)) in
-      let colon =
-        try find_colon content
-        with Parse_error (_, message) -> raise (Proof_error (header_line, message))
-      in
-      let name = trim (String.sub content 0 colon) in
-      let statement = trim (String.sub content (colon + 1) (String.length content - colon - 1)) in
-      if name = "" then
-        raise (Proof_error (header_line, "Expected a theorem name."));
-      let theorem =
-        try parse_formula statement |> unfold header_line aliases
-        with Parse_error (_, message) -> raise (Proof_error (header_line, message))
-      in
-      let kernel_state =
-        Extracted.start_in_environment global_environment
-          (kernel_formula theorem)
-        |> accept_kernel_result header_line "initial goal"
-      in
-      let initial = {
-        theorem_name = name;
-        theorem;
-        aliases;
-        global_environment;
-        kernel_state;
-        final_certificate = None;
-        steps = declaration_steps;
-      } in
-      let rec run state = function
-        | [] -> (state, false)
-        | (line_no, line) :: rest when String.lowercase_ascii line = "qed" ->
-            if not (Extracted.solved state.kernel_state) then
-              raise (Proof_error (line_no,
-                "qed cannot close a proof with unresolved goals."));
-            if rest <> [] then
-              raise (Proof_error (fst (List.hd rest),
-                "Unexpected input after qed."));
-            let certificate =
-              Extracted.finalize state.kernel_state
-              |> accept_kernel_result line_no "final certificate replay"
-            in
-            ({ state with final_certificate = Some certificate }, true)
-        | (line_no, line) :: rest ->
-            run (execute_tactic line_no state line) rest
-      in
-      run initial tactics
+  let rec process aliases environment steps statements =
+    let aliases, declarations, proof =
+      read_declarations aliases [] statements
+    in
+    let global_environment, declaration_steps =
+      apply_declarations environment steps declarations
+    in
+    match proof with
+    | [] when aliases <> [] || declarations <> [] ->
+        let kernel_state =
+          Extracted.start_in_environment global_environment Extracted.NFalsum
+          |> accept_kernel_result 1 "initial goal"
+        in
+        let declarations = {
+          theorem_name = "";
+          theorem = Bottom;
+          aliases;
+          global_environment;
+          kernel_state;
+          final_certificate = None;
+          steps = declaration_steps;
+        } in
+        (declarations, false)
+    | [] -> raise (Proof_error (1, "The proof script is empty."))
+    | (header_line, header) :: tactics ->
+        let lower_header = String.lowercase_ascii header in
+        let prefix = "theorem " in
+        if not (starts_with_at lower_header 0 prefix) then
+          raise (Proof_error (header_line,
+            "After aliases, choices, and Skolem declarations, use: theorem name : formula."));
+        let content = trim (String.sub header (String.length prefix) (String.length header - String.length prefix)) in
+        let colon =
+          try find_colon content
+          with Parse_error (_, message) -> raise (Proof_error (header_line, message))
+        in
+        let name = trim (String.sub content 0 colon) in
+        let statement = trim (String.sub content (colon + 1) (String.length content - colon - 1)) in
+        if name = "" then
+          raise (Proof_error (header_line, "Expected a theorem name."));
+        let theorem =
+          try parse_formula statement |> unfold header_line aliases
+          with Parse_error (_, message) -> raise (Proof_error (header_line, message))
+        in
+        let kernel_state =
+          Extracted.start_in_environment global_environment
+            (kernel_formula theorem)
+          |> accept_kernel_result header_line "initial goal"
+        in
+        let initial = {
+          theorem_name = name;
+          theorem;
+          aliases;
+          global_environment;
+          kernel_state;
+          final_certificate = None;
+          steps = declaration_steps;
+        } in
+        let rec run state = function
+          | [] -> (state, false)
+          | (line_no, line) :: rest
+            when String.lowercase_ascii line = "qed" ->
+              if not (Extracted.solved state.kernel_state) then
+                raise (Proof_error (line_no,
+                  "qed cannot close a proof with unresolved goals."));
+              let certificate =
+                Extracted.finalize state.kernel_state
+                |> accept_kernel_result line_no "final certificate replay"
+              in
+              let state = { state with final_certificate = Some certificate } in
+              if rest = [] then (state, true)
+              else process aliases global_environment state.steps rest
+          | (line_no, line) :: rest ->
+              run (execute_tactic line_no state line) rest
+        in
+        run initial tactics
+  in
+  process [] Extracted.empty_environment [] meaningful
 
 let check_script script =
   let state, _ = analyze_script script in
