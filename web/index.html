@@ -93,11 +93,12 @@ qed.</textarea>
             </div>
             <div class="tactic-row">
               <input id="tactic-input" type="text" autocomplete="off"
-                aria-label="Next tactic" placeholder="Example: intro x.">
+                aria-label="Next tactic" placeholder="Example: intros.">
               <button id="step-button" type="button">Run step →</button>
             </div>
             <div class="quick-tactics" aria-label="Common tactics">
               <button type="button" data-tactic="intro x.">intro x.</button>
+              <button type="button" data-tactic="intros.">intros.</button>
               <button type="button" data-tactic="intro H.">intro H.</button>
               <button type="button" data-tactic="assumption.">assumption.</button>
               <button type="button" data-tactic="refl.">refl.</button>
@@ -109,6 +110,7 @@ qed.</textarea>
             <p class="syntax-title">Tactics</p>
             <div class="syntax-grid">
               <code>intro H.</code><span>Implication or universal introduction</span>
+              <code>intros.</code><span>Introduce all available binders with automatic names</span>
               <code>exact H.</code><span>Close with a fact</span>
               <code>apply H.</code><span>Backward reasoning</span>
               <code>specialize H a as Ha.</code><span>Universal elimination</span>

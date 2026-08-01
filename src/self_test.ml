@@ -18,6 +18,10 @@ let contains text fragment =
 let valid_scripts =
   [
     "theorem refl : forall x, x = x\nintro x\nrefl\nqed";
+    "theorem intros_named : forall x, forall y, (x = y -> x = y)\nintros x y H\nexact H\nqed";
+    "theorem intros_auto : forall x, forall y, (x = y -> x = y)\nintros\nexact H\nqed";
+    "theorem intros_shadow : forall x, (x = x -> forall x, x = x)\nintros\nrefl\nqed";
+    "theorem compact_quantifiers : forall x y z, (x = z -> x = z)\nintros x y z H\nexact H\nqed";
     "theorem empty : exists e, forall x, not (x in e)\nexact empty_set\nqed";
     "theorem ext : forall a, forall b, ((forall z, (z in a <-> z in b)) -> a = b)\nintro a\nintro b\nintro H\napply extensionality\nexact H\nqed";
     "theorem ext_specialized : forall a, forall b, ((forall z, (z in a <-> z in b)) -> a = b)\nintro a\nintro b\nintro H\nspecialize extensionality a b as E\napply E\nexact H\nqed";
@@ -123,6 +127,18 @@ let run () =
           (Syntax.Forall ("x", Syntax.Eq (Syntax.Name "x", Syntax.Name "x"))))
   then
     failwith "A block comment changed the parsed formula";
+  if not
+       (Syntax.alpha_equal
+          (Parser.parse_formula "forall x y z, x = z")
+          (Parser.parse_formula "forall x, forall y, forall z, x = z"))
+  then
+    failwith "Multiple universally quantified variables were parsed incorrectly";
+  if not
+       (Syntax.alpha_equal
+          (Parser.parse_formula "exists x y z, x = z")
+          (Parser.parse_formula "exists x, exists y, exists z, x = z"))
+  then
+    failwith "Multiple existentially quantified variables were parsed incorrectly";
   ignore
     (Proof_session.check_script
        "(* A multiline comment may contain periods.

@@ -113,10 +113,6 @@ let take state =
   state.position <- state.position + 1;
   token
 
-let expect state expected message =
-  if peek state = expected then ignore (take state)
-  else raise (Parse_error (state.position, message))
-
 let expect_ident state =
   match take state with
   | Ident name -> name
@@ -216,13 +212,41 @@ and parse_prefix state =
   match take state with
   | TNot -> Not (parse_prefix state)
   | TForall ->
-      let name = expect_ident state in
-      expect state Comma "Expected , after the universally quantified variable.";
-      Forall (name, parse_formula_state state)
+      let first = expect_ident state in
+      let rec names accumulated =
+        match peek state with
+        | Ident name ->
+            ignore (take state);
+            names (name :: accumulated)
+        | Comma ->
+            ignore (take state);
+            let body = parse_formula_state state in
+            List.fold_right (fun name body -> Forall (name, body))
+              (List.rev accumulated) body
+        | _ ->
+            raise (Parse_error
+              (state.position,
+               "Expected a comma after the universally quantified variables."))
+      in
+      names [first]
   | TExists ->
-      let name = expect_ident state in
-      expect state Comma "Expected , after the existentially quantified variable.";
-      Exists (name, parse_formula_state state)
+      let first = expect_ident state in
+      let rec names accumulated =
+        match peek state with
+        | Ident name ->
+            ignore (take state);
+            names (name :: accumulated)
+        | Comma ->
+            ignore (take state);
+            let body = parse_formula_state state in
+            List.fold_right (fun name body -> Exists (name, body))
+              (List.rev accumulated) body
+        | _ ->
+            raise (Parse_error
+              (state.position,
+               "Expected a comma after the existentially quantified variables."))
+      in
+      names [first]
   | Lparen ->
       let formula = parse_formula_state state in
       begin match peek state with

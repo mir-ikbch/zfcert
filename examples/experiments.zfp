@@ -3,8 +3,7 @@ Choose empty empty_is_empty from empty_set.
 Choose pair Hpair from pairing.
 
 theorem exists_ordpair : forall x, forall y, exists p, forall z, (z in p) <-> (z = x or z = pair(x, y)).
-intro x.
-intro y.
+intros x y.
 specialize pairing x pair(x,y) as H.
 apply H.
 qed.

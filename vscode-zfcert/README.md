@@ -44,6 +44,9 @@ Goalsビューが閉じている場合は `ZFCert: Show Goals` で再表示で�
 命題には透明な別名を付けられます。`alias`だけを書いた時点でも
 Goalsビューに読み込まれた別名が表示されます。
 
+複数の仮定・変数は`intros x y H.`でまとめて導入できます。`intros.`とだけ書くと、
+導入可能な量化子・含意をすべて自動で導入します。
+
 ```text
 alias is_empty x := forall y, not (y in x).
 ```

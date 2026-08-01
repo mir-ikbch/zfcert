@@ -71,7 +71,7 @@ a synchronous local HTTP request."
   `((,(regexp-opt '("alias" "Choose" "theorem" "qed") 'symbols)
      . font-lock-keyword-face)
     (,(regexp-opt
-       '("rule" "intro" "exact" "apply" "specialize" "obtain" "cases" "use"
+       '("rule" "intro" "intros" "exact" "apply" "specialize" "obtain" "cases" "use"
          "refl" "split" "constructor" "assumption" "contradiction"
          "left" "right" "separation" "replacement")
        'symbols)

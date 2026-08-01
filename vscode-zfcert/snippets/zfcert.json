@@ -39,6 +39,11 @@
     ],
     "description": "Create a ZFCert theorem"
   },
+  "Multiple introductions": {
+    "prefix": "intros",
+    "body": "intros ${1:x} ${2:y} ${3:H}.",
+    "description": "Introduce several variables or hypotheses; use intros. for automatic names"
+  },
   "Specialize universal fact": {
     "prefix": "specialize",
     "body": "specialize ${1:H} ${2:a} as ${3:H_a}.",

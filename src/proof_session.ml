@@ -681,6 +681,97 @@ let declare_global_skolem environment declaration =
     environment
   |> accept_kernel_result line_no "global Choose declaration"
 
+let context_names context =
+  List.fold_left
+    (fun names (name, _) -> StringSet.add name names)
+    StringSet.empty context
+
+let environment_names state =
+  let names =
+    Extracted.environment_constants state.global_environment
+    |> StringSet.of_list
+  in
+  List.fold_left
+    (fun names (name, _) -> StringSet.add name names)
+    names
+    (Extracted.environment_facts state.global_environment)
+
+let intro_name_set state goal =
+  StringSet.union
+    (context_names goal.context)
+    (StringSet.union
+       (context_free_vars goal.context)
+       (StringSet.union
+          (all_vars goal.target)
+          (environment_names state)))
+
+let fresh_intro_name base used =
+  if StringSet.mem base used then fresh_name base used else base
+
+let execute_intro line_no state argument =
+  match materialize_goals line_no state with
+  | [] -> raise (Proof_error (line_no, "The proof is already complete."))
+  | goal :: _ ->
+      begin match goal.target with
+      | Imp _ | Not _ ->
+          if argument = "" then
+            raise (Proof_error (line_no, "Expected a hypothesis name."));
+          apply_primitive_rules line_no state
+            [Extracted.NRImplIntro argument]
+            ("intro " ^ argument)
+      | Forall (x, _) ->
+          let chosen = if argument = "" then x else argument in
+          if StringSet.mem chosen (context_free_vars goal.context) then
+            raise (Proof_error (line_no,
+              "The introduced variable occurs free in a hypothesis."));
+          apply_primitive_rules line_no state
+            [Extracted.NRAllIntro chosen]
+            ("intro " ^ chosen)
+      | _ ->
+          raise (Proof_error (line_no,
+            "intro requires an implication, negation, or universal goal."))
+      end
+
+let auto_intro_name line_no state goal =
+  let used = intro_name_set state goal in
+  match goal.target with
+  | Forall (binder, _) ->
+      let forbidden =
+        StringSet.union
+          (context_names goal.context)
+          (StringSet.union
+             (context_free_vars goal.context)
+             (environment_names state))
+      in
+      if StringSet.mem binder forbidden then fresh_name binder used else binder
+  | Imp _ | Not _ -> fresh_intro_name "H" used
+  | _ ->
+      raise (Proof_error (line_no,
+        "intros has no introductions left."))
+
+let execute_intros line_no state argument =
+  let names = words argument in
+  let rec introduce_named state = function
+    | [] -> state
+    | name :: rest ->
+        introduce_named (execute_intro line_no state name) rest
+  in
+  if names <> [] then
+    introduce_named state names
+  else
+    let rec introduce_automatically state =
+      match materialize_goals line_no state with
+      | [] -> state
+      | goal :: _ ->
+          begin match goal.target with
+          | Imp _ | Not _ | Forall _ ->
+              let name = auto_intro_name line_no state goal in
+              introduce_automatically (execute_intro line_no state name)
+          | _ -> state
+          end
+    in
+    introduce_automatically state
+
 let execute_tactic line_no state line =
   match materialize_goals line_no state with
   | [] -> raise (Proof_error (line_no, "The proof is already complete."))
@@ -730,26 +821,8 @@ let execute_tactic line_no state line =
               raise (Proof_error (line_no,
                 "Use: replacement R source x y : P."))
           end
-      | "intro" ->
-          begin match goal.target with
-          | Imp _ | Not _ ->
-              if argument = "" then
-                raise (Proof_error (line_no, "Expected a hypothesis name."));
-              apply_primitive_rules line_no state
-                [Extracted.NRImplIntro argument]
-                ("intro " ^ argument)
-          | Forall (x, _) ->
-              let chosen = if argument = "" then x else argument in
-              if StringSet.mem chosen (context_free_vars goal.context) then
-                raise (Proof_error (line_no,
-                  "The introduced variable occurs free in a hypothesis."));
-              apply_primitive_rules line_no state
-                [Extracted.NRAllIntro chosen]
-                ("intro " ^ chosen)
-          | _ ->
-              raise (Proof_error (line_no,
-                "intro requires an implication, negation, or universal goal."))
-          end
+      | "intro" -> execute_intro line_no state argument
+      | "intros" -> execute_intros line_no state argument
       | "assumption" ->
           let rec find = function
             | [] -> None

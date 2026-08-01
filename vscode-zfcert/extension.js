@@ -319,6 +319,7 @@ function tacticCompletions() {
     ["rule cut", "rule cut ${1:H} : ${2:P}.", "Introduce and prove an intermediate proposition with Cut"],
     ["rule equal_elim", "rule equal_elim ${1:s} ${2:t} ${3:x} : ${4:P}.", "Apply primitive equality elimination"],
     ["intro", "intro ${1:H}.", "Introduce an implication, negation, or universal variable"],
+    ["intros", "intros ${1:x} ${2:y} ${3:H}.", "Introduce several hypotheses or variables at once"],
     ["exact", "exact ${1:H}.", "Close the goal with a matching fact"],
     ["apply", "apply ${1:H}.", "Apply a fact backwards"],
     ["specialize", "specialize ${1:H} ${2:a} as ${3:H_a}.", "Instantiate a universal fact"],

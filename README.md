@@ -271,10 +271,23 @@ exact H.
 qed.
 ```
 
+連続した導入は`intros`でまとめて書けます。`intros x y H.`は3回の`intro`と同じで、
+`intros.`は導入できる量化子・含意をすべて導入し、変数名と仮定名を自動で選びます。
+
+```text
+theorem implication_identity : forall x, forall y, (x = y -> x = y).
+intros.
+exact H.
+qed.
+```
+
 `alias`は証明済みの事実ではありません。検査前に本体へ展開されるため、
 `exact is_empty`のように別名を証明として使うことはできません。
 本体の自由変数は宣言した引数に限られ、適用時には変数捕獲を避けて同時に
 代入されます。引数なしなら`alias foo := P.`と書きます。
+
+量化子は複数の変数をまとめて書けます。`forall x y z, P`は
+`forall x, forall y, forall z, P`と同じで、`exists`にも適用できます。
 
 存在量化された事実は`obtain`で具体化と存在除去を一度に行えます。
 
@@ -339,7 +352,7 @@ apply H.
 qed.
 ```
 
-タクティクは `intro`, `assumption`, `exact`, `apply`, `specialize`, `obtain`, `rewrite`, `refl`, `split`, `cases`,
+タクティクは `intro`, `intros`, `assumption`, `exact`, `apply`, `specialize`, `obtain`, `rewrite`, `refl`, `split`, `cases`,
 `left`, `right`, `use`, `contradiction` を実装しています。`apply` は全称量化された
 事実をゴールに合わせて具体化します。たとえば `apply extensionality` で外延性公理を
 利用できます。仮定から新しい仮定を導く場合は、`apply H0 in H as H1` と書けます。
