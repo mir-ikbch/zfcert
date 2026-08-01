@@ -39,9 +39,11 @@
               <option value="conjunction">Conjunction commutativity</option>
               <option value="extensionality">Using extensionality</option>
               <option value="existence">Existential witness</option>
+              <option value="obtain">Obtain from existence</option>
               <option value="empty">Empty-set axiom</option>
               <option value="separation">Separation schema</option>
-              <option value="definition">Proposition definition</option>
+              <option value="alias">Proposition alias</option>
+              <option value="choose">Choose a named witness</option>
               <option value="rules">Primitive rules only</option>
             </select>
           </div>
@@ -109,6 +111,7 @@ qed.</textarea>
               <code>exact H.</code><span>Close with a fact</span>
               <code>apply H.</code><span>Backward reasoning</span>
               <code>specialize H a as Ha.</code><span>Universal elimination</span>
+              <code>obtain x Hx from H.</code><span>Existential elimination</span>
               <code>refl.</code><span>Equality reflexivity</span>
               <code>split.</code><span>Conjunction or equivalence</span>
               <code>cases H.</code><span>Eliminate a hypothesis</span>

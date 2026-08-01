@@ -231,15 +231,15 @@ false              # ⊥
 論理式やタクティクの引数を複数行に分けられます。量化子の区切りには
 `.`ではなく`,`を使います。
 
-透明な命題定義を`theorem`より前に書けます。定義名の後には0個以上の
+透明な命題の別名を`alias`で`theorem`より前に書けます。別名の後には0個以上の
 引数を置けます。
 
 ```text
-Definition is_empty x :=
+alias is_empty x :=
   forall y, not (y in x).
-Definition empty_alias x := is_empty x.
+alias empty_alias x := is_empty x.
 
-theorem definition_identity :
+theorem alias_identity :
   forall a,
     (empty_alias a -> is_empty a).
 intro a.
@@ -248,10 +248,36 @@ exact H.
 qed.
 ```
 
-定義は証明済みの事実ではなく、命題の別名です。検査前に本体へ展開されるため、
-`exact is_empty`のように定義名を証明として使うことはできません。
-定義本体の自由変数は宣言した引数に限られ、適用時には変数捕獲を避けて同時に
-代入されます。引数なしの定義は`Definition foo := P.`と書きます。
+`alias`は証明済みの事実ではありません。検査前に本体へ展開されるため、
+`exact is_empty`のように別名を証明として使うことはできません。
+本体の自由変数は宣言した引数に限られ、適用時には変数捕獲を避けて同時に
+代入されます。引数なしなら`alias foo := P.`と書きます。
+
+存在量化された事実は`obtain`で具体化と存在除去を一度に行えます。
+
+```text
+obtain p Hp from pairing a b.
+```
+
+これは`pairing`を`a`, `b`で具体化し、freshな`p`と
+`Hp : forall x, x in p <-> (x = a or x = b)`を現在の仮定へ追加します。
+内部では`all_elim`と`ex_elim`のプリミティブ規則列として検査されます。
+
+閉じた存在事実から証明全体で使う名前を選ぶ場合は、`theorem`より前に
+`Choose`を書けます。
+
+```text
+alias is_empty x := forall y, not (y in x).
+Choose empty Hempty from empty_set.
+
+theorem chosen_empty_exists : exists e, is_empty e.
+use empty.
+exact Hempty.
+qed.
+```
+
+`Choose`の名前は定理の証明中だけで有効で、定理の主張自体には現せません。
+これにより存在除去の固有変数条件を保ちます。
 
 ```text
 theorem and_commutes :
@@ -267,7 +293,7 @@ apply H.
 qed.
 ```
 
-タクティクは `intro`, `assumption`, `exact`, `apply`, `specialize`, `refl`, `split`, `cases`,
+タクティクは `intro`, `assumption`, `exact`, `apply`, `specialize`, `obtain`, `refl`, `split`, `cases`,
 `left`, `right`, `use`, `contradiction` を実装しています。`apply` は全称量化された
 事実をゴールに合わせて具体化します。たとえば `apply extensionality` で外延性公理を
 利用できます。

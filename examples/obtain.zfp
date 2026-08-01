@@ -1,0 +1,11 @@
+theorem obtain_pair :
+  forall a,
+  forall b,
+    exists p,
+      forall x, (x in p <-> (x = a or x = b)).
+intro a.
+intro b.
+obtain p Hp from pairing a b.
+use p.
+exact Hp.
+qed.

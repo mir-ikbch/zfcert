@@ -38,12 +38,15 @@ dune exec src/main.exe -- --port 8099
 `ZFCert: Select Project Folder` からこのリポジトリを選択してください。
 Goalsビューが閉じている場合は `ZFCert: Show Goals` で再表示できます。
 
-命題にはCoq風の透明な名前を付けられます。`Definition`だけを書いた時点でも
-Goalsビューに読み込まれた定義が表示されます。
+命題には透明な別名を付けられます。`alias`だけを書いた時点でも
+Goalsビューに読み込まれた別名が表示されます。
 
 ```text
-Definition is_empty x := forall y, not (y in x).
+alias is_empty x := forall y, not (y in x).
 ```
+
+存在事実は`obtain x Hx from H.`で除去でき、定理より前では
+`Choose empty Hempty from empty_set.`として証明全体の名前を選べます。
 
 プリミティブな自然演繹規則は`rule`で直接適用できます。
 

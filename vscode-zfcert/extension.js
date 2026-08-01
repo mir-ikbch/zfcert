@@ -71,15 +71,15 @@ class GoalViewProvider {
       content = `
         <div class="status">Rejected · line ${data.line || "?"}</div>
         <div class="error">${escapeHtml(data.message)}</div>`;
-    } else if (data.definitionsOnly) {
-      const definitions = (data.definitions || []).map((definition) => `
+    } else if (data.aliasesOnly) {
+      const aliases = (data.aliases || []).map((alias) => `
         <div class="context-row"><span class="name">${escapeHtml(
-          [definition.name, ...(definition.parameters || [])].join(" ")
-        )}</span> := ${escapeHtml(definition.statement)}</div>`).join("");
+          [alias.name, ...(alias.parameters || [])].join(" ")
+        )}</span> := ${escapeHtml(alias.statement)}</div>`).join("");
       content = `
-        <div class="status">${(data.definitions || []).length} definitions</div>
+        <div class="status">${(data.aliases || []).length} aliases</div>
         <div class="success">✓ ${escapeHtml(data.message)}</div>
-        <div class="context">${definitions}</div>`;
+        <div class="context">${aliases}</div>`;
     } else if (data.qed || !Array.isArray(data.goals)) {
       content = `
         <div class="status">Verified · ${data.steps} steps</div>
@@ -267,8 +267,8 @@ async function analyze(editor, line, services, force = false) {
   services.goals.update(data);
   services.diagnostics.set(document.uri, diagnosticFor(document, data));
   if (data.ok) {
-    services.status.text = data.definitionsOnly
-      ? `$(symbol-constant) ${data.definitions.length} definitions`
+    services.status.text = data.aliasesOnly
+      ? `$(symbol-constant) ${data.aliases.length} aliases`
       : data.qed
       ? `$(pass) ${data.theorem}`
       : `$(target) ${data.goals.length} goal${data.goals.length === 1 ? "" : "s"}`;
@@ -307,7 +307,8 @@ function scheduleAnalysis(editor, services) {
 
 function tacticCompletions() {
   const entries = [
-    ["Definition", "Definition ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.", "Give a transparent name to a proposition, optionally with arguments"],
+    ["alias", "alias ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.", "Give a transparent alias to a proposition, optionally with arguments"],
+    ["Choose", "Choose ${1:empty} ${2:Hempty} from ${3:empty_set}.", "Choose a proof-local witness before a theorem"],
     ["rule", "rule ${1|axiom,hypothesis,falsum_elim,impl_intro,impl_elim,conj_intro,conj_elim_l,conj_elim_r,disj_intro_l,disj_intro_r,disj_elim,all_intro,all_elim,ex_intro,ex_elim,equal_refl,equal_elim,cut|}.", "Apply one primitive natural-deduction rule"],
     ["rule cut", "rule cut ${1:H} : ${2:P}.", "Introduce and prove an intermediate proposition with Cut"],
     ["rule equal_elim", "rule equal_elim ${1:s} ${2:t} ${3:x} : ${4:P}.", "Apply primitive equality elimination"],
@@ -315,6 +316,7 @@ function tacticCompletions() {
     ["exact", "exact ${1:H}.", "Close the goal with a matching fact"],
     ["apply", "apply ${1:H}.", "Apply a fact backwards"],
     ["specialize", "specialize ${1:H} ${2:a} as ${3:H_a}.", "Instantiate a universal fact"],
+    ["obtain", "obtain ${1:x} ${2:Hx} from ${3:H}.", "Specialize and eliminate an existential fact"],
     ["cases", "cases ${1:H} ${2:H1} ${3:H2}.", "Eliminate conjunction, equivalence, or existence"],
     ["use", "use ${1:x}.", "Provide an existential witness"],
     ["refl", "refl.", "Prove reflexive equality"],
@@ -372,9 +374,9 @@ function activate(context) {
         goals.update(data);
         diagnostics.set(editor.document.uri, diagnosticFor(editor.document, data));
         if (data.ok) {
-          if (data.definitionsOnly) {
-            status.text = `$(symbol-constant) ${data.definitions.length} definitions`;
-            vscode.window.showInformationMessage(`Loaded ${data.definitions.length} proposition definitions`);
+          if (data.aliasesOnly) {
+            status.text = `$(symbol-constant) ${data.aliases.length} aliases`;
+            vscode.window.showInformationMessage(`Loaded ${data.aliases.length} proposition aliases`);
           } else {
             status.text = `$(pass) ${data.theorem}`;
             vscode.window.showInformationMessage(`Verified ${data.theorem} (${data.steps} steps)`);

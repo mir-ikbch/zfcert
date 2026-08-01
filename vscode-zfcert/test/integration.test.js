@@ -46,28 +46,60 @@ async function main() {
   assert.strictEqual(rejected.ok, false);
   assert.strictEqual(
     rejected.message,
-    "After definitions, use: theorem name : formula."
+    "After aliases and choices, use: theorem name : formula."
   );
 
-  const definitionsProof = fs.readFileSync(
-    path.join(__dirname, "..", "..", "examples", "definitions.zfp"),
+  const aliasesProof = fs.readFileSync(
+    path.join(__dirname, "..", "..", "examples", "aliases.zfp"),
     "utf8"
   );
-  const definitionLines = definitionsProof.split(/\r?\n/);
-  const firstDefinitionEnd = definitionLines.findIndex((line) =>
+  const aliasLines = aliasesProof.split(/\r?\n/);
+  const firstAliasEnd = aliasLines.findIndex((line) =>
     line.includes("not (y in x)."));
-  const definitionsOnly = await client.step(
-    textThroughLine(definitionsProof, firstDefinitionEnd)
+  const aliasesOnly = await client.step(
+    textThroughLine(aliasesProof, firstAliasEnd)
   );
-  assert.strictEqual(definitionsOnly.ok, true);
-  assert.strictEqual(definitionsOnly.definitionsOnly, true);
-  assert.strictEqual(definitionsOnly.definitions[0].name, "is_empty");
-  assert.deepStrictEqual(definitionsOnly.definitions[0].parameters, ["x"]);
+  assert.strictEqual(aliasesOnly.ok, true);
+  assert.strictEqual(aliasesOnly.aliasesOnly, true);
+  assert.strictEqual(aliasesOnly.aliases[0].name, "is_empty");
+  assert.deepStrictEqual(aliasesOnly.aliases[0].parameters, ["x"]);
 
-  const definedTheorem = await client.check(definitionsProof);
-  assert.strictEqual(definedTheorem.ok, true);
-  assert.strictEqual(definedTheorem.theorem, "definition_identity");
-  assert.strictEqual(definedTheorem.definitions.length, 2);
+  const aliasedTheorem = await client.check(aliasesProof);
+  assert.strictEqual(aliasedTheorem.ok, true);
+  assert.strictEqual(aliasedTheorem.theorem, "alias_identity");
+  assert.strictEqual(aliasedTheorem.aliases.length, 2);
+
+  const obtainResult = await client.check(`theorem obtain_witness :
+    (exists x, x = x) -> exists y, y = y.
+  intro H.
+  obtain x Hx from H.
+  use x.
+  exact Hx.
+  qed.`);
+  assert.strictEqual(obtainResult.ok, true);
+
+  const chooseProof = fs.readFileSync(
+    path.join(__dirname, "..", "..", "examples", "choose.zfp"),
+    "utf8"
+  );
+  const chooseLine = chooseProof.split(/\r?\n/).findIndex((line) =>
+    line.trim().startsWith("Choose ")
+  );
+  const chooseDeclaration = await client.step(
+    textThroughLine(chooseProof, chooseLine)
+  );
+  assert.strictEqual(chooseDeclaration.ok, true);
+  assert.strictEqual(chooseDeclaration.aliasesOnly, true);
+  assert.strictEqual(chooseDeclaration.steps, 1);
+
+  const chooseResult = await client.check(`alias is_empty x :=
+    forall y, not (y in x).
+  Choose empty Hempty from empty_set.
+  theorem chosen_empty : exists e, is_empty e.
+  use empty.
+  exact Hempty.
+  qed.`);
+  assert.strictEqual(chooseResult.ok, true);
 
   const rulesProof = fs.readFileSync(
     path.join(__dirname, "..", "..", "examples", "rules.zfp"),

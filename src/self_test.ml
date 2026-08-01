@@ -31,9 +31,12 @@ let valid_scripts =
     "theorem surface_cases_conj : forall a, ((a = a and a = a) -> a = a)\nintro a\nintro H\ncases H H1 H2\nassumption\nqed";
     "theorem surface_cases_iff : forall a, ((a = a <-> a = a) -> a = a)\nintro a\nintro H\ncases H Hforward Hbackward\napply Hforward\nrefl\nqed";
     "theorem surface_cases_ex : ((exists x, x = x) -> exists y, y = y)\nintro H\ncases H x Hx\nuse x\nexact Hx\nqed";
-    "Definition is_empty x := forall y, not (y in x)\nDefinition empty_alias x := is_empty x\ntheorem definition_identity : forall a, (empty_alias a -> is_empty a)\nintro a\nintro H\nexact H\nqed";
-    "Definition has_equal x := exists y, y = x\ntheorem definition_avoids_capture : forall y, (has_equal y -> exists z, z = y)\nintro y\nintro H\nexact H\nqed";
-    "Definition relates x y := x = y\ntheorem simultaneous_arguments : forall x, forall y, (relates y x -> y = x)\nintro x\nintro y\nintro H\nexact H\nqed";
+    "alias is_empty x := forall y, not (y in x)\nalias empty_alias x := is_empty x\ntheorem alias_identity : forall a, (empty_alias a -> is_empty a)\nintro a\nintro H\nexact H\nqed";
+    "alias has_equal x := exists y, y = x\ntheorem alias_avoids_capture : forall y, (has_equal y -> exists z, z = y)\nintro y\nintro H\nexact H\nqed";
+    "alias relates x y := x = y\ntheorem simultaneous_arguments : forall x, forall y, (relates y x -> y = x)\nintro x\nintro y\nintro H\nexact H\nqed";
+    "theorem obtain_local : ((exists x, x = x) -> exists y, y = y)\nintro H\nobtain x Hx from H\nuse x\nexact Hx\nqed";
+    "theorem obtain_specialized : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nobtain p Hp from pairing a b\nuse p\nexact Hp\nqed";
+    "alias is_empty x := forall y, not (y in x)\nChoose empty Hempty from empty_set\ntheorem choose_empty : exists e, is_empty e\nuse empty\nexact Hempty\nqed";
     "theorem rule_identity : forall x, x = x\nrule all_intro x\nrule equal_refl\nqed";
     "theorem rule_default_all_intro : forall x, x = x\nrule all_intro\nrule equal_refl\nqed";
     "theorem rule_cut : forall x, x = x\nrule cut H : forall x, x = x\nrule all_intro x\nrule equal_refl\nrule hypothesis H\nqed";
@@ -97,6 +100,44 @@ let run () =
           {|"certificate":["all_intro x","equal_refl"]|})
   then
     failwith "The checked primitive rule certificate was not exposed by the API";
+  let choose_state =
+    Proof_session.check_script
+      "alias is_empty x := forall y, not (y in x).
+       Choose empty Hempty from empty_set.
+       theorem choose_certificate : exists e, is_empty e.
+       use empty.
+       exact Hempty.
+       qed."
+  in
+  begin match Proof_session.certificate_rules choose_state with
+  | Some rules
+    when List.exists
+      (fun rule -> contains rule "ex_elim empty Hempty") rules -> ()
+  | _ -> failwith "Choose was not recorded as existential elimination"
+  end;
+  let aliases_only, _ =
+    Proof_session.analyze_script
+      "alias is_empty x := forall y, not (y in x)."
+  in
+  let aliases_json = Api_json.step aliases_only ~has_qed:false in
+  if not
+       (contains aliases_json
+          {|"aliasesOnly":true,"aliases":[{"name":"is_empty"|})
+  then
+    failwith "Proposition aliases were not exposed under the alias API";
+  let choices_only, choices_have_qed =
+    Proof_session.analyze_script
+      "alias is_empty x := forall y, not (y in x).
+       Choose empty Hempty from empty_set."
+  in
+  let choices_json = Api_json.step choices_only ~has_qed:choices_have_qed in
+  if choices_have_qed
+     || Proof_session.theorem_name choices_only <> ""
+     || Proof_session.step_count choices_only <> 1
+     || not (contains choices_json {|"aliasesOnly":true|})
+     || not (contains choices_json {|"steps":1|})
+  then
+    failwith "A script prefix ending with Choose was rejected or misreported";
   let interactive, has_qed =
     Proof_session.analyze_script
       (terminate_lines
@@ -131,9 +172,19 @@ intro H")
     failwith "The kernel accepted an invalid equality proof";
   if not
        (rejected
-          "Definition foo := forall x, x = x\ntheorem bad_definition_fact : foo\nexact foo\nqed")
+          "alias foo := forall x, x = x\ntheorem bad_alias_fact : foo\nexact foo\nqed")
   then
-    failwith "A proposition definition was accepted as a proof";
+    failwith "A proposition alias was accepted as a proof";
+  if not
+       (rejected
+          "Definition old := forall x, x = x\ntheorem old_definition : forall x, x = x\nintro x\nrefl\nqed")
+  then
+    failwith "The removed Definition keyword was accepted";
+  if not
+       (rejected
+          "theorem obtain_nonexistential : forall x, (x = x -> x = x)\nintro x\nintro H\nobtain y Hy from H")
+  then
+    failwith "obtain accepted a non-existential fact";
   if not
        (rejected
           "theorem duplicate_cut : ((forall x, x = x) -> forall x, x = x)
@@ -187,5 +238,5 @@ rule impl_intro H")
     | _ -> failwith "The choice axiom did not parse"
   end;
   Printf.printf
-    "All %d kernel tests passed (plus 6 rejection tests).\n%!"
+    "All %d kernel tests passed (plus 8 rejection tests).\n%!"
     (List.length valid_scripts)

@@ -11,8 +11,8 @@ type display_goal = {
   target : Syntax.formula;
 }
 
-type proposition_definition = {
-  definition_name : string;
+type proposition_alias = {
+  alias_name : string;
   parameters : string list;
   body : Syntax.formula;
 }
@@ -28,7 +28,7 @@ val check_script : string -> session
 
 val theorem_name : session -> string
 val theorem : session -> Syntax.formula
-val definitions : session -> proposition_definition list
+val aliases : session -> proposition_alias list
 val goals : session -> display_goal list
 val step_count : session -> int
 val is_complete : session -> bool

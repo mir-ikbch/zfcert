@@ -49,4 +49,15 @@
     (should (string-match-p "Rejected · line 3" (buffer-string)))
     (should (string-match-p "Unknown tactic." (buffer-string)))))
 
+(ert-deftest zfcert-render-result-shows-aliases ()
+  (zfcert--render-result
+   '((ok . t)
+     (aliasesOnly . t)
+     (aliases . (((name . "is_empty")
+                  (parameters . ("x"))
+                  (statement . "forall y, not (y in x)"))))))
+  (with-current-buffer "*ZFCert Goals*"
+    (should (string-match-p "1 aliases" (buffer-string)))
+    (should (string-match-p "is_empty x" (buffer-string)))))
+
 ;;; zfcert-mode-test.el ends here

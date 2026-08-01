@@ -30,20 +30,20 @@ let axiom axiom =
 let axioms () =
   "[" ^ String.concat "," (List.map axiom Proof_session.axioms) ^ "]"
 
-let definition definition =
+let alias alias =
   let parameters =
-    definition.parameters
+    alias.parameters
     |> List.map quote
     |> String.concat ","
   in
   Printf.sprintf
     {|{"name":%s,"parameters":[%s],"statement":%s}|}
-    (quote definition.definition_name)
+    (quote alias.alias_name)
     parameters
-    (quote (Syntax.formula_to_string definition.body))
+    (quote (Syntax.formula_to_string alias.body))
 
-let definitions definitions =
-  "[" ^ String.concat "," (List.map definition definitions) ^ "]"
+let aliases aliases =
+  "[" ^ String.concat "," (List.map alias aliases) ^ "]"
 
 let certificate state =
   match Proof_session.certificate_rules state with
@@ -54,15 +54,16 @@ let certificate state =
 let success state =
   if theorem_name state = "" then
     Printf.sprintf
-      {|{"ok":true,"definitionsOnly":true,"definitions":%s,"steps":0,"message":%s}|}
-      (definitions (Proof_session.definitions state))
-      (quote "Proposition definitions loaded.")
+      {|{"ok":true,"aliasesOnly":true,"aliases":%s,"steps":%d,"message":%s}|}
+      (aliases (Proof_session.aliases state))
+      (step_count state)
+      (quote "Declarations loaded.")
   else
     Printf.sprintf
-      {|{"ok":true,"definitionsOnly":false,"theorem":%s,"statement":%s,"definitions":%s,"steps":%d,"certificate":%s,"message":%s}|}
+      {|{"ok":true,"aliasesOnly":false,"theorem":%s,"statement":%s,"aliases":%s,"steps":%d,"certificate":%s,"message":%s}|}
       (quote (theorem_name state))
       (quote (Syntax.formula_to_string (theorem state)))
-      (definitions (Proof_session.definitions state))
+      (aliases (Proof_session.aliases state))
       (step_count state)
       (certificate state)
       (quote "The proof was verified by the extracted kernel.")
@@ -85,9 +86,10 @@ let goal goal =
 let step state ~has_qed =
   if theorem_name state = "" then
     Printf.sprintf
-      {|{"ok":true,"definitionsOnly":true,"definitions":%s,"steps":0,"complete":true,"qed":false,"goals":[],"message":%s}|}
-      (definitions (Proof_session.definitions state))
-      (quote "Proposition definitions loaded. You can now write a theorem.")
+      {|{"ok":true,"aliasesOnly":true,"aliases":%s,"steps":%d,"complete":true,"qed":false,"goals":[],"message":%s}|}
+      (aliases (Proof_session.aliases state))
+      (step_count state)
+      (quote "Declarations checked. You can now write a theorem.")
   else
     let complete = is_complete state in
     let goals =
@@ -102,10 +104,10 @@ let step state ~has_qed =
         "Enter a tactic for the current goal."
     in
     Printf.sprintf
-      {|{"ok":true,"definitionsOnly":false,"theorem":%s,"statement":%s,"definitions":%s,"steps":%d,"complete":%s,"qed":%s,"goals":[%s],"certificate":%s,"message":%s}|}
+      {|{"ok":true,"aliasesOnly":false,"theorem":%s,"statement":%s,"aliases":%s,"steps":%d,"complete":%s,"qed":%s,"goals":[%s],"certificate":%s,"message":%s}|}
       (quote (theorem_name state))
       (quote (Syntax.formula_to_string (theorem state)))
-      (definitions (Proof_session.definitions state))
+      (aliases (Proof_session.aliases state))
       (step_count state)
       (if complete then "true" else "false")
       (if has_qed then "true" else "false")

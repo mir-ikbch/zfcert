@@ -84,16 +84,27 @@ type goal = {
   target : formula;
 }
 
-type proposition_definition = {
-  definition_name : string;
+type proposition_alias = {
+  alias_name : string;
   parameters : string list;
   body : formula;
+}
+
+(** A [Choose] declaration is delayed until the theorem has been started.
+    It is then executed as ordinary existential elimination, so the chosen
+    variable cannot escape into the theorem statement. *)
+type choice_declaration = {
+  choice_line : int;
+  choice_witness : string;
+  choice_hypothesis : string;
+  choice_source : string;
+  choice_terms : string list;
 }
 
 type session = {
   theorem_name : string;
   theorem : formula;
-  definitions : proposition_definition list;
+  aliases : proposition_alias list;
   kernel_state : Extracted.state;
   final_certificate : Extracted.certificate option;
   steps : string list;
@@ -108,10 +119,10 @@ let split_statements script =
   | Parser.Statement_error (line, message) ->
       raise (Proof_error (line, message))
 
-let find_definition name definitions =
+let find_alias name aliases =
   List.find_opt
-    (fun definition -> definition.definition_name = name)
-    definitions
+    (fun alias -> alias.alias_name = name)
+    aliases
 
 let substitution_variables substitutions =
   StringMap.fold
@@ -178,28 +189,28 @@ let rec subst_many substitutions = function
       else
         Exists (x, subst_many substitutions f)
 
-let rec unfold_formula line_no definitions visiting = function
+let rec unfold_formula line_no aliases visiting = function
   | Named (name, arguments) ->
       if StringSet.mem name visiting then
         raise (Proof_error (line_no,
-          "Recursive proposition definition: " ^ name));
-      begin match find_definition name definitions with
-      | Some definition ->
-          let expected = List.length definition.parameters in
+          "Recursive proposition alias: " ^ name));
+      begin match find_alias name aliases with
+      | Some alias ->
+          let expected = List.length alias.parameters in
           let actual = List.length arguments in
           if expected <> actual then
             raise (Proof_error (line_no,
               Printf.sprintf
-                "Definition %s expects %d arguments, but received %d."
+                "Alias %s expects %d arguments, but received %d."
                 name expected actual));
           let substitutions =
             List.fold_left2
               (fun substitutions parameter argument ->
                  StringMap.add parameter argument substitutions)
-              StringMap.empty definition.parameters arguments
+              StringMap.empty alias.parameters arguments
           in
-          let instantiated = subst_many substitutions definition.body in
-          unfold_formula line_no definitions
+          let instantiated = subst_many substitutions alias.body in
+          unfold_formula line_no aliases
             (StringSet.add name visiting) instantiated
       | None ->
           raise (Proof_error (line_no,
@@ -208,33 +219,33 @@ let rec unfold_formula line_no definitions visiting = function
   | Bottom -> Bottom
   | Eq (a, b) -> Eq (a, b)
   | Mem (a, b) -> Mem (a, b)
-  | Not f -> Not (unfold_formula line_no definitions visiting f)
+  | Not f -> Not (unfold_formula line_no aliases visiting f)
   | And (a, b) ->
-      And (unfold_formula line_no definitions visiting a,
-           unfold_formula line_no definitions visiting b)
+      And (unfold_formula line_no aliases visiting a,
+           unfold_formula line_no aliases visiting b)
   | Or (a, b) ->
-      Or (unfold_formula line_no definitions visiting a,
-          unfold_formula line_no definitions visiting b)
+      Or (unfold_formula line_no aliases visiting a,
+          unfold_formula line_no aliases visiting b)
   | Imp (a, b) ->
-      Imp (unfold_formula line_no definitions visiting a,
-           unfold_formula line_no definitions visiting b)
+      Imp (unfold_formula line_no aliases visiting a,
+           unfold_formula line_no aliases visiting b)
   | Iff (a, b) ->
-      Iff (unfold_formula line_no definitions visiting a,
-           unfold_formula line_no definitions visiting b)
+      Iff (unfold_formula line_no aliases visiting a,
+           unfold_formula line_no aliases visiting b)
   | Forall (x, f) ->
-      Forall (x, unfold_formula line_no definitions visiting f)
+      Forall (x, unfold_formula line_no aliases visiting f)
   | Exists (x, f) ->
-      Exists (x, unfold_formula line_no definitions visiting f)
+      Exists (x, unfold_formula line_no aliases visiting f)
 
-let unfold line_no definitions formula =
-  unfold_formula line_no definitions StringSet.empty formula
+let unfold line_no aliases formula =
+  unfold_formula line_no aliases StringSet.empty formula
 
 let split_first_word line =
   match String.index_opt line ' ' with
   | None -> (line, "")
   | Some i -> (String.sub line 0 i, trim (String.sub line (i + 1) (String.length line - i - 1)))
 
-let split_schema_argument line_no definitions argument =
+let split_schema_argument line_no aliases argument =
   match String.index_opt argument ':' with
   | None ->
       raise (Proof_error (line_no,
@@ -251,7 +262,7 @@ let split_schema_argument line_no definitions argument =
       if statement = "" then
         raise (Proof_error (line_no, "Expected a formula after :."));
       let predicate =
-        try parse_formula statement |> unfold line_no definitions
+        try parse_formula statement |> unfold line_no aliases
         with Parse_error (_, message) -> raise (Proof_error (line_no, message))
       in
       (names, predicate)
@@ -437,8 +448,8 @@ let apply_certificate_program line_no state program text =
   in
   add_step state text kernel_state
 
-let parse_formula_at line_no definitions text =
-  try parse_formula (trim text) |> unfold line_no definitions
+let parse_formula_at line_no aliases text =
+  try parse_formula (trim text) |> unfold line_no aliases
   with Parse_error (_, message) -> raise (Proof_error (line_no, message))
 
 let fixed_axiom_kind = function
@@ -454,7 +465,7 @@ let fixed_axiom_kind = function
 
 let execute_rule line_no state argument =
   let parse_formula text =
-    parse_formula_at line_no state.definitions text
+    parse_formula_at line_no state.aliases text
   in
   let request =
     try Rule_parser.parse ~parse_formula argument with
@@ -491,6 +502,66 @@ let close_fact line_no name context =
         (Extracted.NRAxiom, [Extracted.fixed_axiom kind])
     | None -> verified_error line_no
 
+let words text =
+  text
+  |> String.split_on_char ' '
+  |> List.map trim
+  |> List.filter (fun word -> word <> "")
+
+let parse_choice_words line_no command argument =
+  match words argument with
+  | witness :: hypothesis :: from_word :: source :: terms
+    when String.lowercase_ascii from_word = "from" ->
+      (witness, hypothesis, source, terms)
+  | _ ->
+      raise (Proof_error (line_no,
+        Printf.sprintf
+          "Use: %s witness hypothesis from fact term1 term2."
+          command))
+
+(** Surface [obtain] and declaration-level [Choose] share this untrusted
+    planner. The extracted certified session checks and records the resulting
+    AllElim/ExElim/closing-rule program. *)
+let execute_obtain line_no state command argument =
+  match materialize_goals line_no state with
+  | [] -> raise (Proof_error (line_no, "The proof is already complete."))
+  | goal :: _ ->
+      let witness, hypothesis, source, terms =
+        parse_choice_words line_no command argument
+      in
+      if List.mem_assoc hypothesis goal.context then
+        raise (Proof_error (line_no,
+          "A hypothesis with this name already exists."));
+      let fact =
+        match lookup_fact source goal.context with
+        | Some fact -> fact
+        | None ->
+            raise (Proof_error (line_no,
+              "Existential fact not found: " ^ source))
+      in
+      let instantiated, all_rules =
+        specialize_rules line_no fact terms
+      in
+      begin match instantiated with
+      | Exists _ ->
+          let close_rule, axioms =
+            close_fact line_no source goal.context
+          in
+          let program =
+            checked_step
+              (Extracted.NRExElim
+                (witness, hypothesis, kernel_formula instantiated))
+            :: List.map checked_step all_rules
+            @ [checked_step ~axioms close_rule]
+          in
+          apply_certificate_program line_no state program
+            (command ^ " " ^ witness ^ " " ^ hypothesis
+             ^ " from " ^ source)
+      | _ ->
+          raise (Proof_error (line_no,
+            "The selected fact does not become existential after specialization."))
+      end
+
 let execute_tactic line_no state line =
   match materialize_goals line_no state with
   | [] -> raise (Proof_error (line_no, "The proof is already complete."))
@@ -499,9 +570,10 @@ let execute_tactic line_no state line =
       let command = String.lowercase_ascii command in
       begin match command with
       | "rule" -> execute_rule line_no state argument
+      | "obtain" -> execute_obtain line_no state "obtain" argument
       | "separation" ->
           let names, predicate =
-            split_schema_argument line_no state.definitions argument
+            split_schema_argument line_no state.aliases argument
           in
           begin match names with
           | [fact_name; source; element] ->
@@ -521,7 +593,7 @@ let execute_tactic line_no state line =
           end
       | "replacement" ->
           let names, predicate =
-            split_schema_argument line_no state.definitions argument
+            split_schema_argument line_no state.aliases argument
           in
           begin match names with
           | [fact_name; source; input; output] ->
@@ -883,7 +955,7 @@ let find_colon s =
   | Some i -> i
   | None -> raise (Parse_error (0, "A theorem declaration requires :."))
 
-let valid_definition_name name =
+let valid_alias_name name =
   let length = String.length name in
   let reserved =
     List.mem (String.lowercase_ascii name)
@@ -911,8 +983,8 @@ let find_assignment text =
   in
   search 0
 
-let parse_definition line_no definitions line =
-  let prefix = "definition " in
+let parse_alias line_no aliases line =
+  let prefix = "alias " in
   let content =
     trim (String.sub line (String.length prefix)
       (String.length line - String.length prefix))
@@ -922,7 +994,7 @@ let parse_definition line_no definitions line =
     | Some index -> index
     | None ->
         raise (Proof_error (line_no,
-          "Use: Definition name parameters... := formula."))
+          "Use: alias name parameters... := formula."))
   in
   let declaration =
     String.sub content 0 assignment
@@ -934,22 +1006,22 @@ let parse_definition line_no definitions line =
   let name, parameters =
     match declaration with
     | name :: parameters -> (name, parameters)
-    | [] -> raise (Proof_error (line_no, "Expected a definition name."))
+    | [] -> raise (Proof_error (line_no, "Expected an alias name."))
   in
-  if not (valid_definition_name name) then
-    raise (Proof_error (line_no, "Invalid definition name: " ^ name));
-  if Option.is_some (find_definition name definitions) then
+  if not (valid_alias_name name) then
+    raise (Proof_error (line_no, "Invalid alias name: " ^ name));
+  if Option.is_some (find_alias name aliases) then
     raise (Proof_error (line_no,
-      "Proposition already defined: " ^ name));
+      "Proposition alias already exists: " ^ name));
   List.iter
     (fun parameter ->
-       if not (valid_definition_name parameter) then
+       if not (valid_alias_name parameter) then
          raise (Proof_error (line_no,
-           "Invalid definition parameter: " ^ parameter)))
+           "Invalid alias parameter: " ^ parameter)))
     parameters;
   let parameter_set = StringSet.of_list parameters in
   if StringSet.cardinal parameter_set <> List.length parameters then
-    raise (Proof_error (line_no, "Definition parameters must be unique."));
+    raise (Proof_error (line_no, "Alias parameters must be unique."));
   let statement =
     String.sub content (assignment + 2)
       (String.length content - assignment - 2)
@@ -958,51 +1030,84 @@ let parse_definition line_no definitions line =
   if statement = "" then
     raise (Proof_error (line_no, "Expected a formula after :=."));
   let body =
-    try parse_formula statement |> unfold line_no definitions
+    try parse_formula statement |> unfold line_no aliases
     with Parse_error (_, message) -> raise (Proof_error (line_no, message))
   in
   let undeclared = StringSet.diff (free_vars body) parameter_set in
   if not (StringSet.is_empty undeclared) then begin
     let variables = String.concat ", " (StringSet.elements undeclared) in
     raise (Proof_error (line_no,
-      "Undeclared free variables in definition body: " ^ variables))
+      "Undeclared free variables in alias body: " ^ variables))
   end else
-    definitions @ [{
-      definition_name = name;
+    aliases @ [{
+      alias_name = name;
       parameters;
       body;
     }]
 
 let analyze_script script =
   let meaningful = split_statements script in
-  let rec read_definitions definitions = function
+  let rec read_declarations aliases choices = function
     | (line_no, line) :: rest
-      when starts_with_at (String.lowercase_ascii line) 0 "definition " ->
-        read_definitions (parse_definition line_no definitions line) rest
-    | rest -> (definitions, rest)
+      when starts_with_at (String.lowercase_ascii line) 0 "alias " ->
+        read_declarations
+          (parse_alias line_no aliases line) choices rest
+    | (line_no, line) :: rest
+      when starts_with_at (String.lowercase_ascii line) 0 "choose " ->
+        let prefix = "choose " in
+        let argument =
+          trim (String.sub line (String.length prefix)
+            (String.length line - String.length prefix))
+        in
+        let witness, hypothesis, source, terms =
+          parse_choice_words line_no "Choose" argument
+        in
+        let choice = {
+          choice_line = line_no;
+          choice_witness = witness;
+          choice_hypothesis = hypothesis;
+          choice_source = source;
+          choice_terms = terms;
+        } in
+        read_declarations aliases (choices @ [choice]) rest
+    | rest -> (aliases, choices, rest)
   in
-  let definitions, proof = read_definitions [] meaningful in
+  let aliases, choices, proof =
+    read_declarations [] [] meaningful
+  in
+  let apply_choices state =
+    List.fold_left
+      (fun state choice ->
+         let argument =
+           String.concat " "
+             (choice.choice_witness :: choice.choice_hypothesis ::
+              "from" :: choice.choice_source :: choice.choice_terms)
+         in
+         execute_obtain choice.choice_line state "Choose" argument)
+      state choices
+  in
   match proof with
-  | [] when definitions <> [] ->
+  | [] when aliases <> [] || choices <> [] ->
       let kernel_state =
         Extracted.start Extracted.NFalsum
         |> accept_kernel_result 1 "initial goal"
       in
-      ({
+      let declarations = {
         theorem_name = "";
         theorem = Bottom;
-        definitions;
+        aliases;
         kernel_state;
         final_certificate = None;
         steps = [];
-      }, false)
+      } in
+      (apply_choices declarations, false)
   | [] -> raise (Proof_error (1, "The proof script is empty."))
   | (header_line, header) :: tactics ->
       let lower_header = String.lowercase_ascii header in
       let prefix = "theorem " in
       if not (starts_with_at lower_header 0 prefix) then
         raise (Proof_error (header_line,
-          "After definitions, use: theorem name : formula."));
+          "After aliases and choices, use: theorem name : formula."));
       let content = trim (String.sub header (String.length prefix) (String.length header - String.length prefix)) in
       let colon =
         try find_colon content
@@ -1013,7 +1118,7 @@ let analyze_script script =
       if name = "" then
         raise (Proof_error (header_line, "Expected a theorem name."));
       let theorem =
-        try parse_formula statement |> unfold header_line definitions
+        try parse_formula statement |> unfold header_line aliases
         with Parse_error (_, message) -> raise (Proof_error (header_line, message))
       in
       let kernel_state =
@@ -1023,11 +1128,12 @@ let analyze_script script =
       let initial = {
         theorem_name = name;
         theorem;
-        definitions;
+        aliases;
         kernel_state;
         final_certificate = None;
         steps = [];
       } in
+      let initial = apply_choices initial in
       let rec run state = function
         | [] -> (state, false)
         | (line_no, line) :: rest when String.lowercase_ascii line = "qed" ->
@@ -1067,7 +1173,7 @@ let check_script script =
 
 let theorem_name state = state.theorem_name
 let theorem state = state.theorem
-let definitions state = state.definitions
+let aliases state = state.aliases
 
 type display_goal = {
   context : (string * formula) list;

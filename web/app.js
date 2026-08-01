@@ -33,6 +33,13 @@ intro x.
 use x.
 refl.
 qed.`,
+  obtain: `theorem obtain_witness :
+  (exists x, x = x) -> exists y, y = y.
+intro H.
+obtain x Hx from H.
+use x.
+exact Hx.
+qed.`,
   empty: `theorem empty_set_exists : exists e, forall x, not (x in e).
 exact empty_set.
 qed.`,
@@ -44,12 +51,18 @@ intro a.
 separation S a x : not (x in x).
 exact S.
 qed.`,
-  definition: `Definition is_empty x :=
+  alias: `alias is_empty x :=
   forall y, not (y in x).
 theorem empty_identity : forall x, (is_empty x -> is_empty x).
 intro x.
 intro H.
 exact H.
+qed.`,
+  choose: `alias is_empty x := forall y, not (y in x).
+Choose empty Hempty from empty_set.
+theorem chosen_empty_exists : exists e, is_empty e.
+use empty.
+exact Hempty.
 qed.`,
   rules: `theorem equality_by_rules :
   forall x, x = x.
@@ -113,16 +126,16 @@ async function verify() {
       body: editor.value
     });
     const data = await response.json();
-    if (data.ok && data.definitionsOnly) {
+    if (data.ok && data.aliasesOnly) {
       result.className = "result success";
       result.innerHTML = `
         <div class="result-icon">✓</div>
-        <p class="result-kicker">${data.definitions.length} DEFINITIONS</p>
-        <h3>Proposition definitions loaded</h3>
-        <p>${data.definitions.map((definition) =>
+        <p class="result-kicker">${data.aliases.length} ALIASES</p>
+        <h3>Proposition aliases loaded</h3>
+        <p>${data.aliases.map((alias) =>
           `<code>${escapeHtml(
-            [definition.name, ...(definition.parameters || [])].join(" ")
-          )}</code> := ${escapeHtml(definition.statement)}`
+            [alias.name, ...(alias.parameters || [])].join(" ")
+          )}</code> := ${escapeHtml(alias.statement)}`
         ).join("<br>")}</p>`;
     } else if (data.ok) {
       result.className = "result success";
@@ -164,18 +177,18 @@ function renderInteractive(data) {
     return;
   }
 
-  if (data.definitionsOnly) {
-    goalCount.textContent = `${data.definitions.length} definitions`;
-    goalView.innerHTML = data.definitions.map((definition) =>
+  if (data.aliasesOnly) {
+    goalCount.textContent = `${data.aliases.length} aliases`;
+    goalView.innerHTML = data.aliases.map((alias) =>
       `<p><strong>${escapeHtml(
-        [definition.name, ...(definition.parameters || [])].join(" ")
+        [alias.name, ...(alias.parameters || [])].join(" ")
       )}</strong> :=
-      <span class="goal-target">${escapeHtml(definition.statement)}</span></p>`
+      <span class="goal-target">${escapeHtml(alias.statement)}</span></p>`
     ).join("");
     result.className = "result success";
     result.innerHTML = `
       <div class="result-icon">✓</div>
-      <p class="result-kicker">DEFINITIONS LOADED</p>
+      <p class="result-kicker">ALIASES LOADED</p>
       <p>${escapeHtml(data.message)}</p>`;
     return;
   }

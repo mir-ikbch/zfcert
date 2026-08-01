@@ -4,7 +4,7 @@ let rec to_kernel = function
   | Syntax.Bottom -> Kernel.NFalsum
   | Syntax.Named (name, _) ->
       invalid_arg
-        ("Unexpanded proposition definition reached the kernel: " ^ name)
+        ("Unexpanded proposition alias reached the kernel: " ^ name)
   | Syntax.Eq (left, right) -> Kernel.NEqual (left, right)
   | Syntax.Mem (left, right) -> Kernel.NMember (left, right)
   | Syntax.Not formula -> Kernel.NNeg (to_kernel formula)

@@ -68,10 +68,10 @@ a synchronous local HTTP request."
 (defvar-local zfcert--error-overlay nil)
 
 (defconst zfcert--font-lock-keywords
-  `((,(regexp-opt '("Definition" "theorem" "qed") 'symbols)
+  `((,(regexp-opt '("alias" "Choose" "theorem" "qed") 'symbols)
      . font-lock-keyword-face)
     (,(regexp-opt
-       '("rule" "intro" "exact" "apply" "specialize" "cases" "use"
+       '("rule" "intro" "exact" "apply" "specialize" "obtain" "cases" "use"
          "refl" "split" "constructor" "assumption" "contradiction"
          "left" "right" "separation" "replacement")
        'symbols)
@@ -94,7 +94,7 @@ a synchronous local HTTP request."
      . font-lock-variable-name-face)
     ("\\_<theorem\\_>[[:space:]]+\\([[:word:]_']+\\)"
      1 font-lock-function-name-face)
-    ("\\_<Definition\\_>[[:space:]]+\\([[:word:]_']+\\)"
+    ("\\_<alias\\_>[[:space:]]+\\([[:word:]_']+\\)"
      1 font-lock-variable-name-face)))
 
 (defvar zfcert-mode-syntax-table
@@ -269,16 +269,16 @@ a synchronous local HTTP request."
     (overlay-put zfcert--error-overlay 'face 'error)
     (overlay-put zfcert--error-overlay 'help-echo message)))
 
-(defun zfcert--insert-definitions (definitions)
-  (dolist (definition definitions)
+(defun zfcert--insert-aliases (aliases)
+  (dolist (alias aliases)
     (insert
      (propertize
       (mapconcat #'identity
-                 (cons (alist-get 'name definition)
-                       (alist-get 'parameters definition))
+                 (cons (alist-get 'name alias)
+                       (alist-get 'parameters alias))
                  " ")
       'face 'font-lock-variable-name-face)
-     " := " (or (alist-get 'statement definition) "") "\n")))
+     " := " (or (alist-get 'statement alias) "") "\n")))
 
 (defun zfcert--render-result (result)
   (let ((buffer (get-buffer-create "*ZFCert Goals*")))
@@ -293,12 +293,12 @@ a synchronous local HTTP request."
                            (or (alist-get 'line result) "?"))
                    'face 'error)
                   (or (alist-get 'message result) "Unknown error") "\n"))
-         ((alist-get 'definitionsOnly result)
-          (let ((definitions (alist-get 'definitions result)))
+         ((alist-get 'aliasesOnly result)
+          (let ((aliases (alist-get 'aliases result)))
             (insert (propertize
-                     (format "%d definitions\n\n" (length definitions))
+                     (format "%d aliases\n\n" (length aliases))
                      'face 'success))
-            (zfcert--insert-definitions definitions)))
+            (zfcert--insert-aliases aliases)))
          ((or (alist-get 'qed result)
               (not (assq 'goals result)))
           (insert (propertize

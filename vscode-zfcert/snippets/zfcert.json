@@ -1,8 +1,13 @@
 {
-  "Proposition definition": {
-    "prefix": "definition",
-    "body": "Definition ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.",
-    "description": "Give a transparent name to a proposition, optionally with arguments"
+  "Proposition alias": {
+    "prefix": "alias",
+    "body": "alias ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.",
+    "description": "Give a transparent alias to a proposition, optionally with arguments"
+  },
+  "Choose existential witness": {
+    "prefix": "Choose",
+    "body": "Choose ${1:empty} ${2:Hempty} from ${3:empty_set}.",
+    "description": "Choose a proof-local witness before a theorem"
   },
   "Primitive rule proof": {
     "prefix": "ruleproof",
@@ -38,6 +43,11 @@
     "prefix": "specialize",
     "body": "specialize ${1:H} ${2:a} as ${3:H_a}.",
     "description": "Instantiate a universally quantified fact"
+  },
+  "Obtain existential witness": {
+    "prefix": "obtain",
+    "body": "obtain ${1:x} ${2:Hx} from ${3:H}.",
+    "description": "Specialize and eliminate an existential fact"
   },
   "Separation instance": {
     "prefix": "separation",

@@ -1,6 +1,6 @@
-definition pair p x y :=
+alias pair p x y :=
   forall z, z in p <-> (z = x or z = y).
-definition ordpair p x y :=
+alias ordpair p x y :=
   forall q, pair q x y -> pair p x q.
 
 theorem pair_eq :
