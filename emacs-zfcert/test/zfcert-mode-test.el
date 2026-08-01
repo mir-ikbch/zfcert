@@ -21,6 +21,46 @@
       (concat "theorem identity : forall x, x = x.\n"
               "rule all_intro x.")))))
 
+(ert-deftest zfcert-mode-binds-current-and-next-line-commands ()
+  (should (eq (lookup-key zfcert-mode-map (kbd "C-c C-<return>"))
+              #'zfcert-run-to-point))
+  (should (eq (lookup-key zfcert-mode-map (kbd "C-c C-RET"))
+              #'zfcert-run-to-point))
+  (should (eq (lookup-key zfcert-mode-map (kbd "C-c C-n"))
+              #'zfcert-run-next-line)))
+
+(ert-deftest zfcert-run-next-line-checks-and-moves-to-the-next-line ()
+  (with-temp-buffer
+    (zfcert-mode)
+    (insert "theorem identity : forall x, x = x.\n")
+    (insert "rule all_intro x.\n")
+    (insert "rule equal_refl.")
+    (goto-char (point-min))
+    (let (request-body)
+      (cl-letf (((symbol-function 'zfcert--ensure-kernel) #'ignore)
+                ((symbol-function 'zfcert--request)
+                 (lambda (_method _endpoint body &optional _timeout)
+                   (setq request-body body)
+                   '((ok . t))))
+                ((symbol-function 'zfcert--apply-result)
+                 (lambda (result &optional _display) result)))
+        (zfcert-run-next-line))
+      (should (= (line-number-at-pos) 2))
+      (should (= (current-column) 0))
+      (should
+       (equal request-body
+              (concat "theorem identity : forall x, x = x.\n"
+                      "rule all_intro x."))))))
+
+(ert-deftest zfcert-run-next-line-stays-put-at-the-last-line ()
+  (with-temp-buffer
+    (zfcert-mode)
+    (insert "theorem identity : forall x, x = x.")
+    (goto-char (point-min))
+    (let ((origin (point)))
+      (should-error (zfcert-run-next-line) :type 'user-error)
+      (should (= (point) origin)))))
+
 (ert-deftest zfcert-decodes-raw-utf8-http-response ()
   (let ((raw (apply #'string '(226 136 128 120 44 32 194 172))))
     (should (equal (zfcert--decode-utf8-response raw) "∀x, ¬"))))

@@ -25,7 +25,8 @@ Emacsメジャーモードです。追加パッケージには依存しません
 
 | キー | コマンド | 動作 |
 |---|---|---|
-| `C-c C-n` | `zfcert-run-to-point` | カーソルのある行まで実行 |
+| `C-c C-RET` | `zfcert-run-to-point` | カーソルのある行まで実行 |
+| `C-c C-n` | `zfcert-run-next-line` | 次の行まで実行し、その行へ移動 |
 | `C-c C-c` | `zfcert-check-buffer` | 証明全体を検査 |
 | `C-c C-g` | `zfcert-show-goals` | 現在の証明状態を表示 |
 | `C-c C-r` | `zfcert-restart-kernel` | カーネルを再起動 |

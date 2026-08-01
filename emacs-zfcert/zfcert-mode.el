@@ -107,7 +107,9 @@ a synchronous local HTTP request."
 
 (defvar zfcert-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-n") #'zfcert-run-to-point)
+    (define-key map (kbd "C-c C-<return>") #'zfcert-run-to-point)
+    (define-key map (kbd "C-c C-RET") #'zfcert-run-to-point)
+    (define-key map (kbd "C-c C-n") #'zfcert-run-next-line)
     (define-key map (kbd "C-c C-c") #'zfcert-check-buffer)
     (define-key map (kbd "C-c C-g") #'zfcert-show-goals)
     (define-key map (kbd "C-c C-r") #'zfcert-restart-kernel)
@@ -367,6 +369,14 @@ a synchronous local HTTP request."
    (zfcert--request "POST" "api/step" (zfcert--buffer-through-line))
    t))
 
+(defun zfcert-run-next-line ()
+  "Move to the next line and check the proof through that line."
+  (interactive)
+  (when (= (line-end-position) (point-max))
+    (user-error "There is no next line"))
+  (forward-line 1)
+  (zfcert-run-to-point))
+
 (defun zfcert-check-buffer ()
   "Check the complete proof in the current buffer."
   (interactive)
@@ -428,7 +438,8 @@ a synchronous local HTTP request."
 (easy-menu-define zfcert-mode-menu zfcert-mode-map
   "Menu for ZFCert proof buffers."
   '("ZFCert"
-    ["Run to Point" zfcert-run-to-point t]
+    ["Run Through Current Line" zfcert-run-to-point t]
+    ["Run Next Line" zfcert-run-next-line t]
     ["Check Buffer" zfcert-check-buffer t]
     ["Show Goals" zfcert-show-goals t]
     "---"
