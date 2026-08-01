@@ -399,17 +399,46 @@ Record named_state : Type := NamedState {
   named_goal_metadata : list goal_metadata
 }.
 
+Definition initial_metadata_with_assumptions
+  (constants environment : list string)
+  (named_assumptions : list named_hypothesis)
+  (source : named_formula) : goal_metadata :=
+  GoalMetadata
+    (map named_hypothesis_name named_assumptions)
+    (map (fun hypothesis =>
+      named_binder_names (named_hypothesis_formula hypothesis))
+      named_assumptions)
+    (named_binder_names source)
+    environment
+    constants.
+
 Definition initial_metadata
   (constants : list string) (source : named_formula) : goal_metadata :=
-  GoalMetadata [] [] (named_binder_names source)
+  initial_metadata_with_assumptions constants
     (filter_environment constants (named_free_variables source))
-    constants.
+    [] source.
+
+Definition named_start_with_environment
+  (constants environment : list string)
+  (named_assumptions : list named_hypothesis)
+  (core_assumptions : list formula)
+  (source : named_formula) : named_result named_state :=
+  if Nat.eqb (List.length named_assumptions)
+       (List.length core_assumptions)
+  then
+    named_bind (elaborate constants [] environment source) (fun core =>
+    NOk (NamedState
+      (start_with_assumptions core_assumptions core)
+      [initial_metadata_with_assumptions
+        constants environment named_assumptions source]))
+  else NError NMetadataMismatch.
 
 Definition named_start_with_constants
   (constants : list string) (source : named_formula)
   : named_result named_state :=
-  named_bind (elaborate_closed constants source) (fun core =>
-  NOk (NamedState (start core) [initial_metadata constants source])).
+  named_start_with_environment constants
+    (filter_environment constants (named_free_variables source))
+    [] [] source.
 
 Definition named_start (source : named_formula)
   : named_result named_state :=

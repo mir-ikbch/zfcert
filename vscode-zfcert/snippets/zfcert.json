@@ -7,7 +7,7 @@
   "Choose existential witness": {
     "prefix": "Choose",
     "body": "Choose ${1:empty} ${2:Hempty} from ${3:empty_set}.",
-    "description": "Choose a proof-local witness before a theorem"
+    "description": "Declare a global witness constant and its certified fact"
   },
   "Primitive rule proof": {
     "prefix": "ruleproof",

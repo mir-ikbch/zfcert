@@ -40,15 +40,32 @@ Fixpoint replay_steps
 Record certified_state : Type := CertifiedState {
   certified_initial_formula : named_formula;
   certified_constants : list string;
+  certified_initial_environment : list string;
+  certified_initial_named_assumptions : list named_hypothesis;
+  certified_initial_core_assumptions : list formula;
   certified_current_state : named_state;
   certified_reverse_certificate : certificate
 }.
 
+Definition certified_start_with_environment
+  (constants environment : list string)
+  (named_assumptions : list named_hypothesis)
+  (core_assumptions : list formula)
+  (source : named_formula)
+  : named_result certified_state :=
+  named_bind
+    (named_start_with_environment constants environment
+      named_assumptions core_assumptions source)
+    (fun state =>
+  NOk (CertifiedState source constants environment
+    named_assumptions core_assumptions state [])).
+
 Definition certified_start_with_constants
   (constants : list string) (source : named_formula)
   : named_result certified_state :=
-  named_bind (named_start_with_constants constants source) (fun state =>
-  NOk (CertifiedState source constants state [])).
+  certified_start_with_environment constants
+    (filter_environment constants (named_free_variables source))
+    [] [] source.
 
 Definition certified_start
   (source : named_formula) : named_result certified_state :=
@@ -73,6 +90,9 @@ Definition certified_step
   NOk (CertifiedState
     (certified_initial_formula state)
     (certified_constants state)
+    (certified_initial_environment state)
+    (certified_initial_named_assumptions state)
+    (certified_initial_core_assumptions state)
     next
     (step :: certified_reverse_certificate state))).
 
@@ -86,11 +106,24 @@ Fixpoint certified_run
         (fun next => certified_run rest next)
   end.
 
+Definition replay_certificate_with_environment
+  (constants environment : list string)
+  (named_assumptions : list named_hypothesis)
+  (core_assumptions : list formula)
+  (source : named_formula)
+  (steps : certificate) : named_result named_state :=
+  named_bind
+    (named_start_with_environment constants environment
+      named_assumptions core_assumptions source)
+    (fun state =>
+  replay_steps steps state).
+
 Definition replay_certificate_with_constants
   (constants : list string) (source : named_formula)
   (steps : certificate) : named_result named_state :=
-  named_bind (named_start_with_constants constants source) (fun state =>
-  replay_steps steps state).
+  replay_certificate_with_environment constants
+    (filter_environment constants (named_free_variables source))
+    [] [] source steps.
 
 Definition replay_certificate
   (source : named_formula)
@@ -104,8 +137,11 @@ Definition certified_finalize
   (state : certified_state) : named_result certificate :=
   let steps := certified_certificate state in
   named_bind
-    (replay_certificate_with_constants
+    (replay_certificate_with_environment
       (certified_constants state)
+      (certified_initial_environment state)
+      (certified_initial_named_assumptions state)
+      (certified_initial_core_assumptions state)
       (certified_initial_formula state) steps)
     (fun replayed =>
   if named_solved replayed
@@ -287,14 +323,45 @@ Proof.
   - discriminate.
 Qed.
 
+Definition named_formula_provable_with_environment
+  (constants environment : list string)
+  (core_assumptions : list formula)
+  (source : named_formula) : Prop :=
+  exists core,
+    elaborate constants [] environment source = NOk core /\
+    derives zfc_theory core_assumptions core.
+
 Definition named_formula_provable_with_constants
   (constants : list string) (source : named_formula) : Prop :=
-  exists core,
-    elaborate_closed constants source = NOk core /\
-    derives zfc_theory [] core.
+  named_formula_provable_with_environment constants
+    (filter_environment constants (named_free_variables source))
+    [] source.
 
 Definition named_formula_provable (source : named_formula) : Prop :=
   named_formula_provable_with_constants [] source.
+
+Lemma named_start_with_environment_provable :
+  forall constants environment named_assumptions core_assumptions
+      source state,
+    named_start_with_environment constants environment
+      named_assumptions core_assumptions source = NOk state ->
+    named_state_provable zfc_theory state ->
+    named_formula_provable_with_environment constants environment
+      core_assumptions source.
+Proof.
+  intros constants environment named_assumptions core_assumptions
+    source state Hstart Hstate.
+  unfold named_start_with_environment in Hstart.
+  destruct (Nat.eqb (List.length named_assumptions)
+    (List.length core_assumptions)) eqn:Hlength; try discriminate.
+  destruct (elaborate constants [] environment source)
+    as [core | error] eqn:Helaborate; try discriminate.
+  inversion Hstart; subst.
+  exists core. split.
+  - exact Helaborate.
+  - unfold named_state_provable, state_provable in Hstate.
+    inversion Hstate; subst. assumption.
+Qed.
 
 Lemma named_start_with_constants_provable :
   forall constants source state,
@@ -303,14 +370,9 @@ Lemma named_start_with_constants_provable :
     named_formula_provable_with_constants constants source.
 Proof.
   intros constants source state Hstart Hstate.
-  unfold named_start_with_constants in Hstart.
-  destruct (elaborate_closed constants source)
-    as [core | error] eqn:Helaborate; try discriminate.
-  inversion Hstart; subst.
-  exists core. split.
-  - exact Helaborate.
-  - unfold named_state_provable, state_provable in Hstate.
-    inversion Hstate; subst. exact H1.
+  unfold named_start_with_constants,
+    named_formula_provable_with_constants in *.
+  eapply named_start_with_environment_provable; eauto.
 Qed.
 
 Lemma named_start_provable :
@@ -331,10 +393,36 @@ Theorem replay_certificate_with_constants_sound :
     named_formula_provable_with_constants constants source.
 Proof.
   intros constants source steps final Hreplay Hsolved.
-  unfold replay_certificate_with_constants in Hreplay.
-  destruct (named_start_with_constants constants source)
+  unfold replay_certificate_with_constants,
+    replay_certificate_with_environment in Hreplay.
+  unfold named_formula_provable_with_constants.
+  destruct (named_start_with_environment constants
+    (filter_environment constants (named_free_variables source))
+    [] [] source)
     as [initial | error] eqn:Hstart; try discriminate.
-  eapply named_start_with_constants_provable.
+  eapply named_start_with_environment_provable.
+  - exact Hstart.
+  - eapply replay_steps_sound.
+    + exact Hreplay.
+    + apply named_solved_provable. exact Hsolved.
+Qed.
+
+Theorem replay_certificate_with_environment_sound :
+  forall constants environment named_assumptions core_assumptions
+      source steps final,
+    replay_certificate_with_environment constants environment
+      named_assumptions core_assumptions source steps = NOk final ->
+    named_solved final = true ->
+    named_formula_provable_with_environment constants environment
+      core_assumptions source.
+Proof.
+  intros constants environment named_assumptions core_assumptions
+    source steps final Hreplay Hsolved.
+  unfold replay_certificate_with_environment in Hreplay.
+  destruct (named_start_with_environment constants environment
+    named_assumptions core_assumptions source)
+    as [initial | error] eqn:Hstart; try discriminate.
+  eapply named_start_with_environment_provable.
   - exact Hstart.
   - eapply replay_steps_sound.
     + exact Hreplay.
@@ -355,23 +443,33 @@ Qed.
 Theorem certified_finalize_sound :
   forall state steps,
     certified_finalize state = NOk steps ->
-    named_formula_provable_with_constants
+    named_formula_provable_with_environment
       (certified_constants state)
+      (certified_initial_environment state)
+      (certified_initial_core_assumptions state)
       (certified_initial_formula state).
 Proof.
   intros state steps Hfinalize.
   unfold certified_finalize in Hfinalize.
   destruct
-    (replay_certificate_with_constants
+    (replay_certificate_with_environment
       (certified_constants state)
+      (certified_initial_environment state)
+      (certified_initial_named_assumptions state)
+      (certified_initial_core_assumptions state)
       (certified_initial_formula state)
       (certified_certificate state))
     as [replayed | error] eqn:Hreplay.
   - destruct replayed as [kernel metadata].
     destruct kernel as [|goal rest].
     + cbn in Hfinalize. inversion Hfinalize; subst.
-      eapply replay_certificate_with_constants_sound
+      eapply replay_certificate_with_environment_sound
         with (constants := certified_constants state)
+             (environment := certified_initial_environment state)
+             (named_assumptions :=
+               certified_initial_named_assumptions state)
+             (core_assumptions :=
+               certified_initial_core_assumptions state)
              (steps := certified_certificate state)
              (final := NamedState [] metadata).
       * exact Hreplay.

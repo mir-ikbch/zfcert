@@ -13,6 +13,7 @@ coq:
 	$(COQC) coq/NamedProofState.v
 	$(COQC) coq/NamedCommands.v
 	$(COQC) coq/CertifiedSession.v
+	$(COQC) coq/GlobalEnvironment.v
 	$(COQC) coq/Audit.v
 
 extract: coq

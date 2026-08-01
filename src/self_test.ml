@@ -36,7 +36,9 @@ let valid_scripts =
     "alias relates x y := x = y\ntheorem simultaneous_arguments : forall x, forall y, (relates y x -> y = x)\nintro x\nintro y\nintro H\nexact H\nqed";
     "theorem obtain_local : ((exists x, x = x) -> exists y, y = y)\nintro H\nobtain x Hx from H\nuse x\nexact Hx\nqed";
     "theorem obtain_specialized : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nobtain p Hp from pairing a b\nuse p\nexact Hp\nqed";
-    "alias is_empty x := forall y, not (y in x)\nChoose empty Hempty from empty_set\ntheorem choose_empty : exists e, is_empty e\nuse empty\nexact Hempty\nqed";
+    "alias is_empty x := forall y, not (y in x)\nChoose empty Hempty from empty_set\ntheorem choose_empty : is_empty empty\nexact Hempty\nqed";
+    "Choose empty Hempty from empty_set\nChoose pair_empty Hpair from pairing empty empty\ntheorem choose_pair : forall x, (x in pair_empty <-> (x = empty or x = empty))\nexact Hpair\nqed";
+    "(* A nested (* comment. *) is ignored. *) theorem commented : forall x, x = x\nintro (* binder name *) x\nrefl # legacy line comment\nqed";
     "theorem rule_identity : forall x, x = x\nrule all_intro x\nrule equal_refl\nqed";
     "theorem rule_default_all_intro : forall x, x = x\nrule all_intro\nrule equal_refl\nqed";
     "theorem rule_cut : forall x, x = x\nrule cut H : forall x, x = x\nrule all_intro x\nrule equal_refl\nrule hypothesis H\nqed";
@@ -100,6 +102,24 @@ let run () =
   | Error _ ->
       failwith "The constant environment was not retained during replay"
   end;
+  let commented_formula =
+    Parser.parse_formula
+      "forall x, (* comments are whitespace *) x = x"
+  in
+  if not
+       (Syntax.alpha_equal commented_formula
+          (Syntax.Forall ("x", Syntax.Eq ("x", "x"))))
+  then
+    failwith "A block comment changed the parsed formula";
+  ignore
+    (Proof_session.check_script
+       "(* A multiline comment may contain periods.
+           It may also contain a nested (* comment *).
+        *)
+        theorem multiline_comment : forall x, x = x.
+        intro x.
+        refl.
+        qed.");
   let primitive_state =
     Proof_session.check_script
       (terminate_lines
@@ -127,16 +147,21 @@ let run () =
     Proof_session.check_script
       "alias is_empty x := forall y, not (y in x).
        Choose empty Hempty from empty_set.
-       theorem choose_certificate : exists e, is_empty e.
-       use empty.
+       theorem choose_certificate : is_empty empty.
        exact Hempty.
        qed."
   in
   begin match Proof_session.certificate_rules choose_state with
-  | Some rules
-    when List.exists
-      (fun rule -> contains rule "ex_elim empty Hempty") rules -> ()
-  | _ -> failwith "Choose was not recorded as existential elimination"
+  | Some ["hypothesis Hempty"] -> ()
+  | _ ->
+      failwith
+        "The theorem certificate did not use the declared global fact"
+  end;
+  if Proof_session.global_constants choose_state <> ["empty"] then
+    failwith "Choose did not add its witness to the global constants";
+  begin match Proof_session.global_facts choose_state with
+  | [("Hempty", Syntax.Forall (_, Syntax.Not (Syntax.Mem (_, "empty"))))] -> ()
+  | _ -> failwith "Choose did not add its instantiated global fact"
   end;
   let aliases_only, _ =
     Proof_session.analyze_script
@@ -157,7 +182,10 @@ let run () =
   if choices_have_qed
      || Proof_session.theorem_name choices_only <> ""
      || Proof_session.step_count choices_only <> 1
+     || Proof_session.global_constants choices_only <> ["empty"]
      || not (contains choices_json {|"aliasesOnly":true|})
+     || not (contains choices_json {|"constants":["empty"]|})
+     || not (contains choices_json {|"facts":[{"name":"Hempty"|})
      || not (contains choices_json {|"steps":1|})
   then
     failwith "A script prefix ending with Choose was rejected or misreported";
@@ -223,6 +251,44 @@ rule impl_intro H")
   then
     failwith
       "The extracted rule layer accepted a rule with the wrong goal shape";
+  if not
+       (rejected
+          "Choose empty Hempty from empty_set
+Choose empty Hempty2 from empty_set")
+  then
+    failwith "Choose accepted a duplicate global constant";
+  if not
+       (rejected
+          "Choose empty Hempty from empty_set
+Choose empty2 Hempty from empty_set")
+  then
+    failwith "Choose accepted a duplicate global fact name";
+  if not
+       (rejected
+          "Choose empty Hempty from empty_set
+Choose impossible Himpossible from Hempty")
+  then
+    failwith "Choose accepted a non-existential global fact";
+  if not
+       (rejected
+          "Choose empty Hempty from empty_set
+theorem shadows_constant : forall empty, empty = empty
+intro empty
+refl
+qed")
+  then
+    failwith "A theorem binder was allowed to shadow a global constant";
+  if not
+       (rejected
+          "(* This comment never closes.
+theorem hidden : forall x, x = x")
+  then
+    failwith "An unterminated block comment was accepted";
+  if not
+       (rejected
+          "*) theorem unexpected_comment_end : forall x, x = x")
+  then
+    failwith "An unmatched block comment terminator was accepted";
   let missing_period_rejected =
     try
       ignore
@@ -261,5 +327,5 @@ rule impl_intro H")
     | _ -> failwith "The choice axiom did not parse"
   end;
   Printf.printf
-    "All %d kernel tests passed (plus 8 rejection tests).\n%!"
+    "All %d kernel tests passed (plus 14 rejection tests).\n%!"
     (List.length valid_scripts)

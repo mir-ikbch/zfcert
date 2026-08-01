@@ -49,6 +49,19 @@ async function main() {
     "After aliases and choices, use: theorem name : formula."
   );
 
+  const commented = await client.check(`(* A block comment may contain periods.
+    It may also contain (* nested comments *). *)
+    theorem commented_identity : forall x, x = x.
+    intro (* the introduced variable *) x.
+    refl. # Legacy line comments remain supported.
+    qed.`);
+  assert.strictEqual(commented.ok, true);
+  assert.strictEqual(commented.theorem, "commented_identity");
+
+  const unterminatedComment = await client.check("(* never closed");
+  assert.strictEqual(unterminatedComment.ok, false);
+  assert.strictEqual(unterminatedComment.message, "Unterminated block comment.");
+
   const aliasesProof = fs.readFileSync(
     path.join(__dirname, "..", "..", "examples", "aliases.zfp"),
     "utf8"
@@ -95,8 +108,7 @@ async function main() {
   const chooseResult = await client.check(`alias is_empty x :=
     forall y, not (y in x).
   Choose empty Hempty from empty_set.
-  theorem chosen_empty : exists e, is_empty e.
-  use empty.
+  theorem chosen_empty : is_empty empty.
   exact Hempty.
   qed.`);
   assert.strictEqual(chooseResult.ok, true);

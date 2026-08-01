@@ -45,6 +45,23 @@ let alias alias =
 let aliases aliases =
   "[" ^ String.concat "," (List.map alias aliases) ^ "]"
 
+let constants state =
+  Proof_session.global_constants state
+  |> List.map quote
+  |> String.concat ","
+  |> Printf.sprintf "[%s]"
+
+let global_fact (name, formula) =
+  Printf.sprintf {|{"name":%s,"formula":%s}|}
+    (quote name)
+    (quote (Syntax.formula_to_string formula))
+
+let global_facts state =
+  Proof_session.global_facts state
+  |> List.map global_fact
+  |> String.concat ","
+  |> Printf.sprintf "[%s]"
+
 let certificate state =
   match Proof_session.certificate_rules state with
   | None -> "[]"
@@ -54,16 +71,20 @@ let certificate state =
 let success state =
   if theorem_name state = "" then
     Printf.sprintf
-      {|{"ok":true,"aliasesOnly":true,"aliases":%s,"steps":%d,"message":%s}|}
+      {|{"ok":true,"aliasesOnly":true,"aliases":%s,"constants":%s,"facts":%s,"steps":%d,"message":%s}|}
       (aliases (Proof_session.aliases state))
+      (constants state)
+      (global_facts state)
       (step_count state)
       (quote "Declarations loaded.")
   else
     Printf.sprintf
-      {|{"ok":true,"aliasesOnly":false,"theorem":%s,"statement":%s,"aliases":%s,"steps":%d,"certificate":%s,"message":%s}|}
+      {|{"ok":true,"aliasesOnly":false,"theorem":%s,"statement":%s,"aliases":%s,"constants":%s,"facts":%s,"steps":%d,"certificate":%s,"message":%s}|}
       (quote (theorem_name state))
       (quote (Syntax.formula_to_string (theorem state)))
       (aliases (Proof_session.aliases state))
+      (constants state)
+      (global_facts state)
       (step_count state)
       (certificate state)
       (quote "The proof was verified by the extracted kernel.")
@@ -86,8 +107,10 @@ let goal goal =
 let step state ~has_qed =
   if theorem_name state = "" then
     Printf.sprintf
-      {|{"ok":true,"aliasesOnly":true,"aliases":%s,"steps":%d,"complete":true,"qed":false,"goals":[],"message":%s}|}
+      {|{"ok":true,"aliasesOnly":true,"aliases":%s,"constants":%s,"facts":%s,"steps":%d,"complete":true,"qed":false,"goals":[],"message":%s}|}
       (aliases (Proof_session.aliases state))
+      (constants state)
+      (global_facts state)
       (step_count state)
       (quote "Declarations checked. You can now write a theorem.")
   else
@@ -104,10 +127,12 @@ let step state ~has_qed =
         "Enter a tactic for the current goal."
     in
     Printf.sprintf
-      {|{"ok":true,"aliasesOnly":false,"theorem":%s,"statement":%s,"aliases":%s,"steps":%d,"complete":%s,"qed":%s,"goals":[%s],"certificate":%s,"message":%s}|}
+      {|{"ok":true,"aliasesOnly":false,"theorem":%s,"statement":%s,"aliases":%s,"constants":%s,"facts":%s,"steps":%d,"complete":%s,"qed":%s,"goals":[%s],"certificate":%s,"message":%s}|}
       (quote (theorem_name state))
       (quote (Syntax.formula_to_string (theorem state)))
       (aliases (Proof_session.aliases state))
+      (constants state)
+      (global_facts state)
       (step_count state)
       (if complete then "true" else "false")
       (if has_qed then "true" else "false")

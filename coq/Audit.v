@@ -2,7 +2,7 @@
 
 From ZFCert Require Import
   FOL ZFC ProofState TacticCompleteness NamedProofState NamedCommands
-  CertifiedSession.
+  CertifiedSession GlobalEnvironment.
 
 Print Assumptions natural_deduction_sound.
 Print Assumptions satisfies_substitute.
@@ -41,3 +41,5 @@ Print Assumptions certified_run_sound.
 Print Assumptions replay_certificate_sound.
 Print Assumptions replay_certificate_with_constants_sound.
 Print Assumptions certified_finalize_sound.
+Print Assumptions global_declare_choice_source_sound.
+Print Assumptions global_declare_choice_extends_environment.

@@ -90,9 +90,9 @@ type proposition_alias = {
   body : formula;
 }
 
-(** A [Choose] declaration is delayed until the theorem has been started.
-    It is then executed as ordinary existential elimination, so the chosen
-    variable cannot escape into the theorem statement. *)
+(** A [Choose] declaration extends the extracted global environment.  The
+    source existential is proved and finalized before the extracted kernel
+    accepts the new constant and its named fact. *)
 type choice_declaration = {
   choice_line : int;
   choice_witness : string;
@@ -105,6 +105,7 @@ type session = {
   theorem_name : string;
   theorem : formula;
   aliases : proposition_alias list;
+  global_environment : Extracted.environment;
   kernel_state : Extracted.state;
   final_certificate : Extracted.certificate option;
   steps : string list;
@@ -519,9 +520,8 @@ let parse_choice_words line_no command argument =
           "Use: %s witness hypothesis from fact term1 term2."
           command))
 
-(** Surface [obtain] and declaration-level [Choose] share this untrusted
-    planner. The extracted certified session checks and records the resulting
-    AllElim/ExElim/closing-rule program. *)
+(** Surface [obtain] is an untrusted planner. The extracted certified session
+    checks and records the resulting AllElim/ExElim/closing-rule program. *)
 let execute_obtain line_no state command argument =
   match materialize_goals line_no state with
   | [] -> raise (Proof_error (line_no, "The proof is already complete."))
@@ -561,6 +561,60 @@ let execute_obtain line_no state command argument =
           raise (Proof_error (line_no,
             "The selected fact does not become existential after specialization."))
       end
+
+(** Prove the existential selected by a [Choose] declaration, replay its
+    certificate, and ask the extracted global environment to add the fresh
+    constant and fact.  OCaml plans the certificate but never constructs or
+    mutates the logical environment itself. *)
+let declare_global_choice environment choice =
+  let line_no = choice.choice_line in
+  let context =
+    Extracted.environment_facts environment
+    |> List.map (fun (name, formula) ->
+         (name, Kernel_syntax.of_kernel formula))
+  in
+  let fact =
+    match lookup_fact choice.choice_source context with
+    | Some fact -> fact
+    | None ->
+        raise (Proof_error (line_no,
+          "Existential fact not found: " ^ choice.choice_source))
+  in
+  let instantiated, all_rules =
+    specialize_rules line_no fact choice.choice_terms
+  in
+  match instantiated with
+  | Exists _ ->
+      let close_rule, axioms =
+        close_fact line_no choice.choice_source context
+      in
+      let program =
+        List.map checked_step all_rules
+        @ [checked_step ~axioms close_rule]
+      in
+      let proof_state =
+        Extracted.start_in_environment environment
+          (kernel_formula instantiated)
+        |> accept_kernel_result line_no "choice source"
+        |> kernel_certificate_run line_no program
+      in
+      if not (Extracted.solved proof_state) then
+        raise (Proof_error (line_no,
+          "The choice source certificate left unresolved goals."));
+      let certificate =
+        Extracted.finalize proof_state
+        |> accept_kernel_result line_no "choice source certificate replay"
+      in
+      Extracted.declare_choice
+        ~constant:choice.choice_witness
+        ~fact:choice.choice_hypothesis
+        ~source:(kernel_formula instantiated)
+        ~proof:certificate
+        environment
+      |> accept_kernel_result line_no "global choice declaration"
+  | _ ->
+      raise (Proof_error (line_no,
+        "The selected fact does not become existential after specialization."))
 
 let execute_tactic line_no state line =
   match materialize_goals line_no state with
@@ -1075,32 +1129,37 @@ let analyze_script script =
   let aliases, choices, proof =
     read_declarations [] [] meaningful
   in
-  let apply_choices state =
+  let global_environment, choice_steps =
     List.fold_left
-      (fun state choice ->
-         let argument =
-           String.concat " "
-             (choice.choice_witness :: choice.choice_hypothesis ::
-              "from" :: choice.choice_source :: choice.choice_terms)
+      (fun (environment, steps) choice ->
+         let environment =
+           declare_global_choice environment choice
          in
-         execute_obtain choice.choice_line state "Choose" argument)
-      state choices
+         let description =
+           String.concat " "
+             ("Choose" :: choice.choice_witness ::
+              choice.choice_hypothesis :: "from" ::
+              choice.choice_source :: choice.choice_terms)
+         in
+         (environment, steps @ [description]))
+      (Extracted.empty_environment, []) choices
   in
   match proof with
   | [] when aliases <> [] || choices <> [] ->
       let kernel_state =
-        Extracted.start Extracted.NFalsum
+        Extracted.start_in_environment global_environment Extracted.NFalsum
         |> accept_kernel_result 1 "initial goal"
       in
       let declarations = {
         theorem_name = "";
         theorem = Bottom;
         aliases;
+        global_environment;
         kernel_state;
         final_certificate = None;
-        steps = [];
+        steps = choice_steps;
       } in
-      (apply_choices declarations, false)
+      (declarations, false)
   | [] -> raise (Proof_error (1, "The proof script is empty."))
   | (header_line, header) :: tactics ->
       let lower_header = String.lowercase_ascii header in
@@ -1122,18 +1181,19 @@ let analyze_script script =
         with Parse_error (_, message) -> raise (Proof_error (header_line, message))
       in
       let kernel_state =
-        Extracted.start (kernel_formula theorem)
+        Extracted.start_in_environment global_environment
+          (kernel_formula theorem)
         |> accept_kernel_result header_line "initial goal"
       in
       let initial = {
         theorem_name = name;
         theorem;
         aliases;
+        global_environment;
         kernel_state;
         final_certificate = None;
-        steps = [];
+        steps = choice_steps;
       } in
-      let initial = apply_choices initial in
       let rec run state = function
         | [] -> (state, false)
         | (line_no, line) :: rest when String.lowercase_ascii line = "qed" ->
@@ -1174,6 +1234,12 @@ let check_script script =
 let theorem_name state = state.theorem_name
 let theorem state = state.theorem
 let aliases state = state.aliases
+let global_constants state =
+  Extracted.environment_constants state.global_environment
+let global_facts state =
+  Extracted.environment_facts state.global_environment
+  |> List.map (fun (name, formula) ->
+       (name, Kernel_syntax.of_kernel formula))
 
 type display_goal = {
   context : (string * formula) list;

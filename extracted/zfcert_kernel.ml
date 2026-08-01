@@ -52,6 +52,7 @@ type error =
   | MetadataMismatch
 
 type state = Raw.certified_state
+type environment = Raw.global_environment
 type axiom = Raw.named_axiom
 type certificate_step = Raw.certificate_step
 type certificate = Raw.certificate
@@ -96,6 +97,24 @@ let start formula =
 
 let start_with_constants constants formula =
   Raw.certified_start_with_constants constants formula |> outcome
+
+let empty_environment = Raw.empty_global_environment
+
+let environment_constants environment =
+  environment.Raw.global_constants
+
+let environment_facts environment =
+  List.map
+    (fun hypothesis ->
+       (hypothesis.Raw.named_hypothesis_name,
+        hypothesis.Raw.named_hypothesis_formula))
+    environment.Raw.global_named_facts
+
+let start_in_environment environment formula =
+  Raw.global_start environment formula |> outcome
+
+let declare_choice ~constant ~fact ~source ~proof environment =
+  Raw.global_declare_choice constant fact source proof environment |> outcome
 
 let goals state =
   match Raw.certified_goals state with

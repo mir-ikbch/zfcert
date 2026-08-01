@@ -222,10 +222,15 @@ type goal = { assumptions : formula list; conclusion : formula }
 
 type proof_state = goal list
 
+(** val start_with_assumptions : formula list -> formula -> proof_state **)
+
+let start_with_assumptions gamma c =
+  { assumptions = gamma; conclusion = c } :: []
+
 (** val start : formula -> proof_state **)
 
 let start c =
-  { assumptions = []; conclusion = c } :: []
+  start_with_assumptions [] c
 
 (** val state_goals : proof_state -> goal list **)
 
@@ -836,13 +841,6 @@ let rec elaborate constants bound environment = function
   else named_bind (elaborate constants (binder :: bound) environment body)
          (fun body_formula -> NOk (Ex body_formula))
 
-(** val elaborate_closed :
-    string list -> named_formula -> formula named_result **)
-
-let elaborate_closed constants source =
-  elaborate constants []
-    (filter_environment constants (named_free_variables source)) source
-
 (** val nth_name :
     string list -> string list -> int -> string named_result **)
 
@@ -1193,22 +1191,40 @@ type goal_metadata = { metadata_hypothesis_names : string list;
 type named_state = { named_kernel_state : proof_state;
                      named_goal_metadata : goal_metadata list }
 
-(** val initial_metadata : string list -> named_formula -> goal_metadata **)
+(** val initial_metadata_with_assumptions :
+    string list -> string list -> named_hypothesis list -> named_formula ->
+    goal_metadata **)
 
-let initial_metadata constants source =
-  { metadata_hypothesis_names = []; metadata_assumption_binders = [];
-    metadata_conclusion_binders = (named_binder_names source);
-    metadata_environment =
-    (filter_environment constants (named_free_variables source));
+let initial_metadata_with_assumptions constants environment named_assumptions0 source =
+  { metadata_hypothesis_names =
+    (map (fun n -> n.named_hypothesis_name) named_assumptions0);
+    metadata_assumption_binders =
+    (map (fun hypothesis ->
+      named_binder_names hypothesis.named_hypothesis_formula)
+      named_assumptions0); metadata_conclusion_binders =
+    (named_binder_names source); metadata_environment = environment;
     metadata_constants = constants }
+
+(** val named_start_with_environment :
+    string list -> string list -> named_hypothesis list -> formula list ->
+    named_formula -> named_state named_result **)
+
+let named_start_with_environment constants environment named_assumptions0 core_assumptions source =
+  if (=) (length named_assumptions0) (length core_assumptions)
+  then named_bind (elaborate constants [] environment source) (fun core ->
+         NOk { named_kernel_state =
+         (start_with_assumptions core_assumptions core);
+         named_goal_metadata =
+         ((initial_metadata_with_assumptions constants environment
+            named_assumptions0 source) :: []) })
+  else NError NMetadataMismatch
 
 (** val named_start_with_constants :
     string list -> named_formula -> named_state named_result **)
 
 let named_start_with_constants constants source =
-  named_bind (elaborate_closed constants source) (fun core -> NOk
-    { named_kernel_state = (start core); named_goal_metadata =
-    ((initial_metadata constants source) :: []) })
+  named_start_with_environment constants
+    (filter_environment constants (named_free_variables source)) [] [] source
 
 (** val named_start : named_formula -> named_state named_result **)
 
@@ -2165,16 +2181,33 @@ let rec replay_steps steps state =
 
 type certified_state = { certified_initial_formula : named_formula;
                          certified_constants : string list;
+                         certified_initial_environment : string list;
+                         certified_initial_named_assumptions : named_hypothesis
+                                                               list;
+                         certified_initial_core_assumptions : formula list;
                          certified_current_state : named_state;
                          certified_reverse_certificate : certificate }
+
+(** val certified_start_with_environment :
+    string list -> string list -> named_hypothesis list -> formula list ->
+    named_formula -> certified_state named_result **)
+
+let certified_start_with_environment constants environment named_assumptions0 core_assumptions source =
+  named_bind
+    (named_start_with_environment constants environment named_assumptions0
+      core_assumptions source) (fun state -> NOk
+    { certified_initial_formula = source; certified_constants = constants;
+    certified_initial_environment = environment;
+    certified_initial_named_assumptions = named_assumptions0;
+    certified_initial_core_assumptions = core_assumptions;
+    certified_current_state = state; certified_reverse_certificate = [] })
 
 (** val certified_start_with_constants :
     string list -> named_formula -> certified_state named_result **)
 
 let certified_start_with_constants constants source =
-  named_bind (named_start_with_constants constants source) (fun state -> NOk
-    { certified_initial_formula = source; certified_constants = constants;
-    certified_current_state = state; certified_reverse_certificate = [] })
+  certified_start_with_environment constants
+    (filter_environment constants (named_free_variables source)) [] [] source
 
 (** val certified_start : named_formula -> certified_state named_result **)
 
@@ -2203,7 +2236,12 @@ let certified_step step0 state =
   named_bind (run_certificate_step step0 state.certified_current_state)
     (fun next -> NOk { certified_initial_formula =
     state.certified_initial_formula; certified_constants =
-    state.certified_constants; certified_current_state = next;
+    state.certified_constants; certified_initial_environment =
+    state.certified_initial_environment;
+    certified_initial_named_assumptions =
+    state.certified_initial_named_assumptions;
+    certified_initial_core_assumptions =
+    state.certified_initial_core_assumptions; certified_current_state = next;
     certified_reverse_certificate =
     (step0 :: state.certified_reverse_certificate) })
 
@@ -2217,12 +2255,22 @@ let rec certified_run steps state =
     named_bind (certified_step step0 state) (fun next ->
       certified_run rest next)
 
+(** val replay_certificate_with_environment :
+    string list -> string list -> named_hypothesis list -> formula list ->
+    named_formula -> certificate -> named_state named_result **)
+
+let replay_certificate_with_environment constants environment named_assumptions0 core_assumptions source steps =
+  named_bind
+    (named_start_with_environment constants environment named_assumptions0
+      core_assumptions source) (fun state -> replay_steps steps state)
+
 (** val replay_certificate_with_constants :
     string list -> named_formula -> certificate -> named_state named_result **)
 
 let replay_certificate_with_constants constants source steps =
-  named_bind (named_start_with_constants constants source) (fun state ->
-    replay_steps steps state)
+  replay_certificate_with_environment constants
+    (filter_environment constants (named_free_variables source)) [] [] source
+    steps
 
 (** val replay_certificate :
     named_formula -> certificate -> named_state named_result **)
@@ -2235,7 +2283,10 @@ let replay_certificate source steps =
 let certified_finalize state =
   let steps = certified_certificate state in
   named_bind
-    (replay_certificate_with_constants state.certified_constants
+    (replay_certificate_with_environment state.certified_constants
+      state.certified_initial_environment
+      state.certified_initial_named_assumptions
+      state.certified_initial_core_assumptions
       state.certified_initial_formula steps) (fun replayed ->
     if named_solved replayed then NOk steps else NError NWrongNamedShape)
 
@@ -2339,3 +2390,70 @@ let certified_replacement_tactic fact source input output predicate state =
   certified_run
     (replacement_tactic_program fact source input output predicate
       state.certified_current_state) state
+
+type global_environment = { global_constants : string list;
+                            global_named_facts : named_hypothesis list;
+                            global_core_facts : formula list }
+
+(** val empty_global_environment : global_environment **)
+
+let empty_global_environment =
+  { global_constants = []; global_named_facts = []; global_core_facts = [] }
+
+(** val global_fact_names : global_environment -> string list **)
+
+let global_fact_names environment =
+  map (fun n -> n.named_hypothesis_name) environment.global_named_facts
+
+(** val global_start :
+    global_environment -> named_formula -> certified_state named_result **)
+
+let global_start environment source =
+  certified_start_with_environment environment.global_constants []
+    environment.global_named_facts environment.global_core_facts source
+
+(** val global_replay :
+    global_environment -> named_formula -> certificate -> named_state
+    named_result **)
+
+let global_replay environment source proof =
+  replay_certificate_with_environment environment.global_constants []
+    environment.global_named_facts environment.global_core_facts source proof
+
+(** val global_declare_choice :
+    string -> string -> named_formula -> certificate -> global_environment ->
+    global_environment named_result **)
+
+let global_declare_choice constant_name fact_name source proof environment =
+  if string_mem constant_name environment.global_constants
+  then NError (NVariableAlreadyUsed constant_name)
+  else if string_mem fact_name (global_fact_names environment)
+       then NError (NHypothesisAlreadyUsed fact_name)
+       else (match source with
+             | NEx (_, body) ->
+               named_bind (global_replay environment source proof)
+                 (fun replayed ->
+                 if named_solved replayed
+                 then named_bind
+                        (elaborate environment.global_constants [] [] source)
+                        (fun core_source ->
+                        match core_source with
+                        | Ex core_body ->
+                          let constants =
+                            constant_name :: environment.global_constants
+                          in
+                          let core_fact =
+                            instantiate (Const constant_name) core_body
+                          in
+                          named_bind
+                            (reify constants [] (named_binder_names body)
+                              core_fact) (fun named_fact -> NOk
+                            { global_constants = constants;
+                            global_named_facts = ({ named_hypothesis_name =
+                            fact_name; named_hypothesis_formula =
+                            named_fact } :: environment.global_named_facts);
+                            global_core_facts =
+                            (core_fact :: environment.global_core_facts) })
+                        | _ -> NError NWrongNamedShape)
+                 else NError NWrongNamedShape)
+             | _ -> NError NWrongNamedShape)

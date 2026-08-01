@@ -65,6 +65,16 @@
   (let ((raw (apply #'string '(226 136 128 120 44 32 194 172))))
     (should (equal (zfcert--decode-utf8-response raw) "∀x, ¬"))))
 
+(ert-deftest zfcert-mode-recognizes-nested-block-comments ()
+  (with-temp-buffer
+    (zfcert-mode)
+    (insert "theorem t : (* outer (* inner *) comment *) false.")
+    (goto-char (point-min))
+    (search-forward "inner")
+    (should (nth 4 (syntax-ppss)))
+    (should (equal comment-start "(* "))
+    (should (equal comment-end " *)"))))
+
 (ert-deftest zfcert-render-result-shows-goal-and-context ()
   (let ((result
          '((ok . t)
@@ -99,5 +109,18 @@
   (with-current-buffer "*ZFCert Goals*"
     (should (string-match-p "1 aliases" (buffer-string)))
     (should (string-match-p "is_empty x" (buffer-string)))))
+
+(ert-deftest zfcert-render-result-shows-global-choices ()
+  (zfcert--render-result
+   '((ok . t)
+     (aliasesOnly . t)
+     (aliases . nil)
+     (constants . ("empty"))
+     (facts . (((name . "Hempty")
+                (formula . "∀y, ¬y ∈ empty"))))))
+  (with-current-buffer "*ZFCert Goals*"
+    (should (string-match-p "1 constants" (buffer-string)))
+    (should (string-match-p "empty (constant)" (buffer-string)))
+    (should (string-match-p "Hempty : ∀y, ¬y ∈ empty" (buffer-string)))))
 
 ;;; zfcert-mode-test.el ends here

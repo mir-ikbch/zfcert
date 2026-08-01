@@ -101,6 +101,9 @@ a synchronous local HTTP request."
   (let ((table (make-syntax-table)))
     (modify-syntax-entry ?# "<" table)
     (modify-syntax-entry ?\n ">" table)
+    (modify-syntax-entry ?\( "()1n" table)
+    (modify-syntax-entry ?* ". 23n" table)
+    (modify-syntax-entry ?\) ")(4n" table)
     (modify-syntax-entry ?' "w" table)
     table)
   "Syntax table for `zfcert-mode'.")
@@ -279,8 +282,17 @@ a synchronous local HTTP request."
                  (cons (alist-get 'name alias)
                        (alist-get 'parameters alias))
                  " ")
-      'face 'font-lock-variable-name-face)
+     'face 'font-lock-variable-name-face)
      " := " (or (alist-get 'statement alias) "") "\n")))
+
+(defun zfcert--insert-globals (constants facts)
+  (dolist (constant constants)
+    (insert (propertize constant 'face 'font-lock-constant-face)
+            " (constant)\n"))
+  (dolist (fact facts)
+    (insert (propertize (alist-get 'name fact)
+                        'face 'font-lock-variable-name-face)
+            " : " (or (alist-get 'formula fact) "") "\n")))
 
 (defun zfcert--render-result (result)
   (let ((buffer (get-buffer-create "*ZFCert Goals*")))
@@ -296,11 +308,15 @@ a synchronous local HTTP request."
                    'face 'error)
                   (or (alist-get 'message result) "Unknown error") "\n"))
          ((alist-get 'aliasesOnly result)
-          (let ((aliases (alist-get 'aliases result)))
+          (let ((aliases (alist-get 'aliases result))
+                (constants (alist-get 'constants result))
+                (facts (alist-get 'facts result)))
             (insert (propertize
-                     (format "%d aliases\n\n" (length aliases))
+                     (format "%d aliases · %d constants\n\n"
+                             (length aliases) (length constants))
                      'face 'success))
-            (zfcert--insert-aliases aliases)))
+            (zfcert--insert-aliases aliases)
+            (zfcert--insert-globals constants facts)))
          ((or (alist-get 'qed result)
               (not (assq 'goals result)))
           (insert (propertize
@@ -426,8 +442,8 @@ a synchronous local HTTP request."
   "Major mode for editing and checking ZFCert proof scripts."
   :syntax-table zfcert-mode-syntax-table
   (setq-local font-lock-defaults '(zfcert--font-lock-keywords))
-  (setq-local comment-start "# ")
-  (setq-local comment-end "")
+  (setq-local comment-start "(* ")
+  (setq-local comment-end " *)")
   (setq-local indent-tabs-mode nil)
   (add-hook 'after-change-functions #'zfcert--schedule-refresh nil t)
   (add-hook 'kill-buffer-hook #'zfcert--cancel-refresh nil t))

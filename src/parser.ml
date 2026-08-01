@@ -22,10 +22,31 @@ let is_ascii_ident_char = function
 
 let lex input =
   let length = String.length input in
+  let rec skip_line_comment index =
+    if index >= length || input.[index] = '\n' then index
+    else skip_line_comment (index + 1)
+  in
+  let rec skip_block_comment start index depth =
+    if index >= length then
+      raise (Parse_error (start, "Unterminated block comment."))
+    else if starts_with_at input index "(*" then
+      skip_block_comment start (index + 2) (depth + 1)
+    else if starts_with_at input index "*)" then
+      if depth = 1 then index + 2
+      else skip_block_comment start (index + 2) (depth - 1)
+    else
+      skip_block_comment start (index + 1) depth
+  in
   let rec loop index tokens =
     if index >= length then List.rev (Eof :: tokens)
     else
       match input.[index] with
+      | _ when starts_with_at input index "(*" ->
+          loop (skip_block_comment index (index + 2) 1) tokens
+      | _ when starts_with_at input index "*)" ->
+          raise (Parse_error (index, "Unexpected block comment terminator."))
+      | '#' ->
+          loop (skip_line_comment (index + 1)) tokens
       | ' ' | '\t' | '\r' | '\n' -> loop (index + 1) tokens
       | '(' -> loop (index + 1) (Lparen :: tokens)
       | ')' -> loop (index + 1) (Rparen :: tokens)
@@ -190,8 +211,14 @@ let parse_formula input =
 let split_statements script =
   let length = String.length script in
   let buffer = Buffer.create 256 in
-  let rec loop index line start_line in_comment statements =
-    if index >= length then
+  let rec loop index line start_line line_comment block_depth
+      block_start_line statements =
+    if index >= length && block_depth > 0 then
+      raise
+        (Statement_error
+           (Option.value block_start_line ~default:line,
+            "Unterminated block comment."))
+    else if index >= length then
       let remaining = String.trim (Buffer.contents buffer) in
       if remaining = "" then List.rev statements
       else
@@ -201,28 +228,52 @@ let split_statements script =
               "Every statement must end with a period."))
     else
       let character = script.[index] in
-      if in_comment then
+      if block_depth > 0 then
+        if starts_with_at script index "(*" then
+          loop (index + 2) line start_line false (block_depth + 1)
+            block_start_line statements
+        else if starts_with_at script index "*)" then
+          loop (index + 2) line start_line false (block_depth - 1)
+            (if block_depth = 1 then None else block_start_line)
+            statements
+        else if character = '\n' then begin
+          Buffer.add_char buffer ' ';
+          loop (index + 1) (line + 1) start_line false block_depth
+            block_start_line statements
+        end else
+          loop (index + 1) line start_line false block_depth
+            block_start_line statements
+      else if line_comment then
         if character = '\n' then begin
           Buffer.add_char buffer ' ';
-          loop (index + 1) (line + 1) start_line false statements
+          loop (index + 1) (line + 1) start_line false 0 None statements
         end else
-          loop (index + 1) line start_line true statements
+          loop (index + 1) line start_line true 0 None statements
       else
         match character with
+        | _ when starts_with_at script index "(*" ->
+            Buffer.add_char buffer ' ';
+            loop (index + 2) line start_line false 1 (Some line)
+              statements
+        | _ when starts_with_at script index "*)" ->
+            raise
+              (Statement_error
+                 (line, "Unexpected block comment terminator."))
         | '#' ->
-            loop (index + 1) line start_line true statements
+            Buffer.add_char buffer ' ';
+            loop (index + 1) line start_line true 0 None statements
         | '.' ->
             let statement = String.trim (Buffer.contents buffer) in
             Buffer.clear buffer;
             if statement = "" then
               raise (Statement_error (line, "Empty statement."))
             else
-              loop (index + 1) line None false
+              loop (index + 1) line None false 0 None
                 ((Option.value start_line ~default:line, statement)
                  :: statements)
         | '\n' ->
             Buffer.add_char buffer ' ';
-            loop (index + 1) (line + 1) start_line false statements
+            loop (index + 1) (line + 1) start_line false 0 None statements
         | character ->
             let start_line =
               if Option.is_none start_line
@@ -233,6 +284,6 @@ let split_statements script =
               else start_line
             in
             Buffer.add_char buffer character;
-            loop (index + 1) line start_line false statements
+            loop (index + 1) line start_line false 0 None statements
   in
-  loop 0 1 None false []
+  loop 0 1 None false 0 None []

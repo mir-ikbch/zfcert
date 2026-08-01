@@ -1,3 +1,5 @@
+choose empty empty_is_empty from empty_set.
+
 alias pair p x y :=
   forall z, z in p <-> (z = x or z = y).
 alias ordpair p x y :=

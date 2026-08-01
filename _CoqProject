@@ -4,4 +4,8 @@ coq/FOL.v
 coq/ZFC.v
 coq/ProofState.v
 coq/TacticCompleteness.v
+coq/NamedProofState.v
+coq/NamedCommands.v
+coq/CertifiedSession.v
+coq/GlobalEnvironment.v
 coq/Audit.v

@@ -60,8 +60,7 @@ exact H.
 qed.`,
   choose: `alias is_empty x := forall y, not (y in x).
 Choose empty Hempty from empty_set.
-theorem chosen_empty_exists : exists e, is_empty e.
-use empty.
+theorem chosen_empty_is_empty : is_empty empty.
 exact Hempty.
 qed.`,
   rules: `theorem equality_by_rules :
@@ -116,6 +115,25 @@ function certificateHtml(rules) {
     </details>`;
 }
 
+function declarationsHtml(data) {
+  const aliases = (data.aliases || []).map((alias) =>
+    `<code>${escapeHtml(
+      [alias.name, ...(alias.parameters || [])].join(" ")
+    )}</code> := ${escapeHtml(alias.statement)}`
+  );
+  const constants = (data.constants || []).map((name) =>
+    `<code>${escapeHtml(name)}</code> (constant)`
+  );
+  const facts = (data.facts || []).map((fact) =>
+    `<code>${escapeHtml(fact.name)}</code> : ${escapeHtml(fact.formula)}`
+  );
+  return [...aliases, ...constants, ...facts].join("<br>");
+}
+
+function declarationSummary(data) {
+  return `${(data.aliases || []).length} aliases · ${(data.constants || []).length} constants`;
+}
+
 async function verify() {
   verifyButton.disabled = true;
   verifyButton.querySelector("span").textContent = "Checking…";
@@ -130,13 +148,9 @@ async function verify() {
       result.className = "result success";
       result.innerHTML = `
         <div class="result-icon">✓</div>
-        <p class="result-kicker">${data.aliases.length} ALIASES</p>
-        <h3>Proposition aliases loaded</h3>
-        <p>${data.aliases.map((alias) =>
-          `<code>${escapeHtml(
-            [alias.name, ...(alias.parameters || [])].join(" ")
-          )}</code> := ${escapeHtml(alias.statement)}`
-        ).join("<br>")}</p>`;
+        <p class="result-kicker">${escapeHtml(declarationSummary(data))}</p>
+        <h3>Global declarations loaded</h3>
+        <p>${declarationsHtml(data)}</p>`;
     } else if (data.ok) {
       result.className = "result success";
       result.innerHTML = `
@@ -178,17 +192,12 @@ function renderInteractive(data) {
   }
 
   if (data.aliasesOnly) {
-    goalCount.textContent = `${data.aliases.length} aliases`;
-    goalView.innerHTML = data.aliases.map((alias) =>
-      `<p><strong>${escapeHtml(
-        [alias.name, ...(alias.parameters || [])].join(" ")
-      )}</strong> :=
-      <span class="goal-target">${escapeHtml(alias.statement)}</span></p>`
-    ).join("");
+    goalCount.textContent = declarationSummary(data);
+    goalView.innerHTML = declarationsHtml(data);
     result.className = "result success";
     result.innerHTML = `
       <div class="result-icon">✓</div>
-      <p class="result-kicker">ALIASES LOADED</p>
+      <p class="result-kicker">DECLARATIONS LOADED</p>
       <p>${escapeHtml(data.message)}</p>`;
     return;
   }
@@ -244,18 +253,35 @@ async function inspectInteractive() {
 
 function prefixThroughTheorem(text) {
   let statement = "";
-  let inComment = false;
+  let lineComment = false;
+  let blockDepth = 0;
   for (let index = 0; index < text.length; index += 1) {
     const character = text[index];
-    if (inComment) {
-      if (character === "\n") {
-        inComment = false;
+    if (blockDepth > 0) {
+      if (text.startsWith("(*", index)) {
+        blockDepth += 1;
+        index += 1;
+      } else if (text.startsWith("*)", index)) {
+        blockDepth -= 1;
+        index += 1;
+      } else if (character === "\n") {
         statement += " ";
       }
       continue;
     }
-    if (character === "#") {
-      inComment = true;
+    if (lineComment) {
+      if (character === "\n") {
+        lineComment = false;
+        statement += " ";
+      }
+      continue;
+    }
+    if (text.startsWith("(*", index)) {
+      blockDepth = 1;
+      statement += " ";
+      index += 1;
+    } else if (character === "#") {
+      lineComment = true;
     } else if (character === ".") {
       if (statement.trim().toLowerCase().startsWith("theorem ")) {
         return text.slice(0, index + 1);

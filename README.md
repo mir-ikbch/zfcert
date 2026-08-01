@@ -73,6 +73,13 @@ freshな内部仮定名、規則列はCoq側で生成され、各実行関数の
 証明しています。`certified_start_with_constants`で開始したセッションでは、定数環境も
 証明書の再実行時に保存されます。
 
+[coq/GlobalEnvironment.v](coq/GlobalEnvironment.v) は、文字列名の定数と、対応する
+名前付き・de Bruijn形式の事実を揃えて保持する抽出可能なグローバル環境です。
+`global_declare_choice`は既存環境の下で存在命題の証明書を再実行し、全ゴールが閉じた
+場合だけ、新しい定数と具体化済み事実を追加します。受理された存在命題の導出可能性は
+`global_declare_choice_source_sound`、環境遷移の形は
+`global_declare_choice_extends_environment`で証明しています。
+
 [coq/ZFC.v](coq/ZFC.v) には、空集合、外延性、対、和、冪集合、正則性、
 無限、分出公理図式、置換公理図式、選択を明示的な論理式として収録しています。
 任意の論理式を公理として受理する逃げ道はありません。
@@ -99,12 +106,14 @@ make extract
 
 生成物は`extracted/proof_state.ml`で、名前付きの規則検査器に加え、
 `certified_start`, `certified_run`, `certified_finalize`と、
-固定公理・分出・置換を証明書へ展開する関数を含みます。
+固定公理・分出・置換を証明書へ展開する関数、グローバル環境を開始・拡張する
+`global_start`, `global_declare_choice`を含みます。
 単独のOCamlコンパイルも確認しています。
 
 抽出された`Proof_state`モジュールはDuneのprivate moduleとして隠蔽されています。
 外部へ公開するのは[extracted/zfcert_kernel.mli](extracted/zfcert_kernel.mli)だけで、
-証明状態は構築子を持たない抽象型`Zfcert_kernel.state`です。初期状態は抽出された
+証明状態とグローバル環境は構築子を持たない抽象型`Zfcert_kernel.state`、
+`Zfcert_kernel.environment`です。初期状態は抽出された
 `certified_start`、以後の状態は抽出された認証済み規則実行関数の返り値としてのみ
 取得できます。この抽象状態は初期命題、現在のゴール、受理済みの規則証明書を一体で
 保持します。
@@ -136,7 +145,8 @@ OCamlサーバーが保持する論理状態の正本もこの抽象`state`で�
 証明状態の更新は行いません。
 `Rule_parser`は現在のゴールや証明状態を参照せず、文字列の構文と引数だけを解析します。
 ゴール形状、仮定名・変数名のfreshness、公理図式の適用は抽出カーネルが検査します。
-`Proof_session`は抽象型`Zfcert_kernel.state`を保持し、その状態を
+`Proof_session`は抽象型`Zfcert_kernel.state`と`Zfcert_kernel.environment`を保持し、
+その状態とグローバル宣言を
 `Zfcert_kernel`の認証済み規則実行関数以外では変更できません。`apply`や複数項の
 `specialize`を含む表面タクティクはOCaml側で規則列を計画するだけであり、その列の
 実行、蓄積、終了時再検査は抽出コードが担当します。raw抽出モジュール
@@ -236,6 +246,14 @@ false              # ⊥
 論理式やタクティクの引数を複数行に分けられます。量化子の区切りには
 `.`ではなく`,`を使います。
 
+`(*`と`*)`で囲んだ部分はコメントです。コメントは複数行にでき、入れ子にも
+できます。従来の`#`から行末までの行コメントも利用できます。
+
+```text
+(* Empty-set witness. This comment may contain periods. *)
+Choose empty Hempty from empty_set. # A line comment
+```
+
 透明な命題の別名を`alias`で`theorem`より前に書けます。別名の後には0個以上の
 引数を置けます。
 
@@ -275,14 +293,15 @@ obtain p Hp from pairing a b.
 alias is_empty x := forall y, not (y in x).
 Choose empty Hempty from empty_set.
 
-theorem chosen_empty_exists : exists e, is_empty e.
-use empty.
+theorem chosen_empty_is_empty : is_empty empty.
 exact Hempty.
 qed.
 ```
 
-`Choose`の名前は定理の証明中だけで有効で、定理の主張自体には現せません。
-これにより存在除去の固有変数条件を保ちます。
+`Choose`は、指定した存在命題の証明証明書を抽出カーネルで再検査してから、
+新しいグローバル定数と、その定数で具体化した名前付き事実を環境へ追加します。
+したがって、上の`empty`は以後の定理の主張にも現せます。同名の定数または
+事実を再宣言することはできません。
 
 ```text
 theorem and_commutes :
@@ -374,7 +393,8 @@ replacement R a x y : y = x.
 
 ## 信頼境界
 
-構文解析、捕獲回避代入、α同値、自然演繹規則、公理の具体化を OCaml カーネルが検査します。
+OCaml層は構文解析と表面タクティクの規則列生成を行いますが、その結果による証明状態・
+グローバル環境の変更はCoqから抽出されたカーネルだけが検査・実行します。
 外延性・対・和・冪集合・無限・正則性・選択はカーネル公理として登録されています。
 分出・置換は専用タクティクで公理図式のインスタンスを生成します。
 外側のパーサー・HTTP・Web・VS Codeコードから抽出状態の表現やraw公理判定器へは

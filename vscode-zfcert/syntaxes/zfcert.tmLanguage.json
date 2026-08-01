@@ -26,6 +26,16 @@
     "comments": {
       "patterns": [
         {
+          "name": "comment.block.zfcert",
+          "begin": "\\(\\*",
+          "end": "\\*\\)",
+          "patterns": [
+            {
+              "include": "#comments"
+            }
+          ]
+        },
+        {
           "name": "comment.line.number-sign.zfcert",
           "match": "#.*$"
         }

@@ -70,6 +70,8 @@ type goal = { assumptions : formula list; conclusion : formula }
 
 type proof_state = goal list
 
+val start_with_assumptions : formula list -> formula -> proof_state
+
 val start : formula -> proof_state
 
 val state_goals : proof_state -> goal list
@@ -234,8 +236,6 @@ val elaborate :
   string list -> string list -> string list -> named_formula -> formula
   named_result
 
-val elaborate_closed : string list -> named_formula -> formula named_result
-
 val nth_name : string list -> string list -> int -> string named_result
 
 val reify_term : string list -> string list -> term -> string named_result
@@ -265,7 +265,13 @@ type goal_metadata = { metadata_hypothesis_names : string list;
 type named_state = { named_kernel_state : proof_state;
                      named_goal_metadata : goal_metadata list }
 
-val initial_metadata : string list -> named_formula -> goal_metadata
+val initial_metadata_with_assumptions :
+  string list -> string list -> named_hypothesis list -> named_formula ->
+  goal_metadata
+
+val named_start_with_environment :
+  string list -> string list -> named_hypothesis list -> formula list ->
+  named_formula -> named_state named_result
 
 val named_start_with_constants :
   string list -> named_formula -> named_state named_result
@@ -463,8 +469,16 @@ val replay_steps : certificate -> named_state -> named_state named_result
 
 type certified_state = { certified_initial_formula : named_formula;
                          certified_constants : string list;
+                         certified_initial_environment : string list;
+                         certified_initial_named_assumptions : named_hypothesis
+                                                               list;
+                         certified_initial_core_assumptions : formula list;
                          certified_current_state : named_state;
                          certified_reverse_certificate : certificate }
+
+val certified_start_with_environment :
+  string list -> string list -> named_hypothesis list -> formula list ->
+  named_formula -> certified_state named_result
 
 val certified_start_with_constants :
   string list -> named_formula -> certified_state named_result
@@ -482,6 +496,10 @@ val certified_step :
 
 val certified_run :
   certificate -> certified_state -> certified_state named_result
+
+val replay_certificate_with_environment :
+  string list -> string list -> named_hypothesis list -> formula list ->
+  named_formula -> certificate -> named_state named_result
 
 val replay_certificate_with_constants :
   string list -> named_formula -> certificate -> named_state named_result
@@ -513,3 +531,22 @@ val replacement_tactic_program :
 val certified_replacement_tactic :
   string -> string -> string -> string -> named_formula -> certified_state ->
   certified_state named_result
+
+type global_environment = { global_constants : string list;
+                            global_named_facts : named_hypothesis list;
+                            global_core_facts : formula list }
+
+val empty_global_environment : global_environment
+
+val global_fact_names : global_environment -> string list
+
+val global_start :
+  global_environment -> named_formula -> certified_state named_result
+
+val global_replay :
+  global_environment -> named_formula -> certificate -> named_state
+  named_result
+
+val global_declare_choice :
+  string -> string -> named_formula -> certificate -> global_environment ->
+  global_environment named_result

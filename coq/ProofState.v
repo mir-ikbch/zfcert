@@ -18,8 +18,12 @@ Record goal : Type := Goal {
 
 Definition proof_state : Type := list goal.
 
+Definition start_with_assumptions
+  (Gamma : list formula) (C : formula) : proof_state :=
+  [Goal Gamma C].
+
 Definition start (C : formula) : proof_state :=
-  [Goal [] C].
+  start_with_assumptions [] C.
 
 Definition state_goals (state : proof_state) : list goal :=
   state.

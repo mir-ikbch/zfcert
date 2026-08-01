@@ -38,6 +38,9 @@ dune exec src/main.exe -- --port 8099
 `ZFCert: Select Project Folder` からこのリポジトリを選択してください。
 Goalsビューが閉じている場合は `ZFCert: Show Goals` で再表示できます。
 
+コメントは`(* ... *)`で囲み、複数行・入れ子にもできます。`#`から行末までの
+行コメントも引き続き使えます。
+
 命題には透明な別名を付けられます。`alias`だけを書いた時点でも
 Goalsビューに読み込まれた別名が表示されます。
 
@@ -46,7 +49,8 @@ alias is_empty x := forall y, not (y in x).
 ```
 
 存在事実は`obtain x Hx from H.`で除去でき、定理より前では
-`Choose empty Hempty from empty_set.`として証明全体の名前を選べます。
+`Choose empty Hempty from empty_set.`としてグローバル定数`empty`と
+その事実`Hempty`を宣言できます。以後は定理の主張にも`empty`を書けます。
 
 プリミティブな自然演繹規則は`rule`で直接適用できます。
 

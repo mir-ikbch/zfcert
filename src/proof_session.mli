@@ -29,6 +29,8 @@ val check_script : string -> session
 val theorem_name : session -> string
 val theorem : session -> Syntax.formula
 val aliases : session -> proposition_alias list
+val global_constants : session -> string list
+val global_facts : session -> (string * Syntax.formula) list
 val goals : session -> display_goal list
 val step_count : session -> int
 val is_complete : session -> bool

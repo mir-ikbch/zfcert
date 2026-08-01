@@ -1,7 +1,6 @@
 alias is_empty x := forall y, not (y in x).
 Choose empty Hempty from empty_set.
 
-theorem chosen_empty_exists : exists e, is_empty e.
-use empty.
+theorem chosen_empty_is_empty : is_empty empty.
 exact Hempty.
 qed.

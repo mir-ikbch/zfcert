@@ -48,6 +48,7 @@ type error =
   | MetadataMismatch
 
 type state
+type environment
 type axiom
 type certificate_step
 type certificate
@@ -69,6 +70,21 @@ type fixed_axiom =
 
 val start : formula -> (state, error) result
 val start_with_constants : string list -> formula -> (state, error) result
+val empty_environment : environment
+val environment_constants : environment -> string list
+val environment_facts : environment -> (string * formula) list
+
+val start_in_environment :
+  environment -> formula -> (state, error) result
+
+val declare_choice :
+  constant:string ->
+  fact:string ->
+  source:formula ->
+  proof:certificate ->
+  environment ->
+  (environment, error) result
+
 val goals : state -> (goal_view list, error) result
 val solved : state -> bool
 
