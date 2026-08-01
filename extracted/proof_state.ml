@@ -487,6 +487,10 @@ let step_focus is_axiom command g =
          | Conj (a, b) ->
            Success ({ assumptions = (b :: (a :: gamma)); conclusion =
              c } :: [])
+         | Disj (a, b) ->
+           Success ({ assumptions = gamma; conclusion = (Disj (a,
+             b)) } :: ({ assumptions = (a :: gamma); conclusion =
+             c } :: ({ assumptions = (b :: gamma); conclusion = c } :: [])))
          | Ex a ->
            Success ({ assumptions = (a :: (map lift gamma)); conclusion =
              (lift c) } :: [])
@@ -2003,6 +2007,32 @@ let plan_named_tactic metadata view command =
                        metadata_environment = environment;
                        metadata_constants = constants } :: []);
                        tactic_environment = environment }))
+          | NDisj (first, second) ->
+            named_bind (ensure_hypothesis_fresh metadata first_name)
+              (fun _ ->
+              named_bind (ensure_hypothesis_fresh metadata second_name)
+                (fun _ ->
+                if (=) first_name second_name
+                then NError (NHypothesisAlreadyUsed second_name)
+                else let constants0 = metadata.metadata_constants in
+                     let environment0 = metadata.metadata_environment in
+                     let next_environment =
+                       extend_environments constants0 environment0
+                         (first :: (second :: []))
+                     in
+                     NOk { planned_tactic = (TacCases index);
+                     tactic_generated_metadata =
+                     ((metadata_with_conclusion metadata
+                        (named_binder_names (NDisj (first, second)))
+                        next_environment) :: ((metadata_with_hypothesis
+                                                metadata first_name
+                                                (named_binder_names first)
+                                                metadata.metadata_conclusion_binders
+                                                next_environment) :: (
+                     (metadata_with_hypothesis metadata second_name
+                       (named_binder_names second)
+                       metadata.metadata_conclusion_binders next_environment) :: [])));
+                     tactic_environment = next_environment }))
           | NIff (first, second) ->
             named_bind (ensure_hypothesis_fresh metadata first_name)
               (fun _ ->
@@ -2658,6 +2688,31 @@ let global_declare_choice constant_name fact_name source proof environment =
                         | _ -> NError NWrongNamedShape)
                  else NError NWrongNamedShape)
              | _ -> NError NWrongNamedShape)
+
+(** val global_declare_fact :
+    string -> named_formula -> certificate -> global_environment ->
+    global_environment named_result **)
+
+let global_declare_fact fact_name source proof environment =
+  if string_mem fact_name (global_fact_names environment)
+  then NError (NHypothesisAlreadyUsed fact_name)
+  else (match filter_environment environment.global_constants
+                (named_free_variables source) with
+        | [] ->
+          named_bind (global_replay environment source proof)
+            (fun replayed ->
+            if named_solved replayed
+            then named_bind
+                   (elaborate environment.global_constants [] [] source)
+                   (fun core_source -> NOk { global_constants =
+                   environment.global_constants; global_named_facts =
+                   ({ named_hypothesis_name = fact_name;
+                   named_hypothesis_formula =
+                   source } :: environment.global_named_facts);
+                   global_core_facts =
+                   (core_source :: environment.global_core_facts) })
+            else NError NWrongNamedShape)
+        | _ :: _ -> NError NWrongNamedShape)
 
 (** val global_declare_skolem :
     string -> string -> named_formula -> certificate -> global_environment ->

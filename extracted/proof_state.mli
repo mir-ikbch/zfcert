@@ -599,6 +599,10 @@ val global_declare_choice :
   string -> string -> named_formula -> certificate -> global_environment ->
   global_environment named_result
 
+val global_declare_fact :
+  string -> named_formula -> certificate -> global_environment ->
+  global_environment named_result
+
 val global_declare_skolem :
   string -> string -> named_formula -> certificate -> global_environment ->
   global_environment named_result

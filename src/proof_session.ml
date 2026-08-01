@@ -807,45 +807,134 @@ let execute_tactic line_no state line =
                 "The type of " ^ argument ^ " does not match the current goal."))
           end
       | "apply" ->
-          begin match lookup_fact argument goal.context with
-          | None ->
-              raise (Proof_error (line_no,
-                "Theorem, hypothesis, or axiom not found: " ^ argument))
-          | Some fact ->
-              begin match apply_fact fact goal with
-              | Error message -> raise (Proof_error (line_no, message))
-              | Ok (premises, substitutions) ->
-                  let rec forall_names names = function
-                    | Forall (name, body) -> forall_names (name :: names) body
-                    | body -> (List.rev names, body)
-                  in
-                  let binders, _ = forall_names [] fact in
-                  let terms =
-                    List.map
-                      (fun binder ->
-                         Option.value (StringMap.find_opt binder substitutions)
-                           ~default:binder)
-                      binders
-                  in
-                  let _, all_commands =
-                    specialize_rules line_no fact terms
-                  in
-                  let implication_commands =
-                    List.rev premises
-                    |> List.map (fun premise ->
-                         Extracted.NRImplElim (kernel_formula premise))
-                  in
-                  let close_command, axioms =
-                    close_fact line_no argument goal.context
-                  in
-                  let program =
-                    List.map checked_step
-                      (implication_commands @ all_commands)
-                    @ [checked_step ~axioms close_command]
-                  in
-                  apply_certificate_program line_no state program
-                    ("apply " ^ argument)
+          let apply_words = words argument in
+          begin match apply_words with
+          | [fact_name; in_word; source_name; as_word; new_name]
+              when String.lowercase_ascii in_word = "in"
+                   && String.lowercase_ascii as_word = "as" ->
+              if new_name = "" then
+                raise (Proof_error (line_no,
+                  "Expected a name after apply ... in ... as."));
+              if List.mem_assoc new_name goal.context then
+                raise (Proof_error (line_no,
+                  "A hypothesis with this name already exists."));
+              let source_formula =
+                match List.assoc_opt source_name goal.context with
+                | Some formula -> formula
+                | None ->
+                    raise (Proof_error (line_no,
+                      "Hypothesis not found: " ^ source_name))
+              in
+              begin match lookup_fact fact_name goal.context with
+              | None ->
+                  raise (Proof_error (line_no,
+                    "Theorem, hypothesis, or axiom not found: " ^ fact_name))
+              | Some fact ->
+                  let metas, body = decompose_forall fact in
+                  let premises, conclusion = decompose_imp body in
+                  begin match premises with
+                  | [premise] ->
+                      begin match match_formula metas premise source_formula with
+                      | None ->
+                          raise (Proof_error (line_no,
+                            "The selected hypothesis does not match the premise of "
+                            ^ fact_name ^ "."))
+                      | Some substitutions ->
+                          let instantiated_premise =
+                            instantiate_formula substitutions premise
+                          in
+                          let instantiated_conclusion =
+                            instantiate_formula substitutions conclusion
+                          in
+                          let rec forall_names names = function
+                            | Forall (name, body) ->
+                                forall_names (name :: names) body
+                            | body -> (List.rev names, body)
+                          in
+                          let binders, _ = forall_names [] fact in
+                          let terms =
+                            List.map
+                              (fun binder ->
+                                 Option.value
+                                   (StringMap.find_opt binder substitutions)
+                                   ~default:binder)
+                              binders
+                          in
+                          let _, all_commands =
+                            specialize_rules line_no fact terms
+                          in
+                          let close_command, axioms =
+                            close_fact line_no fact_name goal.context
+                          in
+                          let program =
+                            [checked_step
+                               (Extracted.NRCut
+                                  (new_name,
+                                   kernel_formula instantiated_conclusion));
+                             checked_step
+                               (Extracted.NRImplElim
+                                  (kernel_formula instantiated_premise))]
+                            @ List.map checked_step all_commands
+                            @ [checked_step ~axioms close_command;
+                               checked_step
+                                 (Extracted.NRHypothesis source_name)]
+                          in
+                          apply_certificate_program line_no state program
+                            ("apply " ^ fact_name ^ " in " ^ source_name
+                             ^ " as " ^ new_name)
+                      end
+                  | _ ->
+                      raise (Proof_error (line_no,
+                        "apply ... in ... as currently requires a fact with "
+                        ^ "exactly one implication premise."))
+                  end
               end
+          | [fact_name] ->
+              begin match lookup_fact fact_name goal.context with
+              | None ->
+                  raise (Proof_error (line_no,
+                    "Theorem, hypothesis, or axiom not found: " ^ fact_name))
+              | Some fact ->
+                  begin match apply_fact fact goal with
+                  | Error message -> raise (Proof_error (line_no, message))
+                  | Ok (premises, substitutions) ->
+                      let rec forall_names names = function
+                        | Forall (name, body) ->
+                            forall_names (name :: names) body
+                        | body -> (List.rev names, body)
+                      in
+                      let binders, _ = forall_names [] fact in
+                      let terms =
+                        List.map
+                          (fun binder ->
+                             Option.value
+                               (StringMap.find_opt binder substitutions)
+                               ~default:binder)
+                          binders
+                      in
+                      let _, all_commands =
+                        specialize_rules line_no fact terms
+                      in
+                      let implication_commands =
+                        List.rev premises
+                        |> List.map (fun premise ->
+                             Extracted.NRImplElim (kernel_formula premise))
+                      in
+                      let close_command, axioms =
+                        close_fact line_no fact_name goal.context
+                      in
+                      let program =
+                        List.map checked_step
+                          (implication_commands @ all_commands)
+                        @ [checked_step ~axioms close_command]
+                      in
+                      apply_certificate_program line_no state program
+                        ("apply " ^ fact_name)
+                  end
+              end
+          | _ ->
+              raise (Proof_error (line_no,
+                "Use apply H or apply H0 in H as H1."))
           end
       | "specialize" ->
           let words =
@@ -961,6 +1050,28 @@ let execute_tactic line_no state line =
                       Extracted.NRHypothesis fact_name
                     ]
                     ("cases " ^ fact_name)
+              | Some (Or (left_formula, right_formula)) ->
+                  let left_name, right_name =
+                    match names with
+                    | [left_name; right_name] -> (left_name, right_name)
+                    | [] -> (fact_name ^ "_left", fact_name ^ "_right")
+                    | _ ->
+                        raise (Proof_error (line_no,
+                          "Use cases H H1 H2 for conjunctions, disjunctions, and equivalences."))
+                  in
+                  if List.mem_assoc left_name goal.context
+                     || List.mem_assoc right_name goal.context
+                  then
+                    raise (Proof_error (line_no,
+                      "Case hypotheses must use fresh names."));
+                  apply_primitive_rules line_no state
+                    [ Extracted.NRDisjElim
+                        (kernel_formula left_formula,
+                         kernel_formula right_formula,
+                         left_name, right_name);
+                      Extracted.NRHypothesis fact_name
+                    ]
+                    ("cases " ^ fact_name)
               | Some ((Exists _) as existential) ->
                   let witness, hypothesis =
                     match names with
@@ -986,7 +1097,7 @@ let execute_tactic line_no state line =
                     ("cases " ^ fact_name)
               | Some _ ->
                   raise (Proof_error (line_no,
-                    "cases requires a conjunction, equivalence, or existential hypothesis."))
+                    "cases requires a conjunction, disjunction, equivalence, or existential hypothesis."))
               end
           | [] ->
               raise (Proof_error (line_no,
@@ -1323,7 +1434,16 @@ let analyze_script script =
               in
               let state = { state with final_certificate = Some certificate } in
               if rest = [] then (state, true)
-              else process aliases global_environment state.steps rest
+              else
+                let next_environment =
+                  Extracted.declare_fact
+                    ~fact:state.theorem_name
+                    ~source:(kernel_formula state.theorem)
+                    ~proof:certificate
+                    state.global_environment
+                  |> accept_kernel_result line_no "global theorem declaration"
+                in
+                process aliases next_environment state.steps rest
           | (line_no, line) :: rest ->
               run (execute_tactic line_no state line) rest
         in

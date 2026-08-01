@@ -168,6 +168,58 @@ Definition global_declare_choice
     | _ => NError NWrongNamedShape
     end.
 
+Definition global_declare_fact
+  (fact_name : string)
+  (source : named_formula)
+  (proof : certificate)
+  (environment : global_environment)
+  : named_result global_environment :=
+  if string_mem fact_name (global_fact_names environment)
+  then NError (NHypothesisAlreadyUsed fact_name)
+  else
+    match filter_environment
+      (global_constants environment) (named_free_variables source) with
+    | _ :: _ => NError NWrongNamedShape
+    | [] =>
+        named_bind (global_replay environment source proof)
+          (fun replayed =>
+        if named_solved replayed
+        then
+          named_bind
+            (elaborate (global_constants environment) [] [] source)
+            (fun core_source =>
+          NOk (GlobalEnvironment
+            (global_constants environment)
+            (NamedHypothesis fact_name source :: global_named_facts environment)
+            (core_source :: global_core_facts environment)))
+        else NError NWrongNamedShape)
+    end.
+
+Theorem global_declare_fact_source_sound :
+  forall fact_name source proof environment next,
+    global_declare_fact fact_name source proof environment = NOk next ->
+    named_formula_provable_with_environment
+      (global_constants environment) []
+      (global_core_facts environment) source.
+Proof.
+  intros fact_name source proof environment next Hdeclare.
+  unfold global_declare_fact in Hdeclare.
+  destruct (string_mem fact_name (global_fact_names environment));
+    try discriminate.
+  destruct (filter_environment
+    (global_constants environment) (named_free_variables source))
+    as [|free rest] eqn:Hfree; cbn in Hdeclare; try discriminate.
+  destruct (global_replay environment source proof)
+    as [replayed | replay_error] eqn:Hreplay;
+    cbn in Hdeclare; try discriminate.
+  destruct (named_solved replayed) eqn:Hsolved;
+    cbn in Hdeclare; try discriminate.
+  unfold global_replay in Hreplay.
+  eapply replay_certificate_with_environment_sound.
+  - exact Hreplay.
+  - exact Hsolved.
+Qed.
+
 Definition global_declare_skolem
   (function_name fact_name : string)
   (source : named_formula)

@@ -30,6 +30,9 @@ let valid_scripts =
     "theorem surface_use : forall a, exists x, x = a\nintro a\nuse a\nrefl\nqed";
     "theorem surface_cases_conj : forall a, ((a = a and a = a) -> a = a)\nintro a\nintro H\ncases H H1 H2\nassumption\nqed";
     "theorem surface_cases_iff : forall a, ((a = a <-> a = a) -> a = a)\nintro a\nintro H\ncases H Hforward Hbackward\napply Hforward\nrefl\nqed";
+    "theorem surface_cases_disj : forall a, ((a = a or a = a) -> a = a)\nintro a\nintro H\ncases H Hleft Hright\nassumption\nassumption\nqed";
+    "theorem surface_apply_in : forall a, ((a = a -> a = a) -> (a = a -> a = a))\nintro a\nintro H0\nintro H\napply H0 in H as H1\nexact H1\nqed";
+    "theorem surface_apply_in_forall : forall a, ((forall x, (x = a -> x = a)) -> (a = a -> a = a))\nintro a\nintro H0\nintro H\napply H0 in H as H1\nexact H1\nqed";
     "theorem surface_cases_ex : ((exists x, x = x) -> exists y, y = y)\nintro H\ncases H x Hx\nuse x\nexact Hx\nqed";
     "alias is_empty x := forall y, not (y in x)\nalias empty_alias x := is_empty x\ntheorem alias_identity : forall a, (empty_alias a -> is_empty a)\nintro a\nintro H\nexact H\nqed";
     "alias has_equal x := exists y, y = x\ntheorem alias_avoids_capture : forall y, (has_equal y -> exists z, z = y)\nintro y\nintro H\nexact H\nqed";
@@ -57,6 +60,7 @@ let valid_scripts =
     "theorem rule_replacement_axiom : forall a, ((forall x, exists y, (y = x and forall z, (z = x -> z = y))) -> exists b, forall y, (y in b <-> exists x, (x in a and y = x)))\nrule all_intro a\nrule axiom replacement a x y : y = x\nqed";
     "theorem first_after_qed : forall x, x = x\nintro x\nrefl\nqed\ntheorem second_after_qed : forall y, y = y\nintro y\nrefl\nqed";
     "theorem proof_then_declaration : forall x, x = x\nintro x\nrefl\nqed\nChoose empty Hempty from empty_set\ntheorem declaration_after_qed : forall x, not (x in empty)\nexact Hempty\nqed";
+    "theorem proved_exists_pair : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nspecialize pairing a b as H\nobtain p Hp from H\nuse p\nexact Hp\nqed\nSkolem pair_from_theorem Hpair from proved_exists_pair\ntheorem skolem_from_theorem : forall a, forall b, forall x, (x in pair_from_theorem(a,b) <-> (x = a or x = b))\nexact Hpair\nqed";
   ]
 
 let rejected script =
@@ -206,6 +210,23 @@ let run () =
     | _ ->
         failwith
           "Interactive analysis did not preserve the named current goal"
+  end;
+  let union_specialized, _ =
+    Proof_session.analyze_script
+      (terminate_lines
+         "Skolem pair Hpair from pairing
+theorem union_specialized : forall x, forall y, exists u, forall z, (z in u <-> (z in x or z in y))
+intro x
+intro y
+specialize union pair(x,y) as H")
+  in
+  begin match Proof_session.goals union_specialized with
+  | [{ context; _ }] ->
+      begin match List.assoc_opt "H" context with
+      | Some (Syntax.Exists _) -> ()
+      | _ -> failwith "Union specialization did not produce a named existential fact"
+      end
+  | _ -> failwith "Union specialization did not preserve the current goal"
   end;
   let named_context, _ =
     Proof_session.analyze_script

@@ -124,6 +124,9 @@ let start_in_environment environment formula =
 let declare_choice ~constant ~fact ~source ~proof environment =
   Raw.global_declare_choice constant fact source proof environment |> outcome
 
+let declare_fact ~fact ~source ~proof environment =
+  Raw.global_declare_fact fact source proof environment |> outcome
+
 let declare_skolem ~function_name ~fact ~source ~proof environment =
   Raw.global_declare_skolem function_name fact source proof environment |> outcome
 

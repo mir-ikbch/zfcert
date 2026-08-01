@@ -1270,6 +1270,32 @@ Definition plan_named_tactic
                 environment
                 constants]
               environment)))
+      | Some (NDisj first second) =>
+          named_bind
+            (ensure_hypothesis_fresh metadata first_name) (fun _ =>
+          named_bind
+            (ensure_hypothesis_fresh metadata second_name) (fun _ =>
+          if String.eqb first_name second_name
+          then NError (NHypothesisAlreadyUsed second_name)
+          else
+            let constants := metadata_constants metadata in
+            let environment := metadata_environment metadata in
+            let next_environment :=
+              extend_environments constants environment [first; second]
+            in
+            NOk (TacticPlan (TacCases index)
+              [metadata_with_conclusion metadata
+                 (named_binder_names (NDisj first second))
+                 next_environment;
+               metadata_with_hypothesis metadata first_name
+                 (named_binder_names first)
+                 (metadata_conclusion_binders metadata)
+                 next_environment;
+               metadata_with_hypothesis metadata second_name
+                 (named_binder_names second)
+                 (metadata_conclusion_binders metadata)
+                 next_environment]
+              next_environment)))
       | Some (NEx _ body) =>
           named_bind
             (ensure_hypothesis_fresh metadata second_name) (fun _ =>

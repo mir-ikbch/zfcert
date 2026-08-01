@@ -249,6 +249,11 @@ Definition step_focus
       match nth_error Gamma n with
       | Some (Conj A B) =>
           Success [Goal (B :: A :: Gamma) C]
+      | Some (Disj A B) =>
+          Success
+            [ Goal Gamma (Disj A B);
+              Goal (A :: Gamma) C;
+              Goal (B :: Gamma) C ]
       | Some (Ex A) =>
           Success [Goal (A :: map lift Gamma) (lift C)]
       | Some _ => Failure WrongGoalShape
@@ -522,6 +527,15 @@ Section Correctness.
              ++ eapply nth_error_derivable. exact Hnth.
              ++ intros X HX. right. exact HX.
           -- assumption.
+      + inversion Hstep; subst.
+        inversion Hgenerated as [|g1 tail Hg1 Htail]; subst.
+        inversion Htail as [|g2 tail2 Hg2 Htail2]; subst.
+        inversion Htail2 as [|g3 tail3 Hg3 Hempty]; subst.
+        inversion Hempty.
+        eapply D_disj_elim.
+        * eapply nth_error_derivable. exact Hnth.
+        * assumption.
+        * assumption.
       + inversion Hstep; subst. inversion Hgenerated; subst.
         eapply D_ex_elim.
         * eapply nth_error_derivable. exact Hnth.

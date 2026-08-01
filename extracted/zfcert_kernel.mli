@@ -93,6 +93,13 @@ val declare_choice :
   environment ->
   (environment, error) result
 
+val declare_fact :
+  fact:string ->
+  source:formula ->
+  proof:certificate ->
+  environment ->
+  (environment, error) result
+
 val declare_skolem :
   function_name:string ->
   fact:string ->

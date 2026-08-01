@@ -183,17 +183,21 @@ let rec subst variable replacement = function
   | Exists (name, formula) when name = variable ->
       Exists (name, formula)
   | Forall (name, formula)
-      when name = term_to_string replacement && StringSet.mem variable (free_vars formula) ->
+      when StringSet.mem name (term_free_vars replacement)
+           && StringSet.mem variable (free_vars formula) ->
       let fresh =
-        fresh_name name (StringSet.add (term_to_string replacement) (all_vars formula))
+        fresh_name name
+          (StringSet.union (term_free_vars replacement) (all_vars formula))
       in
       Forall
         (fresh,
          subst variable replacement (rename_bound name fresh formula))
   | Exists (name, formula)
-      when name = term_to_string replacement && StringSet.mem variable (free_vars formula) ->
+      when StringSet.mem name (term_free_vars replacement)
+           && StringSet.mem variable (free_vars formula) ->
       let fresh =
-        fresh_name name (StringSet.add (term_to_string replacement) (all_vars formula))
+        fresh_name name
+          (StringSet.union (term_free_vars replacement) (all_vars formula))
       in
       Exists
         (fresh,

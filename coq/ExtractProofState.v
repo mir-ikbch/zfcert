@@ -35,7 +35,7 @@ Extraction "proof_state.ml"
   certified_separation_tactic
   certified_replacement_tactic
   empty_global_environment global_fact_names global_start global_replay
-  global_declare_choice global_declare_skolem
+  global_declare_choice global_declare_fact global_declare_skolem
   empty_set_axiom extensionality_axiom pairing_axiom union_axiom
   power_set_axiom foundation_axiom infinity_axiom choice_axiom
   separation_instance replacement_instance.

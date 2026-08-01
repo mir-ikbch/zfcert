@@ -43,4 +43,5 @@ Print Assumptions replay_certificate_with_constants_sound.
 Print Assumptions certified_finalize_sound.
 Print Assumptions global_declare_choice_source_sound.
 Print Assumptions global_declare_choice_extends_environment.
+Print Assumptions global_declare_fact_source_sound.
 Print Assumptions global_declare_skolem_source_sound.
