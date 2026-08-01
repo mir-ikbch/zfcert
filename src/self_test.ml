@@ -33,6 +33,8 @@ let valid_scripts =
     "theorem surface_cases_disj : forall a, ((a = a or a = a) -> a = a)\nintro a\nintro H\ncases H Hleft Hright\nassumption\nassumption\nqed";
     "theorem surface_apply_in : forall a, ((a = a -> a = a) -> (a = a -> a = a))\nintro a\nintro H0\nintro H\napply H0 in H as H1\nexact H1\nqed";
     "theorem surface_apply_in_forall : forall a, ((forall x, (x = a -> x = a)) -> (a = a -> a = a))\nintro a\nintro H0\nintro H\napply H0 in H as H1\nexact H1\nqed";
+    "theorem surface_rewrite : forall a, forall b, forall c, (a = b -> (a = c -> a = c))\nintro a\nintro b\nintro c\nintro H\nintro Ha\nrewrite H\nrule equal_elim a b x : x = c\nexact H\nexact Ha\nqed";
+    "theorem surface_rewrite_back : forall a, forall b, (a = b -> b = b)\nintro a\nintro b\nintro H\nrewrite <- H\nrefl\nqed";
     "theorem surface_cases_ex : ((exists x, x = x) -> exists y, y = y)\nintro H\ncases H x Hx\nuse x\nexact Hx\nqed";
     "alias is_empty x := forall y, not (y in x)\nalias empty_alias x := is_empty x\ntheorem alias_identity : forall a, (empty_alias a -> is_empty a)\nintro a\nintro H\nexact H\nqed";
     "alias has_equal x := exists y, y = x\ntheorem alias_avoids_capture : forall y, (has_equal y -> exists z, z = y)\nintro y\nintro H\nexact H\nqed";
@@ -41,9 +43,9 @@ let valid_scripts =
     "theorem obtain_specialized : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nobtain p Hp from pairing a b\nuse p\nexact Hp\nqed";
     "alias is_empty x := forall y, not (y in x)\nChoose empty Hempty from empty_set\ntheorem choose_empty : is_empty empty\nexact Hempty\nqed";
     "Choose empty Hempty from empty_set\nChoose pair_empty Hpair from pairing empty empty\ntheorem choose_pair : forall x, (x in pair_empty <-> (x = empty or x = empty))\nexact Hpair\nqed";
-    "Skolem pair Hpair from pairing\ntheorem skolem_pair : forall a, forall b, forall x, (x in pair(a, b) <-> (x = a or x = b))\nexact Hpair\nqed";
-    "Skolem pair Hpair from pairing\ntheorem skolem_use : forall a, exists p, p = pair(a, a)\nintro a\nuse pair(a, a)\nrefl\nqed";
-    "Skolem pair Hpair from pairing\ntheorem skolem_specialize : forall a, forall b, forall x, (x in pair(a,b) <-> (x = a or x = b))\nintro a\nintro b\nspecialize Hpair a b as Hab\nexact Hab\nqed";
+    "Choose pair Hpair from pairing\ntheorem choose_function_pair : forall a, forall b, forall x, (x in pair(a, b) <-> (x = a or x = b))\nexact Hpair\nqed";
+    "Choose pair Hpair from pairing\ntheorem choose_function_use : forall a, exists p, p = pair(a, a)\nintro a\nuse pair(a, a)\nrefl\nqed";
+    "Choose pair Hpair from pairing\ntheorem choose_function_specialize : forall a, forall b, forall x, (x in pair(a,b) <-> (x = a or x = b))\nintro a\nintro b\nspecialize Hpair a b as Hab\nexact Hab\nqed";
     "(* A nested (* comment. *) is ignored. *) theorem commented : forall x, x = x\nintro (* binder name *) x\nrefl # legacy line comment\nqed";
     "theorem rule_identity : forall x, x = x\nrule all_intro x\nrule equal_refl\nqed";
     "theorem rule_default_all_intro : forall x, x = x\nrule all_intro\nrule equal_refl\nqed";
@@ -60,7 +62,7 @@ let valid_scripts =
     "theorem rule_replacement_axiom : forall a, ((forall x, exists y, (y = x and forall z, (z = x -> z = y))) -> exists b, forall y, (y in b <-> exists x, (x in a and y = x)))\nrule all_intro a\nrule axiom replacement a x y : y = x\nqed";
     "theorem first_after_qed : forall x, x = x\nintro x\nrefl\nqed\ntheorem second_after_qed : forall y, y = y\nintro y\nrefl\nqed";
     "theorem proof_then_declaration : forall x, x = x\nintro x\nrefl\nqed\nChoose empty Hempty from empty_set\ntheorem declaration_after_qed : forall x, not (x in empty)\nexact Hempty\nqed";
-    "theorem proved_exists_pair : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nspecialize pairing a b as H\nobtain p Hp from H\nuse p\nexact Hp\nqed\nSkolem pair_from_theorem Hpair from proved_exists_pair\ntheorem skolem_from_theorem : forall a, forall b, forall x, (x in pair_from_theorem(a,b) <-> (x = a or x = b))\nexact Hpair\nqed";
+    "theorem proved_exists_pair : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nspecialize pairing a b as H\nobtain p Hp from H\nuse p\nexact Hp\nqed\nChoose pair_from_theorem Hpair from proved_exists_pair\ntheorem choose_function_from_theorem : forall a, forall b, forall x, (x in pair_from_theorem(a,b) <-> (x = a or x = b))\nexact Hpair\nqed";
   ]
 
 let rejected script =
@@ -214,7 +216,7 @@ let run () =
   let union_specialized, _ =
     Proof_session.analyze_script
       (terminate_lines
-         "Skolem pair Hpair from pairing
+         "Choose pair Hpair from pairing
 theorem union_specialized : forall x, forall y, exists u, forall z, (z in u <-> (z in x or z in y))
 intro x
 intro y
@@ -297,9 +299,13 @@ Choose impossible Himpossible from Hempty")
   then
     failwith "Choose accepted a non-existential global fact";
   if not
-       (rejected "Skolem bad Hbad from extensionality")
+       (rejected "Choose bad Hbad from extensionality")
   then
-    failwith "Skolem accepted a source without a universal-existential shape";
+    failwith "Choose accepted a source without a universal-existential shape";
+  if not
+       (rejected "Skolem pair Hpair from pairing")
+  then
+    failwith "The removed Skolem keyword was accepted";
   begin
     try
       ignore

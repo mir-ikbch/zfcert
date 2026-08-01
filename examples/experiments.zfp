@@ -1,9 +1,120 @@
-choose empty empty_is_empty from empty_set.
+Choose empty empty_is_empty from empty_set.
 
-alias pair p x y :=
-  forall z, z in p <-> (z = x or z = y).
-alias ordpair p x y :=
-  forall q, pair q x y -> pair p x q.
+Choose pair Hpair from pairing.
+
+theorem exists_ordpair : forall x, forall y, exists p, forall z, (z in p) <-> (z = x or z = pair(x, y)).
+intro x.
+intro y.
+specialize pairing x pair(x,y) as H.
+apply H.
+qed.
+
+Choose ordpair Hordpair from exists_ordpair.
+
+theorem exists_singleton : forall x, exists p, forall y, (y in p) <-> (y = x).
+intro x.
+specialize pairing x x as H.
+obtain p Hp from H.
+use p.
+intro y.
+split.
+  intro Hyinp.
+  specialize Hp y as Hp'.
+  cases Hp'.
+  apply Hp'_forward in Hyinp as Hax.
+  cases Hax HL HR.
+  exact HL.
+  exact HR.
+
+  intro Heq.
+  specialize Hp y as Hpy.
+  cases Hpy.
+  apply Hpy_backward.
+  left.
+  apply Heq.
+qed.
+
+Choose singleton Hsingleton from exists_singleton.
+
+theorem exists_cup : forall x, forall y, exists u, forall z, (z in u <-> z in x or z in y).
+intro x.
+intro y.
+specialize union pair(x,y) as H.
+obtain u Hu from H.
+use u.
+intro z.
+specialize Hu z as Huz.
+cases Huz.
+split.
+  intro Hzinu.
+  rule cut Hex : exists y', z in y' and y' in pair(x,y).
+    apply Huz_forward.
+    exact Hzinu.
+  obtain y' Hy' from Hex.
+  cases Hy'.
+  rule cut Hy'eq : y' = x or y' = y.
+    specialize Hpair x y y' as Hp.
+    cases Hp.
+    apply Hp_forward.
+    exact Hy'_right.
+  cases Hy'eq.
+  left.
+  rewrite <- Hy'eq_left.
+  exact Hy'_left.
+  right.
+  rewrite <- Hy'eq_right.
+  exact Hy'_left.
+  intro Hor.
+  cases Hor.
+  apply Huz_backward.
+  use x.
+  split.
+    exact Hor_left.
+    specialize Hpair x y x as Hp.
+    cases Hp.
+    apply Hp_backward.
+    left.
+    refl.
+    apply Huz_backward.
+    use y.
+    specialize Hpair x y y as Hp.
+    cases Hp.
+    split.
+      exact Hor_right.
+      apply Hp_backward.
+      right.
+      refl.
+qed.
+
+Choose cup Hcup from exists_cup.
+
+theorem exists_succ : forall x, exists u, forall z, (z in u <-> z in x or z in singleton(x)).
+intro x.
+specialize exists_cup x singleton(x) as Hc.
+exact Hc.
+qed.
+
+Choose succ Hsucc from exists_succ.
+
+alias is_emp_or_succ n := n = empty() or exists k, n = succ(k).
+alias is_natural n := is_emp_or_succ n and forall m, m in n -> is_emp_or_succ m.
+
+
+Choose inf Hinf from infinity.
+
+theorem separation_nat : forall a, exists b, forall x, x in b <-> x in a and is_natural x.
+intro a.
+separation S a x : is_natural x.
+exact S.
+qed.
+
+theorem separation_infnat : exists b, forall x, x in b <-> x in inf() and is_natural x.
+apply separation_nat.
+qed.
+
+Choose nat Hnat from separation_infnat.
+
+
 
 theorem pair_eq :
   forall p1,

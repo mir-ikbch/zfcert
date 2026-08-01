@@ -90,27 +90,19 @@ type proposition_alias = {
   body : formula;
 }
 
-(** A [Choose] declaration extends the extracted global environment.  The
-    source existential is proved and finalized before the extracted kernel
-    accepts the new constant and its named fact. *)
-type choice_declaration = {
-  choice_line : int;
-  choice_witness : string;
-  choice_hypothesis : string;
-  choice_source : string;
-  choice_terms : string list;
-}
-
-type skolem_declaration = {
-  skolem_line : int;
-  skolem_function : string;
-  skolem_hypothesis : string;
-  skolem_source : string;
+(** A [Choose] declaration extends the extracted global environment.  With
+    specialization terms it selects an existential witness; without terms it
+    introduces a certified Skolem function for a universal-existential fact. *)
+type choose_declaration = {
+  choose_line : int;
+  choose_name : string;
+  choose_fact : string;
+  choose_source : string;
+  choose_terms : string list;
 }
 
 type global_declaration =
-  | ChoiceDeclaration of choice_declaration
-  | SkolemDeclaration of skolem_declaration
+  | ChooseDeclaration of choose_declaration
 
 type session = {
   theorem_name : string;
@@ -557,15 +549,6 @@ let parse_choice_words line_no command argument =
           "Use: %s witness hypothesis from fact term1 term2."
           command))
 
-let parse_skolem_words line_no argument =
-  match words argument with
-  | function_name :: hypothesis :: from_word :: source :: []
-    when String.lowercase_ascii from_word = "from" ->
-      (function_name, hypothesis, source)
-  | _ ->
-      raise (Proof_error (line_no,
-        "Use: Skolem function hypothesis from fact."))
-
 (** Surface [obtain] is an untrusted planner. The extracted certified session
     checks and records the resulting AllElim/ExElim/closing-rule program. *)
 let execute_obtain line_no state command argument =
@@ -613,26 +596,26 @@ let execute_obtain line_no state command argument =
     constant and fact.  OCaml plans the certificate but never constructs or
     mutates the logical environment itself. *)
 let declare_global_choice environment choice =
-  let line_no = choice.choice_line in
+  let line_no = choice.choose_line in
   let context =
     Extracted.environment_facts environment
     |> List.map (fun (name, formula) ->
          (name, Kernel_syntax.of_kernel formula))
   in
   let fact =
-    match lookup_fact choice.choice_source context with
+    match lookup_fact choice.choose_source context with
     | Some fact -> fact
     | None ->
         raise (Proof_error (line_no,
-          "Existential fact not found: " ^ choice.choice_source))
+          "Existential fact not found: " ^ choice.choose_source))
   in
   let instantiated, all_rules =
-    specialize_rules line_no fact choice.choice_terms
+    specialize_rules line_no fact choice.choose_terms
   in
   match instantiated with
   | Exists _ ->
       let close_rule, axioms =
-        close_fact line_no choice.choice_source context
+            close_fact line_no choice.choose_source context
       in
       let program =
         List.map checked_step all_rules
@@ -652,8 +635,8 @@ let declare_global_choice environment choice =
         |> accept_kernel_result line_no "choice source certificate replay"
       in
       Extracted.declare_choice
-        ~constant:choice.choice_witness
-        ~fact:choice.choice_hypothesis
+        ~constant:choice.choose_name
+        ~fact:choice.choose_fact
         ~source:(kernel_formula instantiated)
         ~proof:certificate
         environment
@@ -663,20 +646,20 @@ let declare_global_choice environment choice =
         "The selected fact does not become existential after specialization."))
 
 let declare_global_skolem environment declaration =
-  let line_no = declaration.skolem_line in
+  let line_no = declaration.choose_line in
   let context =
     Extracted.environment_facts environment
     |> List.map (fun (name, formula) ->
          (name, Kernel_syntax.of_kernel formula))
   in
   let source =
-    match lookup_fact declaration.skolem_source context with
+    match lookup_fact declaration.choose_source context with
     | Some fact -> fact
     | None ->
         raise (Proof_error (line_no,
-          "Universal-existential fact not found: " ^ declaration.skolem_source))
+          "Universal-existential fact not found: " ^ declaration.choose_source))
   in
-  let close_rule, axioms = close_fact line_no declaration.skolem_source context in
+  let close_rule, axioms = close_fact line_no declaration.choose_source context in
   let program = [checked_step ~axioms close_rule] in
   let proof_state =
     Extracted.start_in_environment environment (kernel_formula source)
@@ -691,12 +674,12 @@ let declare_global_skolem environment declaration =
     |> accept_kernel_result line_no "Skolem source certificate replay"
   in
   Extracted.declare_skolem
-    ~function_name:declaration.skolem_function
-    ~fact:declaration.skolem_hypothesis
+    ~function_name:declaration.choose_name
+    ~fact:declaration.choose_fact
     ~source:(kernel_formula source)
     ~proof:certificate
     environment
-  |> accept_kernel_result line_no "global Skolem declaration"
+  |> accept_kernel_result line_no "global Choose declaration"
 
 let execute_tactic line_no state line =
   match materialize_goals line_no state with
@@ -935,6 +918,74 @@ let execute_tactic line_no state line =
           | _ ->
               raise (Proof_error (line_no,
                 "Use apply H or apply H0 in H as H1."))
+          end
+      | "rewrite" ->
+          let direction, equality_name =
+            match words argument with
+            | [equality_name] -> (`Forward, equality_name)
+            | [arrow; equality_name] when arrow = "<-" ->
+                (`Backward, equality_name)
+            | _ ->
+                raise (Proof_error (line_no,
+                  "Use rewrite H or rewrite <- H."))
+          in
+          begin match direction with
+          | (`Forward | `Backward) ->
+              let left_name, right_name =
+                match List.assoc_opt equality_name goal.context with
+                | Some (Eq (Name left, Name right)) -> (left, right)
+                | Some (Eq _) ->
+                    raise (Proof_error (line_no,
+                      "rewrite currently requires an equality between named terms."))
+                | Some _ ->
+                    raise (Proof_error (line_no,
+                      "rewrite requires an equality hypothesis."))
+                | None ->
+                    raise (Proof_error (line_no,
+                      "Hypothesis not found: " ^ equality_name))
+              in
+              let used =
+                StringSet.union
+                  (context_free_vars goal.context)
+                  (StringSet.union
+                     (all_vars goal.target)
+                     (StringSet.of_list [left_name; right_name]))
+              in
+              let binder = fresh_name "rewrite_var" used in
+              let source_name =
+                match direction with
+                | `Forward -> left_name
+                | `Backward -> right_name
+              in
+              let predicate_body =
+                subst source_name (Name binder) goal.target
+              in
+              let predicate = Forall (binder, predicate_body) in
+              let symmetry_predicate =
+                Forall (binder, Eq (Name binder, Name left_name))
+              in
+              let program =
+                match direction with
+                | `Forward ->
+                    [ checked_step
+                        (Extracted.NREqualElim
+                           (right_name, left_name,
+                            kernel_formula predicate));
+                      checked_step
+                        (Extracted.NREqualElim
+                           (left_name, right_name,
+                            kernel_formula symmetry_predicate));
+                      checked_step (Extracted.NRHypothesis equality_name);
+                      checked_step Extracted.NREqualRefl ]
+                | `Backward ->
+                    [ checked_step
+                        (Extracted.NREqualElim
+                           (left_name, right_name,
+                            kernel_formula predicate));
+                      checked_step (Extracted.NRHypothesis equality_name) ]
+              in
+              apply_certificate_program line_no state program
+                ("rewrite " ^ equality_name)
           end
       | "specialize" ->
           let words =
@@ -1308,58 +1359,49 @@ let analyze_script script =
           trim (String.sub line (String.length prefix)
             (String.length line - String.length prefix))
         in
-        let witness, hypothesis, source, terms =
+        let name, fact, source, terms =
           parse_choice_words line_no "Choose" argument
         in
-        let choice = {
-          choice_line = line_no;
-          choice_witness = witness;
-          choice_hypothesis = hypothesis;
-          choice_source = source;
-          choice_terms = terms;
-        } in
-        read_declarations aliases
-          (declarations @ [ChoiceDeclaration choice]) rest
-    | (line_no, line) :: rest
-      when starts_with_at (String.lowercase_ascii line) 0 "skolem " ->
-        let prefix = "skolem " in
-        let argument =
-          trim (String.sub line (String.length prefix)
-            (String.length line - String.length prefix))
-        in
-        let function_name, hypothesis, source =
-          parse_skolem_words line_no argument
-        in
         let declaration = {
-          skolem_line = line_no;
-          skolem_function = function_name;
-          skolem_hypothesis = hypothesis;
-          skolem_source = source;
+          choose_line = line_no;
+          choose_name = name;
+          choose_fact = fact;
+          choose_source = source;
+          choose_terms = terms;
         } in
         read_declarations aliases
-          (declarations @ [SkolemDeclaration declaration]) rest
+          (declarations @ [ChooseDeclaration declaration]) rest
+    | (line_no, line) :: _rest
+      when starts_with_at (String.lowercase_ascii line) 0 "skolem " ->
+        raise (Proof_error (line_no,
+          "The Skolem keyword has been removed; use Choose f H from fact."))
     | rest -> (aliases, declarations, rest)
   in
   let apply_declarations environment steps declarations =
     List.fold_left
       (fun (environment, steps) declaration ->
          match declaration with
-         | ChoiceDeclaration choice ->
-             let environment = declare_global_choice environment choice in
-             let description =
-               String.concat " "
-                 ("Choose" :: choice.choice_witness ::
-                  choice.choice_hypothesis :: "from" ::
-                  choice.choice_source :: choice.choice_terms)
+         | ChooseDeclaration declaration ->
+             let context =
+               Extracted.environment_facts environment
+               |> List.map (fun (name, formula) ->
+                    (name, Kernel_syntax.of_kernel formula))
              in
-             (environment, steps @ [description])
-         | SkolemDeclaration declaration ->
-             let environment = declare_global_skolem environment declaration in
+             let source_is_universal =
+               match lookup_fact declaration.choose_source context with
+               | Some (Forall _) -> true
+               | _ -> false
+             in
+             let environment =
+               if declaration.choose_terms = [] && source_is_universal
+               then declare_global_skolem environment declaration
+               else declare_global_choice environment declaration
+             in
              let description =
                String.concat " "
-                 ["Skolem"; declaration.skolem_function;
-                  declaration.skolem_hypothesis; "from";
-                  declaration.skolem_source]
+                 ("Choose" :: declaration.choose_name ::
+                  declaration.choose_fact :: "from" ::
+                  declaration.choose_source :: declaration.choose_terms)
              in
              (environment, steps @ [description]))
       (environment, steps) declarations
@@ -1393,7 +1435,7 @@ let analyze_script script =
         let prefix = "theorem " in
         if not (starts_with_at lower_header 0 prefix) then
           raise (Proof_error (header_line,
-            "After aliases, choices, and Skolem declarations, use: theorem name : formula."));
+            "After aliases and Choose declarations, use: theorem name : formula."));
         let content = trim (String.sub header (String.length prefix) (String.length header - String.length prefix)) in
         let colon =
           try find_colon content

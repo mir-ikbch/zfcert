@@ -4,15 +4,10 @@
     "body": "alias ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.",
     "description": "Give a transparent alias to a proposition, optionally with arguments"
   },
-  "Choose existential witness": {
+  "Choose declaration": {
     "prefix": "Choose",
     "body": "Choose ${1:empty} ${2:Hempty} from ${3:empty_set}.",
-    "description": "Declare a global witness constant and its certified fact"
-  },
-  "Skolem function": {
-    "prefix": "Skolem",
-    "body": "Skolem ${1:pair} ${2:Hpair} from ${3:pairing}.",
-    "description": "Declare a certified Skolem function from a universal-existential fact"
+    "description": "Declare a certified constant or function and its fact"
   },
   "Primitive rule proof": {
     "prefix": "ruleproof",

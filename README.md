@@ -303,11 +303,12 @@ qed.
 したがって、上の`empty`は以後の定理の主張にも現せます。同名の定数または
 事実を再宣言することはできません。
 
-全称量化子の後に存在量化子が続く事実からは、`Skolem`で関数記号を導入できます。
-関数記号は`f(a,b)`のように項として書きます。
+`Choose`は、存在事実から0引数の定数または関数記号を導入できます。全称量化子の
+後に存在量化子が続く事実に引数を指定しない場合は、関数記号になります。
+関数記号は`f(a,b)`のように項として書き、0引数なら`f`と書けます。
 
 ```text
-Skolem pair Hpair from pairing.
+Choose pair Hpair from pairing.
 
 theorem pair_shape :
   forall a, forall b, forall x,
@@ -316,9 +317,10 @@ exact Hpair.
 qed.
 ```
 
-`Skolem f H from fact.` は、`fact`の証明書を再検査し、`forall ... exists ...`
+`Choose f H from fact.` は、`fact`の証明書を再検査し、`forall ... exists ...`
 の存在変数を`f`の適用で置き換えた名前付き事実をグローバル環境へ追加します。
-導入された関数記号は以後の定理・タクティクで利用できます。
+存在事実に具体化項を指定した場合は、従来どおりその存在事実から0引数の定数を
+選びます。導入された定数・関数記号は以後の定理・タクティクで利用できます。
 
 `qed.` の後に次の定理や宣言を続けることもできます。完了した定理は、後続の
 宣言から名前で参照できるグローバル事実として証明書付きで登録されます。
@@ -337,11 +339,15 @@ apply H.
 qed.
 ```
 
-タクティクは `intro`, `assumption`, `exact`, `apply`, `specialize`, `obtain`, `refl`, `split`, `cases`,
+タクティクは `intro`, `assumption`, `exact`, `apply`, `specialize`, `obtain`, `rewrite`, `refl`, `split`, `cases`,
 `left`, `right`, `use`, `contradiction` を実装しています。`apply` は全称量化された
 事実をゴールに合わせて具体化します。たとえば `apply extensionality` で外延性公理を
 利用できます。仮定から新しい仮定を導く場合は、`apply H0 in H as H1` と書けます。
 これは `H0` の一つの含意前提に `H` を適用し、結論を `H1` として追加します。
+
+等号仮定によるゴールの書き換えには `rewrite H` を使います。例えば `H : a = b`
+のもとでゴールが `P a` なら、ゴールを `P b` に書き換えます。
+逆方向には `rewrite <- H` を使います。
 
 ### プリミティブ推論規則
 

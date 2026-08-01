@@ -63,11 +63,11 @@ Choose empty Hempty from empty_set.
 theorem chosen_empty_is_empty : is_empty empty.
 exact Hempty.
 qed.`,
-  skolem: `Skolem pair Hpair from pairing.
+  choose_function: `Choose pair Hpair from pairing.
 theorem pair_shape :
   forall a, forall b, forall x,
     (x in pair(a,b) <-> (x = a or x = b)).
-exact Hpair.
+    exact Hpair.
 qed.`,
   rules: `theorem equality_by_rules :
   forall x, x = x.
