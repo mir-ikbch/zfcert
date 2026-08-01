@@ -1,8 +1,10 @@
 (** First-order logic for the language of set theory.
 
-    Bound and local variables use de Bruijn indices.  Global constants are
-    stable string-named symbols: they are never shifted or captured by a
-    quantifier.  ZFC has no positive-arity function symbols.
+    Bound and local variables use de Bruijn indices.  String-named function
+    symbols are represented uniformly by [App]; a constant is simply an
+    application with an empty argument list.  Function symbols are never
+    shifted or captured by a quantifier.  ZFC itself uses only 0-ary symbols
+    until the optional Skolem extension is declared.
     Equality is interpreted as Coq equality; [member] is supplied by a model.
  *)
 
@@ -13,29 +15,86 @@ Set Implicit Arguments.
 
 Inductive term : Type :=
 | Var : nat -> term
-| Const : string -> term.
+| App : string -> term_arguments -> term
+with term_arguments : Type :=
+| TNil : term_arguments
+| TCons : term -> term_arguments -> term_arguments.
 
 Coercion Var : nat >-> term.
+
+Fixpoint term_arguments_of_list (arguments : list term) : term_arguments :=
+  match arguments with
+  | [] => TNil
+  | argument :: rest => TCons argument (term_arguments_of_list rest)
+  end.
+
+Fixpoint term_arguments_to_list (arguments : term_arguments) : list term :=
+  match arguments with
+  | TNil => []
+  | TCons argument rest => argument :: term_arguments_to_list rest
+  end.
+
+Scheme term_term_arguments_ind := Induction for term Sort Prop
+with term_arguments_term_ind := Induction for term_arguments Sort Prop.
+Combined Scheme term_term_arguments_mutind
+  from term_term_arguments_ind, term_arguments_term_ind.
+
+Fixpoint term_eqb (s t : term) : bool :=
+  match s, t with
+  | Var n, Var m => Nat.eqb n m
+  | App name arguments, App other_name other_arguments =>
+      String.eqb name other_name &&
+      term_arguments_eqb arguments other_arguments
+  | _, _ => false
+  end
+
+with term_arguments_eqb
+  (left right : term_arguments) : bool :=
+  match left, right with
+  | TNil, TNil => true
+  | TCons term rest, TCons other_term other_rest =>
+      term_eqb term other_term &&
+      term_arguments_eqb rest other_rest
+  | _, _ => false
+  end.
+
+Lemma term_eqb_true_iff :
+  forall s t, term_eqb s t = true <-> s = t
+with term_arguments_eqb_true_iff :
+  forall left right, term_arguments_eqb left right = true <-> left = right.
+Proof.
+  - intros [n | name arguments] [m | other_name other_arguments];
+      simpl.
+    + rewrite Nat.eqb_eq. split; intro H; congruence.
+    + split; intro H; discriminate.
+    + split; intro H; discriminate.
+    + rewrite Bool.andb_true_iff, String.eqb_eq,
+        term_arguments_eqb_true_iff.
+      split; intro H.
+      * destruct H as [Hname Hargs]. subst. reflexivity.
+      * inversion H. split; reflexivity.
+  - intros [|term rest] [|other_term other_rest]; simpl.
+    + split; intro H; reflexivity.
+    + split; intro H; discriminate.
+    + split; intro H; discriminate.
+    + rewrite Bool.andb_true_iff, term_eqb_true_iff,
+        term_arguments_eqb_true_iff.
+      split; intro H.
+      * destruct H as [Hterm Hrest]. subst. reflexivity.
+      * inversion H. split; reflexivity.
+Qed.
 
 Definition term_eq_dec :
   forall s t : term, {s = t} + {s <> t}.
 Proof.
-  decide equality.
-  - apply Nat.eq_dec.
-  - apply String.string_dec.
-Defined.
-
-Definition term_eqb (s t : term) : bool :=
-  if term_eq_dec s t then true else false.
-
-Lemma term_eqb_true_iff :
-  forall s t, term_eqb s t = true <-> s = t.
-Proof.
   intros s t.
-  unfold term_eqb.
-  destruct (term_eq_dec s t); split; intro H; try reflexivity;
-    try discriminate; congruence.
-Qed.
+  destruct (term_eqb s t) eqn:Heq.
+  - left. apply (proj1 (term_eqb_true_iff s t)). exact Heq.
+  - right. intro equality. subst t.
+    assert (Htrue : term_eqb s s = true).
+    { apply (proj2 (term_eqb_true_iff s s)). reflexivity. }
+    rewrite Htrue in Heq. discriminate.
+Defined.
 
 Inductive formula : Type :=
 | Falsum : formula
@@ -77,10 +136,17 @@ Definition up (xi : nat -> nat) (n : nat) : nat :=
   | S k => S (xi k)
   end.
 
-Definition rename_term (xi : nat -> nat) (t : term) : term :=
+Fixpoint rename_term (xi : nat -> nat) (t : term) : term :=
   match t with
   | Var n => Var (xi n)
-  | Const name => Const name
+  | App name arguments => App name (rename_arguments xi arguments)
+  end
+
+with rename_arguments (xi : nat -> nat) (arguments : term_arguments)
+  : term_arguments :=
+  match arguments with
+  | TNil => TNil
+  | TCons term rest => TCons (rename_term xi term) (rename_arguments xi rest)
   end.
 
 Fixpoint rename (xi : nat -> nat) (A : formula) : formula :=
@@ -105,10 +171,18 @@ Definition up_substitution (sigma : nat -> term) (n : nat) : term :=
   | S k => lift_term (sigma k)
   end.
 
-Definition substitute_term (sigma : nat -> term) (t : term) : term :=
+Fixpoint substitute_term (sigma : nat -> term) (t : term) : term :=
   match t with
   | Var n => sigma n
-  | Const name => Const name
+  | App name arguments => App name (substitute_arguments sigma arguments)
+  end
+
+with substitute_arguments (sigma : nat -> term) (arguments : term_arguments)
+  : term_arguments :=
+  match arguments with
+  | TNil => TNil
+  | TCons term rest =>
+      TCons (substitute_term sigma term) (substitute_arguments sigma rest)
   end.
 
 Fixpoint substitute (sigma : nat -> term) (A : formula) : formula :=
@@ -138,13 +212,13 @@ Definition instantiate (t : term) (A : formula) : formula :=
   substitute (subst_zero t) A.
 
 Example lift_preserves_constant_example :
-  lift (Member (Const "empty"%string) (Var 0)) =
-  Member (Const "empty"%string) (Var 1).
+  lift (Member (App "empty"%string TNil) (Var 0)) =
+  Member (App "empty"%string TNil) (Var 1).
 Proof. reflexivity. Qed.
 
 Example instantiate_with_constant_example :
-  instantiate (Const "empty"%string) (Member (Var 0) (Var 1)) =
-  Member (Const "empty"%string) (Var 0).
+  instantiate (App "empty"%string TNil) (Member (Var 0) (Var 1)) =
+  Member (App "empty"%string TNil) (Var 0).
 Proof. reflexivity. Qed.
 
 (** Tarskian semantics. *)
@@ -154,7 +228,7 @@ Section Semantics.
   Variable member : D -> D -> Prop.
 
   Definition valuation := nat -> D.
-  Definition constant_valuation := string -> D.
+  Definition constant_valuation := string -> list D -> D.
 
   Definition extend (d : D) (rho : valuation) : valuation :=
     fun n =>
@@ -163,11 +237,21 @@ Section Semantics.
       | S k => rho k
       end.
 
-  Definition eval_term
+  Fixpoint eval_term
     (constants : constant_valuation) (rho : valuation) (t : term) : D :=
     match t with
     | Var n => rho n
-    | Const name => constants name
+    | App name arguments =>
+        constants name (eval_arguments constants rho arguments)
+    end
+
+  with eval_arguments
+    (constants : constant_valuation) (rho : valuation)
+    (arguments : term_arguments) : list D :=
+    match arguments with
+    | TNil => []
+    | TCons term rest =>
+        eval_term constants rho term :: eval_arguments constants rho rest
     end.
 
   Fixpoint satisfies
@@ -183,15 +267,47 @@ Section Semantics.
     | Ex B => exists d : D, satisfies constants (extend d rho) B
     end.
 
-  Lemma eval_term_ext :
+  Lemma eval_ext_mut :
+    (forall t constants (rho sigma : valuation),
+      (forall n, rho n = sigma n) ->
+      eval_term constants rho t = eval_term constants sigma t) /\
+    (forall arguments constants (rho sigma : valuation),
+      (forall n, rho n = sigma n) ->
+      eval_arguments constants rho arguments =
+      eval_arguments constants sigma arguments).
+  Proof.
+    refine (term_term_arguments_mutind
+      (fun t : term => (forall constants (rho sigma : valuation),
+        (forall n, rho n = sigma n) ->
+        eval_term constants rho t = eval_term constants sigma t))
+      (fun arguments : term_arguments => (forall constants (rho sigma : valuation),
+        (forall n, rho n = sigma n) ->
+        eval_arguments constants rho arguments =
+        eval_arguments constants sigma arguments)) _ _ _ _).
+    - intros n constants rho sigma Heq. simpl. apply Heq.
+    - intros name arguments IH constants rho sigma Heq. simpl.
+      rewrite (IH constants rho sigma Heq). reflexivity.
+    - intros constants rho sigma Heq. reflexivity.
+    - intros term IH rest IHrest constants rho sigma Heq. simpl.
+      rewrite (IH constants rho sigma Heq).
+      rewrite (IHrest constants rho sigma Heq).
+      reflexivity.
+  Qed.
+
+  Definition eval_term_ext :
     forall constants (rho sigma : valuation) t,
       (forall n, rho n = sigma n) ->
-      eval_term constants rho t = eval_term constants sigma t.
-  Proof.
-    intros constants rho sigma [n | name] Heq; simpl.
-    - apply Heq.
-    - reflexivity.
-  Qed.
+      eval_term constants rho t = eval_term constants sigma t :=
+    fun constants rho sigma t Heq =>
+      (proj1 eval_ext_mut t constants rho sigma Heq).
+
+  Definition eval_arguments_ext :
+    forall constants (rho sigma : valuation) arguments,
+      (forall n, rho n = sigma n) ->
+      eval_arguments constants rho arguments =
+      eval_arguments constants sigma arguments :=
+    fun constants rho sigma arguments Heq =>
+      (proj2 eval_ext_mut arguments constants rho sigma Heq).
 
   Theorem satisfies_ext :
     forall constants (A : formula) (rho sigma : valuation),
@@ -234,13 +350,43 @@ Section Semantics.
         exact H.
   Qed.
 
-  Lemma eval_rename_term :
+  Lemma eval_rename_mut :
+    (forall t constants (rho : valuation) xi,
+      eval_term constants rho (rename_term xi t) =
+      eval_term constants (fun n => rho (xi n)) t) /\
+    (forall arguments constants (rho : valuation) xi,
+      eval_arguments constants rho (rename_arguments xi arguments) =
+      eval_arguments constants (fun n => rho (xi n)) arguments).
+  Proof.
+    refine (term_term_arguments_mutind
+      (fun t : term => (forall constants (rho : valuation) xi,
+        eval_term constants rho (rename_term xi t) =
+        eval_term constants (fun n => rho (xi n)) t))
+      (fun arguments : term_arguments => (forall constants (rho : valuation) xi,
+        eval_arguments constants rho (rename_arguments xi arguments) =
+        eval_arguments constants (fun n => rho (xi n)) arguments)) _ _ _ _).
+    - intros n constants rho xi. reflexivity.
+    - intros name arguments IH constants rho xi. simpl.
+      rewrite (IH constants rho xi). reflexivity.
+    - intros constants rho xi. reflexivity.
+    - intros term IH rest IHrest constants rho xi. simpl.
+      rewrite (IH constants rho xi), (IHrest constants rho xi).
+      reflexivity.
+  Qed.
+
+  Definition eval_rename_term :
     forall constants (rho : valuation) xi t,
       eval_term constants rho (rename_term xi t) =
-      eval_term constants (fun n => rho (xi n)) t.
-  Proof.
-    intros constants rho xi [n | name]; reflexivity.
-  Qed.
+      eval_term constants (fun n => rho (xi n)) t :=
+    fun constants rho xi t =>
+      proj1 eval_rename_mut t constants rho xi.
+
+  Definition eval_rename_arguments :
+    forall constants (rho : valuation) xi arguments,
+      eval_arguments constants rho (rename_arguments xi arguments) =
+      eval_arguments constants (fun n => rho (xi n)) arguments :=
+    fun constants rho xi arguments =>
+      proj2 eval_rename_mut arguments constants rho xi.
 
   Theorem satisfies_rename :
     forall constants (A : formula) (rho : valuation) (xi : nat -> nat),
@@ -308,13 +454,45 @@ Section Semantics.
         exact H.
   Qed.
 
-  Lemma eval_lift_term :
+  Lemma eval_lift_mut :
+    (forall t constants (rho : valuation) d,
+      eval_term constants (extend d rho) (lift_term t) =
+      eval_term constants rho t) /\
+    (forall arguments constants (rho : valuation) d,
+      eval_arguments constants (extend d rho) (rename_arguments S arguments) =
+      eval_arguments constants rho arguments).
+  Proof.
+    refine (term_term_arguments_mutind
+      (fun t : term => (forall constants (rho : valuation) d,
+        eval_term constants (extend d rho) (lift_term t) =
+        eval_term constants rho t))
+      (fun arguments : term_arguments => (forall constants (rho : valuation) d,
+        eval_arguments constants (extend d rho) (rename_arguments S arguments) =
+        eval_arguments constants rho arguments)) _ _ _ _).
+    - intros n constants rho d. reflexivity.
+    - intros name arguments IH constants rho d. simpl.
+      rewrite (IH constants rho d). reflexivity.
+    - intros constants rho d. reflexivity.
+    - intros term IH rest IHrest constants rho d. simpl.
+      assert (Hterm :
+        eval_term constants (extend d rho) (rename_term S term) =
+        eval_term constants rho term).
+      { unfold lift_term in IH. apply IH. }
+      rewrite Hterm, (IHrest constants rho d).
+      reflexivity.
+  Qed.
+
+  Definition eval_lift_term :
     forall constants (rho : valuation) d t,
       eval_term constants (extend d rho) (lift_term t) =
-      eval_term constants rho t.
-  Proof.
-    intros constants rho d [n | name]; reflexivity.
-  Qed.
+      eval_term constants rho t :=
+    fun constants rho d t => proj1 eval_lift_mut t constants rho d.
+
+  Definition eval_lift_arguments :
+    forall constants (rho : valuation) d arguments,
+      eval_arguments constants (extend d rho) (rename_arguments S arguments) =
+      eval_arguments constants rho arguments :=
+    fun constants rho d arguments => proj2 eval_lift_mut arguments constants rho d.
 
   Lemma eval_up_substitution :
     forall constants (rho : valuation) d sigma n,
@@ -326,14 +504,48 @@ Section Semantics.
     - apply eval_lift_term.
   Qed.
 
-  Lemma eval_substitute_term :
+  Lemma eval_substitute_mut :
+    (forall t constants (rho : valuation) sigma,
+      eval_term constants rho (substitute_term sigma t) =
+      eval_term constants
+        (fun n => eval_term constants rho (sigma n)) t) /\
+    (forall arguments constants (rho : valuation) sigma,
+      eval_arguments constants rho (substitute_arguments sigma arguments) =
+      eval_arguments constants
+        (fun n => eval_term constants rho (sigma n)) arguments).
+  Proof.
+    refine (term_term_arguments_mutind
+      (fun t : term => (forall constants (rho : valuation) sigma,
+        eval_term constants rho (substitute_term sigma t) =
+        eval_term constants
+          (fun n => eval_term constants rho (sigma n)) t))
+      (fun arguments : term_arguments => (forall constants (rho : valuation) sigma,
+        eval_arguments constants rho (substitute_arguments sigma arguments) =
+        eval_arguments constants
+          (fun n => eval_term constants rho (sigma n)) arguments)) _ _ _ _).
+    - intros n constants rho sigma. reflexivity.
+    - intros name arguments IH constants rho sigma. simpl.
+      rewrite (IH constants rho sigma). reflexivity.
+    - intros constants rho sigma. reflexivity.
+    - intros term IH rest IHrest constants rho sigma. simpl.
+      rewrite (IH constants rho sigma), (IHrest constants rho sigma).
+      reflexivity.
+  Qed.
+
+  Definition eval_substitute_term :
     forall constants (rho : valuation) sigma t,
       eval_term constants rho (substitute_term sigma t) =
       eval_term constants
-        (fun n => eval_term constants rho (sigma n)) t.
-  Proof.
-    intros constants rho sigma [n | name]; reflexivity.
-  Qed.
+        (fun n => eval_term constants rho (sigma n)) t :=
+    fun constants rho sigma t => proj1 eval_substitute_mut t constants rho sigma.
+
+  Definition eval_substitute_arguments :
+    forall constants (rho : valuation) sigma arguments,
+      eval_arguments constants rho (substitute_arguments sigma arguments) =
+      eval_arguments constants
+        (fun n => eval_term constants rho (sigma n)) arguments :=
+    fun constants rho sigma arguments =>
+      proj2 eval_substitute_mut arguments constants rho sigma.
 
   Theorem satisfies_substitute :
     forall constants (A : formula) (rho : valuation) (sigma : nat -> term),
@@ -634,7 +846,7 @@ Qed.
 Section Soundness.
   Context {D : Type}.
   Variable member : D -> D -> Prop.
-  Variable constants : string -> D.
+  Variable constants : @constant_valuation D.
   Variable T : theory.
 
   Definition theory_valid : Prop :=

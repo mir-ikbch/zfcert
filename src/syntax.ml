@@ -1,8 +1,8 @@
 type formula =
   | Bottom
   | Named of string * string list
-  | Eq of string * string
-  | Mem of string * string
+  | Eq of term * term
+  | Mem of term * term
   | Not of formula
   | And of formula * formula
   | Or of formula * formula
@@ -10,6 +10,10 @@ type formula =
   | Iff of formula * formula
   | Forall of string * formula
   | Exists of string * formula
+
+and term =
+  | Name of string
+  | App of string * term list
 
 module StringMap = Map.Make (String)
 module StringSet = Set.Make (String)
@@ -20,6 +24,11 @@ let precedence = function
   | Not _ -> 5
   | Bottom | Named _ | Eq _ | Mem _ -> 6
 
+let rec term_to_string = function
+  | Name name -> name
+  | App (name, arguments) ->
+      name ^ "(" ^ String.concat ", " (List.map term_to_string arguments) ^ ")"
+
 let rec formula_to_string ?(outer = 0) formula =
   let precedence = precedence formula in
   let body =
@@ -27,8 +36,8 @@ let rec formula_to_string ?(outer = 0) formula =
     | Bottom -> "⊥"
     | Named (name, arguments) ->
         String.concat " " (name :: arguments)
-    | Eq (left, right) -> left ^ " = " ^ right
-    | Mem (left, right) -> left ^ " ∈ " ^ right
+    | Eq (left, right) -> term_to_string left ^ " = " ^ term_to_string right
+    | Mem (left, right) -> term_to_string left ^ " ∈ " ^ term_to_string right
     | Not inner ->
         "¬" ^ formula_to_string ~outer:precedence inner
     | And (left, right) ->
@@ -54,11 +63,20 @@ let rec formula_to_string ?(outer = 0) formula =
   in
   if precedence < outer then "(" ^ body ^ ")" else body
 
+let rec term_free_vars = function
+  | Name name -> StringSet.singleton name
+  | App (_name, arguments) ->
+      List.fold_left
+        (fun names argument -> StringSet.union names (term_free_vars argument))
+        StringSet.empty arguments
+
+let term_all_vars = term_free_vars
+
 let rec free_vars = function
   | Bottom -> StringSet.empty
   | Named (_, arguments) -> StringSet.of_list arguments
   | Eq (left, right) | Mem (left, right) ->
-      StringSet.of_list [left; right]
+      StringSet.union (term_free_vars left) (term_free_vars right)
   | Not formula -> free_vars formula
   | And (left, right)
   | Or (left, right)
@@ -72,7 +90,7 @@ let rec all_vars = function
   | Bottom -> StringSet.empty
   | Named (_, arguments) -> StringSet.of_list arguments
   | Eq (left, right) | Mem (left, right) ->
-      StringSet.of_list [left; right]
+      StringSet.union (term_all_vars left) (term_all_vars right)
   | Not formula -> all_vars formula
   | And (left, right)
   | Or (left, right)
@@ -93,23 +111,21 @@ let fresh_name base used =
   in
   try_index 0
 
+let rec rename_term_bound old_name new_name = function
+  | Name name -> Name (if name = old_name then new_name else name)
+  | App (name, arguments) ->
+      App (name, List.map (rename_term_bound old_name new_name) arguments)
+
 let rec rename_bound old_name new_name = function
   | Bottom -> Bottom
-  | Named (name, arguments) ->
-      Named
-        (name,
-         List.map
-           (fun argument ->
-              if argument = old_name then new_name else argument)
-           arguments)
+  | Named (name, arguments) -> Named (name, List.map (fun argument ->
+      if argument = old_name then new_name else argument) arguments)
   | Eq (left, right) ->
-      Eq
-        ((if left = old_name then new_name else left),
-         (if right = old_name then new_name else right))
+      Eq (rename_term_bound old_name new_name left,
+          rename_term_bound old_name new_name right)
   | Mem (left, right) ->
-      Mem
-        ((if left = old_name then new_name else left),
-         (if right = old_name then new_name else right))
+      Mem (rename_term_bound old_name new_name left,
+           rename_term_bound old_name new_name right)
   | Not formula -> Not (rename_bound old_name new_name formula)
   | And (left, right) ->
       And
@@ -136,67 +152,74 @@ let rec rename_bound old_name new_name = function
   | Exists (name, formula) ->
       Exists (name, rename_bound old_name new_name formula)
 
-let rec subst variable term = function
+let rec subst_term variable replacement = function
+  | Name name -> if name = variable then replacement else Name name
+  | App (name, arguments) ->
+      App (name, List.map (subst_term variable replacement) arguments)
+
+let rec subst variable replacement = function
   | Bottom -> Bottom
   | Named (name, arguments) ->
-      Named
-        (name,
-         List.map
-           (fun argument ->
-              if argument = variable then term else argument)
-           arguments)
+      Named (name,
+        List.map (fun argument -> if argument = variable then term_to_string replacement else argument)
+          arguments)
   | Eq (left, right) ->
-      Eq
-        ((if left = variable then term else left),
-         (if right = variable then term else right))
+      Eq (subst_term variable replacement left,
+          subst_term variable replacement right)
   | Mem (left, right) ->
-      Mem
-        ((if left = variable then term else left),
-         (if right = variable then term else right))
-  | Not formula -> Not (subst variable term formula)
+      Mem (subst_term variable replacement left,
+           subst_term variable replacement right)
+  | Not formula -> Not (subst variable replacement formula)
   | And (left, right) ->
-      And (subst variable term left, subst variable term right)
+      And (subst variable replacement left, subst variable replacement right)
   | Or (left, right) ->
-      Or (subst variable term left, subst variable term right)
+      Or (subst variable replacement left, subst variable replacement right)
   | Imp (left, right) ->
-      Imp (subst variable term left, subst variable term right)
+      Imp (subst variable replacement left, subst variable replacement right)
   | Iff (left, right) ->
-      Iff (subst variable term left, subst variable term right)
+      Iff (subst variable replacement left, subst variable replacement right)
   | Forall (name, formula) when name = variable ->
       Forall (name, formula)
   | Exists (name, formula) when name = variable ->
       Exists (name, formula)
   | Forall (name, formula)
-      when name = term && StringSet.mem variable (free_vars formula) ->
+      when name = term_to_string replacement && StringSet.mem variable (free_vars formula) ->
       let fresh =
-        fresh_name name (StringSet.add term (all_vars formula))
+        fresh_name name (StringSet.add (term_to_string replacement) (all_vars formula))
       in
       Forall
         (fresh,
-         subst variable term (rename_bound name fresh formula))
+         subst variable replacement (rename_bound name fresh formula))
   | Exists (name, formula)
-      when name = term && StringSet.mem variable (free_vars formula) ->
+      when name = term_to_string replacement && StringSet.mem variable (free_vars formula) ->
       let fresh =
-        fresh_name name (StringSet.add term (all_vars formula))
+        fresh_name name (StringSet.add (term_to_string replacement) (all_vars formula))
       in
       Exists
         (fresh,
-         subst variable term (rename_bound name fresh formula))
+         subst variable replacement (rename_bound name fresh formula))
   | Forall (name, formula) ->
-      Forall (name, subst variable term formula)
+      Forall (name, subst variable replacement formula)
   | Exists (name, formula) ->
-      Exists (name, subst variable term formula)
+      Exists (name, subst variable replacement formula)
 
 let alpha_equal left right =
   let rec equal left_environment right_environment next left right =
-    let term_equal left right =
-      match
-        StringMap.find_opt left left_environment,
-        StringMap.find_opt right right_environment
-      with
-      | Some left_index, Some right_index ->
-          left_index = right_index
-      | None, None -> left = right
+    let rec term_equal left right =
+      match left, right with
+      | Name left, Name right ->
+          begin match
+            StringMap.find_opt left left_environment,
+            StringMap.find_opt right right_environment
+          with
+          | Some left_index, Some right_index -> left_index = right_index
+          | None, None -> left = right
+          | _ -> false
+          end
+      | App (left_name, left_arguments), App (right_name, right_arguments) ->
+          left_name = right_name
+          && List.length left_arguments = List.length right_arguments
+          && List.for_all2 term_equal left_arguments right_arguments
       | _ -> false
     in
     match left, right with
@@ -205,7 +228,9 @@ let alpha_equal left right =
       Named (right_name, right_arguments) ->
         left_name = right_name
         && List.length left_arguments = List.length right_arguments
-        && List.for_all2 term_equal left_arguments right_arguments
+        && List.for_all2
+             (fun left right -> term_equal (Name left) (Name right))
+             left_arguments right_arguments
     | Eq (left_first, left_second),
       Eq (right_first, right_second)
     | Mem (left_first, left_second),

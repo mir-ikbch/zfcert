@@ -68,7 +68,7 @@ a synchronous local HTTP request."
 (defvar-local zfcert--error-overlay nil)
 
 (defconst zfcert--font-lock-keywords
-  `((,(regexp-opt '("alias" "Choose" "theorem" "qed") 'symbols)
+  `((,(regexp-opt '("alias" "Choose" "Skolem" "theorem" "qed") 'symbols)
      . font-lock-keyword-face)
     (,(regexp-opt
        '("rule" "intro" "exact" "apply" "specialize" "obtain" "cases" "use"

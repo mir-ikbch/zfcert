@@ -22,11 +22,16 @@ val fold_left : ('a1 -> 'a2 -> 'a1) -> 'a2 list -> 'a1 -> 'a1
 
 type term =
 | Var of int
-| Const of string
-
-val term_eq_dec : term -> term -> bool
+| App of string * term_arguments
+and term_arguments =
+| TNil
+| TCons of term * term_arguments
 
 val term_eqb : term -> term -> bool
+
+val term_arguments_eqb : term_arguments -> term_arguments -> bool
+
+val term_eq_dec : term -> term -> bool
 
 type formula =
 | Falsum
@@ -50,6 +55,8 @@ val up : (int -> int) -> int -> int
 
 val rename_term : (int -> int) -> term -> term
 
+val rename_arguments : (int -> int) -> term_arguments -> term_arguments
+
 val rename : (int -> int) -> formula -> formula
 
 val lift : formula -> formula
@@ -59,6 +66,8 @@ val lift_term : term -> term
 val up_substitution : (int -> term) -> int -> term
 
 val substitute_term : (int -> term) -> term -> term
+
+val substitute_arguments : (int -> term) -> term_arguments -> term_arguments
 
 val substitute : (int -> term) -> formula -> formula
 
@@ -165,10 +174,17 @@ val replacement_instance : formula -> formula
 
 val choice_axiom : formula
 
+type named_term =
+| NName of string
+| NApp of string * named_arguments
+and named_arguments =
+| NNNil
+| NNCons of named_term * named_arguments
+
 type named_formula =
 | NFalsum
-| NEqual of string * string
-| NMember of string * string
+| NEqual of named_term * named_term
+| NMember of named_term * named_term
 | NConj of named_formula * named_formula
 | NDisj of named_formula * named_formula
 | NImpl of named_formula * named_formula
@@ -211,6 +227,15 @@ val remove_name : string -> string list -> string list
 
 val merge_names : string list -> string list -> string list
 
+val named_term_names : named_term -> string list
+
+val named_arguments_names : named_arguments -> string list
+
+val named_term_subst : string -> string -> named_term -> named_term
+
+val named_arguments_subst :
+  string -> string -> named_arguments -> named_arguments
+
 val filter_environment : string list -> string list -> string list
 
 val shared_name : string list -> string list -> string option
@@ -229,8 +254,12 @@ val extend_environments :
 
 val variable_index : string list -> string list -> string -> int named_result
 
+val elaborate_arguments :
+  string list -> string list -> string list -> named_arguments ->
+  term_arguments named_result
+
 val elaborate_term :
-  string list -> string list -> string list -> string -> term named_result
+  string list -> string list -> string list -> named_term -> term named_result
 
 val elaborate :
   string list -> string list -> string list -> named_formula -> formula
@@ -238,7 +267,10 @@ val elaborate :
 
 val nth_name : string list -> string list -> int -> string named_result
 
-val reify_term : string list -> string list -> term -> string named_result
+val reify_term : string list -> string list -> term -> named_term named_result
+
+val reify_arguments :
+  string list -> string list -> term_arguments -> named_arguments named_result
 
 val fresh_string_with_fuel : int -> string -> string list -> string
 
@@ -333,8 +365,8 @@ type named_rule =
 | NRDisjIntroR
 | NRDisjElim of named_formula * named_formula * string * string
 | NRAllIntro of string
-| NRAllElim of string * named_formula
-| NRExIntro of string
+| NRAllElim of named_term * named_formula
+| NRExIntro of named_term
 | NRExElim of string * string * named_formula
 | NREqualRefl
 | NREqualElim of string * string * named_formula
@@ -363,7 +395,10 @@ val find_named_hypothesis :
 val elaborate_in_environment :
   string list -> string list -> named_formula -> formula named_result
 
-val term_index : string list -> string list -> string -> term named_result
+val term_index : string list -> string list -> named_term -> term named_result
+
+val extend_environment_term :
+  string list -> string list -> named_term -> string list
 
 val plan_named_rule :
   goal_metadata -> named_goal -> named_rule -> rule_plan named_result
@@ -384,7 +419,7 @@ type named_tactic =
 | NTacSplit
 | NTacLeft
 | NTacRight
-| NTacUse of string
+| NTacUse of named_term
 | NTacRefl
 | NTacContradiction
 | NTacCases of string * string * string
@@ -536,6 +571,19 @@ type global_environment = { global_constants : string list;
                             global_named_facts : named_hypothesis list;
                             global_core_facts : formula list }
 
+val named_arguments_of_names : string list -> named_arguments
+
+val named_term_replace : string -> named_term -> named_term -> named_term
+
+val named_arguments_replace :
+  string -> named_term -> named_arguments -> named_arguments
+
+val named_formula_replace :
+  string -> named_term -> named_formula -> named_formula
+
+val named_skolemize :
+  string -> string list -> named_formula -> named_formula option
+
 val empty_global_environment : global_environment
 
 val global_fact_names : global_environment -> string list
@@ -548,5 +596,9 @@ val global_replay :
   named_result
 
 val global_declare_choice :
+  string -> string -> named_formula -> certificate -> global_environment ->
+  global_environment named_result
+
+val global_declare_skolem :
   string -> string -> named_formula -> certificate -> global_environment ->
   global_environment named_result

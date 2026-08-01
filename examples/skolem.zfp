@@ -1,0 +1,8 @@
+(* A function symbol introduced from the pairing axiom. *)
+Skolem pair Hpair from pairing.
+
+theorem pair_shape :
+  forall a, forall b, forall x,
+    (x in pair(a, b) <-> (x = a or x = b)).
+exact Hpair.
+qed.

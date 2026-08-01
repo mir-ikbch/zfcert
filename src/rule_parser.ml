@@ -44,6 +44,11 @@ let require_one_name usage argument =
   | [name] -> name
   | _ -> raise (Error usage)
 
+let parse_kernel_term parse_formula text =
+  match parse_formula (trim text ^ " = " ^ trim text) with
+  | Syntax.Eq (term, _) -> Kernel_syntax.to_kernel_term term
+  | _ -> raise (Error "Expected a term.")
+
 let parse_schema parse_formula schema argument =
   let names, formula_text = split_formula argument in
   let predicate = parse_formula formula_text in
@@ -169,14 +174,15 @@ let parse ~parse_formula argument =
       in
       Kernel.NPrimitiveRule
         (Kernel.NRAllElim
-          (term, Kernel_syntax.to_kernel universal))
+          (parse_kernel_term parse_formula term,
+           Kernel_syntax.to_kernel universal))
   | "ex_intro" ->
       let term =
         require_one_name
           "Use rule ex_intro term to provide a witness."
           rule_argument
       in
-      Kernel.NPrimitiveRule (Kernel.NRExIntro term)
+      Kernel.NPrimitiveRule (Kernel.NRExIntro (parse_kernel_term parse_formula term))
   | "ex_elim" ->
       let parameters, formula_text = split_formula rule_argument in
       let witness, hypothesis =

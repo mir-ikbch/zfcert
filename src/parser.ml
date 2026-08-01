@@ -124,6 +124,58 @@ let expect_ident state =
 
 let rec parse_formula_state state = parse_iff state
 
+and parse_term state =
+  match take state with
+  | Ident name ->
+      begin match peek state with
+      | Lparen ->
+          ignore (take state);
+          let rec arguments accumulated =
+            match peek state with
+            | Rparen ->
+                ignore (take state);
+                List.rev accumulated
+            | _ ->
+                let argument = parse_term state in
+                begin match peek state with
+                | Comma -> ignore (take state); arguments (argument :: accumulated)
+                | Rparen ->
+                    ignore (take state);
+                    List.rev (argument :: accumulated)
+                | _ ->
+                    raise (Parse_error
+                      (state.position, "Expected a comma or closing parenthesis."))
+                end
+          in
+          App (name, arguments [])
+      | _ -> Name name
+      end
+  | _ -> raise (Parse_error (state.position, "Expected a term."))
+
+and parse_term_tail state name =
+  match peek state with
+  | Lparen ->
+      ignore (take state);
+      let rec arguments accumulated =
+        match peek state with
+        | Rparen ->
+            ignore (take state);
+            List.rev accumulated
+        | _ ->
+            let argument = parse_term state in
+            begin match peek state with
+            | Comma -> ignore (take state); arguments (argument :: accumulated)
+            | Rparen ->
+                ignore (take state);
+                List.rev (argument :: accumulated)
+            | _ ->
+                raise (Parse_error
+                  (state.position, "Expected a comma or closing parenthesis."))
+            end
+      in
+      App (name, arguments [])
+  | _ -> Name name
+
 and parse_iff state =
   let left = parse_imp state in
   match peek state with
@@ -173,30 +225,43 @@ and parse_prefix state =
       Exists (name, parse_formula_state state)
   | Lparen ->
       let formula = parse_formula_state state in
-      expect state Rparen "Expected ).";
+      begin match peek state with
+      | Rparen -> ignore (take state)
+      | Ident _ ->
+          raise (Parse_error
+            (state.position,
+             "Expected ). Function applications use f(a, b), not f a b."))
+      | _ -> raise (Parse_error (state.position, "Expected )."))
+      end;
       formula
   | TBottom -> Bottom
   | Ident left ->
-      begin
-        match peek state with
-        | Equal ->
-            ignore (take state);
-            Eq (left, expect_ident state)
-        | NotEqual ->
-            ignore (take state);
-            Not (Eq (left, expect_ident state))
-        | Member ->
-            ignore (take state);
-            Mem (left, expect_ident state)
-        | _ ->
-            let rec arguments result =
-              match peek state with
-              | Ident argument ->
-                  ignore (take state);
-                  arguments (argument :: result)
-              | _ -> List.rev result
-            in
-            Named (left, arguments [])
+      let left_term = parse_term_tail state left in
+      begin match peek state with
+      | Equal ->
+          ignore (take state);
+          Eq (left_term, parse_term state)
+      | NotEqual ->
+          ignore (take state);
+          Not (Eq (left_term, parse_term state))
+      | Member ->
+          ignore (take state);
+          Mem (left_term, parse_term state)
+      | _ ->
+          begin match left_term with
+          | Name name ->
+              let rec arguments result =
+                match peek state with
+                | Ident argument ->
+                    ignore (take state);
+                    arguments (argument :: result)
+                | _ -> List.rev result
+              in
+              Named (name, arguments [])
+          | App _ ->
+              raise (Parse_error
+                (state.position, "A function application must be used in a formula."))
+          end
       end
   | _ -> raise (Parse_error (state.position, "Expected a formula."))
 
@@ -204,8 +269,15 @@ let parse_formula input =
   let state = { tokens = lex input; position = 0 } in
   let formula = parse_formula_state state in
   if peek state <> Eof then
-    raise (Parse_error
-      (state.position, "Unexpected input after the formula."));
+    begin match peek state with
+    | Ident _ ->
+        raise (Parse_error
+          (state.position,
+           "Unexpected term after a formula. Function applications use f(a, b), not f a b."))
+    | _ ->
+        raise (Parse_error
+          (state.position, "Unexpected input after the formula."))
+    end;
   formula
 
 let split_statements script =

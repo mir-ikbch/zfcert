@@ -101,6 +101,17 @@ type choice_declaration = {
   choice_terms : string list;
 }
 
+type skolem_declaration = {
+  skolem_line : int;
+  skolem_function : string;
+  skolem_hypothesis : string;
+  skolem_source : string;
+}
+
+type global_declaration =
+  | ChoiceDeclaration of choice_declaration
+  | SkolemDeclaration of skolem_declaration
+
 type session = {
   theorem_name : string;
   theorem : formula;
@@ -132,6 +143,14 @@ let substitution_variables substitutions =
     substitutions
     StringSet.empty
 
+let substitute_surface_term substitutions term =
+  let rec go = function
+    | Name name ->
+        Name (Option.value (StringMap.find_opt name substitutions) ~default:name)
+    | App (name, arguments) -> App (name, List.map go arguments)
+  in
+  go term
+
 let rec subst_many substitutions = function
   | Bottom -> Bottom
   | Named (name, arguments) ->
@@ -143,11 +162,11 @@ let rec subst_many substitutions = function
                ~default:argument)
           arguments)
   | Eq (a, b) ->
-      Eq (Option.value (StringMap.find_opt a substitutions) ~default:a,
-          Option.value (StringMap.find_opt b substitutions) ~default:b)
+      Eq (substitute_surface_term substitutions a,
+          substitute_surface_term substitutions b)
   | Mem (a, b) ->
-      Mem (Option.value (StringMap.find_opt a substitutions) ~default:a,
-           Option.value (StringMap.find_opt b substitutions) ~default:b)
+      Mem (substitute_surface_term substitutions a,
+           substitute_surface_term substitutions b)
   | Not f -> Not (subst_many substitutions f)
   | And (a, b) -> And (subst_many substitutions a, subst_many substitutions b)
   | Or (a, b) -> Or (subst_many substitutions a, subst_many substitutions b)
@@ -354,11 +373,11 @@ let rec instantiate_formula substitutions = function
                ~default:argument)
           arguments)
   | Eq (a, b) ->
-      Eq (Option.value (StringMap.find_opt a substitutions) ~default:a,
-          Option.value (StringMap.find_opt b substitutions) ~default:b)
+      Eq (substitute_surface_term substitutions a,
+          substitute_surface_term substitutions b)
   | Mem (a, b) ->
-      Mem (Option.value (StringMap.find_opt a substitutions) ~default:a,
-           Option.value (StringMap.find_opt b substitutions) ~default:b)
+      Mem (substitute_surface_term substitutions a,
+           substitute_surface_term substitutions b)
   | Not f -> Not (instantiate_formula substitutions f)
   | And (a, b) -> And (instantiate_formula substitutions a, instantiate_formula substitutions b)
   | Or (a, b) -> Or (instantiate_formula substitutions a, instantiate_formula substitutions b)
@@ -370,13 +389,21 @@ let rec instantiate_formula substitutions = function
       Exists (x, instantiate_formula (StringMap.remove x substitutions) f)
 
 let match_formula metas pattern actual =
-  let term active_metas sub p a =
-    if StringSet.mem p active_metas then
-      match StringMap.find_opt p sub with
-      | None -> Some (StringMap.add p a sub)
-      | Some old when old = a -> Some sub
-      | Some _ -> None
-    else if p = a then Some sub else None
+  let rec term active_metas sub p a =
+    match p, a with
+    | Name p, Name a when StringSet.mem p active_metas ->
+        begin match StringMap.find_opt p sub with
+        | None -> Some (StringMap.add p a sub)
+        | Some old when old = a -> Some sub
+        | Some _ -> None
+        end
+    | Name p, Name a when p = a -> Some sub
+    | App (p_name, p_args), App (a_name, a_args)
+      when p_name = a_name && List.length p_args = List.length a_args ->
+        List.fold_left2
+          (fun result p_arg a_arg -> Option.bind result (fun sub' -> term active_metas sub' p_arg a_arg))
+          (Some sub) p_args a_args
+    | _ -> None
   in
   let rec go active_metas sub p a =
     match p, a with
@@ -394,7 +421,7 @@ let match_formula metas pattern actual =
         Option.bind (go active_metas sub p1 a1)
           (fun sub' -> go active_metas sub' p2 a2)
     | Forall (x, p), Forall (y, a) | Exists (x, p), Exists (y, a) ->
-        let p' = if x = y then p else subst x y p in
+        let p' = if x = y then p else subst x (Name y) p in
         go (StringSet.remove x active_metas) sub p' a
     | _ -> None
   in
@@ -453,6 +480,13 @@ let parse_formula_at line_no aliases text =
   try parse_formula (trim text) |> unfold line_no aliases
   with Parse_error (_, message) -> raise (Proof_error (line_no, message))
 
+let parse_surface_term line_no text =
+  try
+    match parse_formula (trim text ^ " = " ^ trim text) with
+    | Eq (term, _) -> term
+    | _ -> raise (Proof_error (line_no, "Expected a term."))
+  with Parse_error (_, message) -> raise (Proof_error (line_no, message))
+
 let fixed_axiom_kind = function
   | "empty_set" -> Some Extracted.EmptySet
   | "extensionality" -> Some Extracted.Extensionality
@@ -484,10 +518,13 @@ let specialize_rules line_no fact terms =
     match remaining, current with
     | [], _ -> (current, rules)
     | term :: rest, Forall (binder, body) ->
+        let surface_term = parse_surface_term line_no term in
         let rule =
-          Extracted.NRAllElim (term, kernel_formula current)
+          Extracted.NRAllElim
+            (Kernel_syntax.to_kernel_term surface_term,
+             kernel_formula current)
         in
-        build (subst binder term body) rest (rule :: rules)
+        build (subst binder surface_term body) rest (rule :: rules)
     | _ ->
         raise (Proof_error (line_no,
           "Too many terms were supplied for universal specialization."))
@@ -519,6 +556,15 @@ let parse_choice_words line_no command argument =
         Printf.sprintf
           "Use: %s witness hypothesis from fact term1 term2."
           command))
+
+let parse_skolem_words line_no argument =
+  match words argument with
+  | function_name :: hypothesis :: from_word :: source :: []
+    when String.lowercase_ascii from_word = "from" ->
+      (function_name, hypothesis, source)
+  | _ ->
+      raise (Proof_error (line_no,
+        "Use: Skolem function hypothesis from fact."))
 
 (** Surface [obtain] is an untrusted planner. The extracted certified session
     checks and records the resulting AllElim/ExElim/closing-rule program. *)
@@ -615,6 +661,42 @@ let declare_global_choice environment choice =
   | _ ->
       raise (Proof_error (line_no,
         "The selected fact does not become existential after specialization."))
+
+let declare_global_skolem environment declaration =
+  let line_no = declaration.skolem_line in
+  let context =
+    Extracted.environment_facts environment
+    |> List.map (fun (name, formula) ->
+         (name, Kernel_syntax.of_kernel formula))
+  in
+  let source =
+    match lookup_fact declaration.skolem_source context with
+    | Some fact -> fact
+    | None ->
+        raise (Proof_error (line_no,
+          "Universal-existential fact not found: " ^ declaration.skolem_source))
+  in
+  let close_rule, axioms = close_fact line_no declaration.skolem_source context in
+  let program = [checked_step ~axioms close_rule] in
+  let proof_state =
+    Extracted.start_in_environment environment (kernel_formula source)
+    |> accept_kernel_result line_no "Skolem source"
+    |> kernel_certificate_run line_no program
+  in
+  if not (Extracted.solved proof_state) then
+    raise (Proof_error (line_no,
+      "The Skolem source certificate left unresolved goals."));
+  let certificate =
+    Extracted.finalize proof_state
+    |> accept_kernel_result line_no "Skolem source certificate replay"
+  in
+  Extracted.declare_skolem
+    ~function_name:declaration.skolem_function
+    ~fact:declaration.skolem_hypothesis
+    ~source:(kernel_formula source)
+    ~proof:certificate
+    environment
+  |> accept_kernel_result line_no "global Skolem declaration"
 
 let execute_tactic line_no state line =
   match materialize_goals line_no state with
@@ -952,8 +1034,10 @@ let execute_tactic line_no state line =
               "Expected a variable to use as the existential witness."));
           begin match goal.target with
           | Exists _ ->
+              let witness = parse_surface_term line_no argument in
               apply_primitive_rules line_no state
-                [Extracted.NRExIntro argument] ("use " ^ argument)
+                [Extracted.NRExIntro (Kernel_syntax.to_kernel_term witness)]
+                ("use " ^ argument)
           | _ ->
               raise (Proof_error (line_no,
                 "use requires an existential goal."))
@@ -1101,11 +1185,11 @@ let parse_alias line_no aliases line =
 
 let analyze_script script =
   let meaningful = split_statements script in
-  let rec read_declarations aliases choices = function
+  let rec read_declarations aliases declarations = function
     | (line_no, line) :: rest
       when starts_with_at (String.lowercase_ascii line) 0 "alias " ->
         read_declarations
-          (parse_alias line_no aliases line) choices rest
+          (parse_alias line_no aliases line) declarations rest
     | (line_no, line) :: rest
       when starts_with_at (String.lowercase_ascii line) 0 "choose " ->
         let prefix = "choose " in
@@ -1123,29 +1207,57 @@ let analyze_script script =
           choice_source = source;
           choice_terms = terms;
         } in
-        read_declarations aliases (choices @ [choice]) rest
-    | rest -> (aliases, choices, rest)
+        read_declarations aliases
+          (declarations @ [ChoiceDeclaration choice]) rest
+    | (line_no, line) :: rest
+      when starts_with_at (String.lowercase_ascii line) 0 "skolem " ->
+        let prefix = "skolem " in
+        let argument =
+          trim (String.sub line (String.length prefix)
+            (String.length line - String.length prefix))
+        in
+        let function_name, hypothesis, source =
+          parse_skolem_words line_no argument
+        in
+        let declaration = {
+          skolem_line = line_no;
+          skolem_function = function_name;
+          skolem_hypothesis = hypothesis;
+          skolem_source = source;
+        } in
+        read_declarations aliases
+          (declarations @ [SkolemDeclaration declaration]) rest
+    | rest -> (aliases, declarations, rest)
   in
-  let aliases, choices, proof =
+  let aliases, declarations, proof =
     read_declarations [] [] meaningful
   in
-  let global_environment, choice_steps =
+  let global_environment, declaration_steps =
     List.fold_left
-      (fun (environment, steps) choice ->
-         let environment =
-           declare_global_choice environment choice
-         in
-         let description =
-           String.concat " "
-             ("Choose" :: choice.choice_witness ::
-              choice.choice_hypothesis :: "from" ::
-              choice.choice_source :: choice.choice_terms)
-         in
-         (environment, steps @ [description]))
-      (Extracted.empty_environment, []) choices
+      (fun (environment, steps) declaration ->
+         match declaration with
+         | ChoiceDeclaration choice ->
+             let environment = declare_global_choice environment choice in
+             let description =
+               String.concat " "
+                 ("Choose" :: choice.choice_witness ::
+                  choice.choice_hypothesis :: "from" ::
+                  choice.choice_source :: choice.choice_terms)
+             in
+             (environment, steps @ [description])
+         | SkolemDeclaration declaration ->
+             let environment = declare_global_skolem environment declaration in
+             let description =
+               String.concat " "
+                 ["Skolem"; declaration.skolem_function;
+                  declaration.skolem_hypothesis; "from";
+                  declaration.skolem_source]
+             in
+             (environment, steps @ [description]))
+      (Extracted.empty_environment, []) declarations
   in
   match proof with
-  | [] when aliases <> [] || choices <> [] ->
+  | [] when aliases <> [] || declarations <> [] ->
       let kernel_state =
         Extracted.start_in_environment global_environment Extracted.NFalsum
         |> accept_kernel_result 1 "initial goal"
@@ -1157,7 +1269,7 @@ let analyze_script script =
         global_environment;
         kernel_state;
         final_certificate = None;
-        steps = choice_steps;
+        steps = declaration_steps;
       } in
       (declarations, false)
   | [] -> raise (Proof_error (1, "The proof script is empty."))
@@ -1166,7 +1278,7 @@ let analyze_script script =
       let prefix = "theorem " in
       if not (starts_with_at lower_header 0 prefix) then
         raise (Proof_error (header_line,
-          "After aliases and choices, use: theorem name : formula."));
+          "After aliases, choices, and Skolem declarations, use: theorem name : formula."));
       let content = trim (String.sub header (String.length prefix) (String.length header - String.length prefix)) in
       let colon =
         try find_colon content
@@ -1192,7 +1304,7 @@ let analyze_script script =
         global_environment;
         kernel_state;
         final_certificate = None;
-        steps = choice_steps;
+        steps = declaration_steps;
       } in
       let rec run state = function
         | [] -> (state, false)
@@ -1264,6 +1376,16 @@ let display_kernel_formula formula =
   |> Kernel_syntax.of_kernel
   |> formula_to_string
 
+let rec display_kernel_term = function
+  | Extracted.NName name -> name
+  | Extracted.NApp (name, arguments) ->
+      let rec display_arguments = function
+        | Extracted.NNNil -> []
+        | Extracted.NNCons (argument, rest) ->
+            display_kernel_term argument :: display_arguments rest
+      in
+      name ^ "(" ^ String.concat ", " (display_arguments arguments) ^ ")"
+
 let display_rule = function
   | Extracted.NRAxiom -> "axiom"
   | Extracted.NRHypothesis name -> "hypothesis " ^ name
@@ -1286,8 +1408,8 @@ let display_rule = function
   | Extracted.NRAllIntro variable -> "all_intro " ^ variable
   | Extracted.NRAllElim (term, universal) ->
       Printf.sprintf "all_elim %s : %s"
-        term (display_kernel_formula universal)
-  | Extracted.NRExIntro term -> "ex_intro " ^ term
+        (display_kernel_term term) (display_kernel_formula universal)
+  | Extracted.NRExIntro term -> "ex_intro " ^ display_kernel_term term
   | Extracted.NRExElim (witness, hypothesis, existential) ->
       Printf.sprintf "ex_elim %s %s : %s"
         witness hypothesis (display_kernel_formula existential)

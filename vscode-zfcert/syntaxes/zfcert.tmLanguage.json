@@ -71,6 +71,21 @@
           }
         },
         {
+          "name": "meta.skolem.zfcert",
+          "match": "\\b(Skolem)\\s+([A-Za-z_][A-Za-z0-9_']*)\\s+([A-Za-z_][A-Za-z0-9_']*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.zfcert"
+            },
+            "2": {
+              "name": "entity.name.function.zfcert"
+            },
+            "3": {
+              "name": "variable.other.zfcert"
+            }
+          }
+        },
+        {
           "name": "meta.theorem.zfcert",
           "match": "\\b(theorem)\\s+([A-Za-z_][A-Za-z0-9_']*)",
           "captures": {

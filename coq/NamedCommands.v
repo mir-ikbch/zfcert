@@ -14,7 +14,8 @@ Fixpoint named_all_variables (source : named_formula) : list string :=
   match source with
   | NFalsum => []
   | NEqual first second
-  | NMember first second => add_name [first] second
+  | NMember first second =>
+      merge_names (named_term_names first) (named_term_names second)
   | NConj first second
   | NDisj first second
   | NImpl first second
@@ -31,13 +32,14 @@ Fixpoint named_all_variables (source : named_formula) : list string :=
 Fixpoint named_substitute_variable
   (variable replacement : string)
   (source : named_formula) : named_formula :=
-  let replace (name : string) :=
-    if String.eqb name variable then replacement else name
-  in
   match source with
   | NFalsum => NFalsum
-  | NEqual first second => NEqual (replace first) (replace second)
-  | NMember first second => NMember (replace first) (replace second)
+  | NEqual first second =>
+      NEqual (named_term_subst variable replacement first)
+        (named_term_subst variable replacement second)
+  | NMember first second =>
+      NMember (named_term_subst variable replacement first)
+        (named_term_subst variable replacement second)
   | NConj first second =>
       NConj
         (named_substitute_variable variable replacement first)

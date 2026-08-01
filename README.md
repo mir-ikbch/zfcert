@@ -303,6 +303,23 @@ qed.
 したがって、上の`empty`は以後の定理の主張にも現せます。同名の定数または
 事実を再宣言することはできません。
 
+全称量化子の後に存在量化子が続く事実からは、`Skolem`で関数記号を導入できます。
+関数記号は`f(a,b)`のように項として書きます。
+
+```text
+Skolem pair Hpair from pairing.
+
+theorem pair_shape :
+  forall a, forall b, forall x,
+    (x in pair(a,b) <-> (x = a or x = b)).
+exact Hpair.
+qed.
+```
+
+`Skolem f H from fact.` は、`fact`の証明書を再検査し、`forall ... exists ...`
+の存在変数を`f`の適用で置き換えた名前付き事実をグローバル環境へ追加します。
+導入された関数記号は以後の定理・タクティクで利用できます。
+
 ```text
 theorem and_commutes :
   forall x,

@@ -4,8 +4,8 @@ module Raw = Proof_state
 
 type formula = Raw.named_formula =
   | NFalsum
-  | NEqual of string * string
-  | NMember of string * string
+  | NEqual of named_term * named_term
+  | NMember of named_term * named_term
   | NConj of formula * formula
   | NDisj of formula * formula
   | NImpl of formula * formula
@@ -13,6 +13,14 @@ type formula = Raw.named_formula =
   | NIff of formula * formula
   | NAll of string * formula
   | NEx of string * formula
+
+and named_term = Raw.named_term =
+  | NName of string
+  | NApp of string * named_arguments
+
+and named_arguments = Raw.named_arguments =
+  | NNNil
+  | NNCons of named_term * named_arguments
 
 type rule = Raw.named_rule =
   | NRAxiom
@@ -27,8 +35,8 @@ type rule = Raw.named_rule =
   | NRDisjIntroR
   | NRDisjElim of formula * formula * string * string
   | NRAllIntro of string
-  | NRAllElim of string * formula
-  | NRExIntro of string
+  | NRAllElim of named_term * formula
+  | NRExIntro of named_term
   | NRExElim of string * string * formula
   | NREqualRefl
   | NREqualElim of string * string * formula
@@ -115,6 +123,9 @@ let start_in_environment environment formula =
 
 let declare_choice ~constant ~fact ~source ~proof environment =
   Raw.global_declare_choice constant fact source proof environment |> outcome
+
+let declare_skolem ~function_name ~fact ~source ~proof environment =
+  Raw.global_declare_skolem function_name fact source proof environment |> outcome
 
 let goals state =
   match Raw.certified_goals state with

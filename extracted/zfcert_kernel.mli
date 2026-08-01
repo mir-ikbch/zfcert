@@ -1,7 +1,15 @@
+type named_term =
+  | NName of string
+  | NApp of string * named_arguments
+
+and named_arguments =
+  | NNNil
+  | NNCons of named_term * named_arguments
+
 type formula =
   | NFalsum
-  | NEqual of string * string
-  | NMember of string * string
+  | NEqual of named_term * named_term
+  | NMember of named_term * named_term
   | NConj of formula * formula
   | NDisj of formula * formula
   | NImpl of formula * formula
@@ -23,8 +31,8 @@ type rule =
   | NRDisjIntroR
   | NRDisjElim of formula * formula * string * string
   | NRAllIntro of string
-  | NRAllElim of string * formula
-  | NRExIntro of string
+  | NRAllElim of named_term * formula
+  | NRExIntro of named_term
   | NRExElim of string * string * formula
   | NREqualRefl
   | NREqualElim of string * string * formula
@@ -79,6 +87,14 @@ val start_in_environment :
 
 val declare_choice :
   constant:string ->
+  fact:string ->
+  source:formula ->
+  proof:certificate ->
+  environment ->
+  (environment, error) result
+
+val declare_skolem :
+  function_name:string ->
   fact:string ->
   source:formula ->
   proof:certificate ->

@@ -9,6 +9,11 @@
     "body": "Choose ${1:empty} ${2:Hempty} from ${3:empty_set}.",
     "description": "Declare a global witness constant and its certified fact"
   },
+  "Skolem function": {
+    "prefix": "Skolem",
+    "body": "Skolem ${1:pair} ${2:Hpair} from ${3:pairing}.",
+    "description": "Declare a certified Skolem function from a universal-existential fact"
+  },
   "Primitive rule proof": {
     "prefix": "ruleproof",
     "body": [

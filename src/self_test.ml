@@ -38,6 +38,9 @@ let valid_scripts =
     "theorem obtain_specialized : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nobtain p Hp from pairing a b\nuse p\nexact Hp\nqed";
     "alias is_empty x := forall y, not (y in x)\nChoose empty Hempty from empty_set\ntheorem choose_empty : is_empty empty\nexact Hempty\nqed";
     "Choose empty Hempty from empty_set\nChoose pair_empty Hpair from pairing empty empty\ntheorem choose_pair : forall x, (x in pair_empty <-> (x = empty or x = empty))\nexact Hpair\nqed";
+    "Skolem pair Hpair from pairing\ntheorem skolem_pair : forall a, forall b, forall x, (x in pair(a, b) <-> (x = a or x = b))\nexact Hpair\nqed";
+    "Skolem pair Hpair from pairing\ntheorem skolem_use : forall a, exists p, p = pair(a, a)\nintro a\nuse pair(a, a)\nrefl\nqed";
+    "Skolem pair Hpair from pairing\ntheorem skolem_specialize : forall a, forall b, forall x, (x in pair(a,b) <-> (x = a or x = b))\nintro a\nintro b\nspecialize Hpair a b as Hab\nexact Hab\nqed";
     "(* A nested (* comment. *) is ignored. *) theorem commented : forall x, x = x\nintro (* binder name *) x\nrefl # legacy line comment\nqed";
     "theorem rule_identity : forall x, x = x\nrule all_intro x\nrule equal_refl\nqed";
     "theorem rule_default_all_intro : forall x, x = x\nrule all_intro\nrule equal_refl\nqed";
@@ -82,7 +85,8 @@ let run () =
   let constant_state =
     match
       Zfcert_kernel.start_with_constants ["empty"]
-        (Zfcert_kernel.NEqual ("empty", "empty"))
+        (Zfcert_kernel.NEqual
+           (Zfcert_kernel.NName "empty", Zfcert_kernel.NName "empty"))
     with
     | Ok state -> state
     | Error _ -> failwith "The extracted kernel rejected a declared constant"
@@ -108,7 +112,7 @@ let run () =
   in
   if not
        (Syntax.alpha_equal commented_formula
-          (Syntax.Forall ("x", Syntax.Eq ("x", "x"))))
+          (Syntax.Forall ("x", Syntax.Eq (Syntax.Name "x", Syntax.Name "x"))))
   then
     failwith "A block comment changed the parsed formula";
   ignore
@@ -160,7 +164,7 @@ let run () =
   if Proof_session.global_constants choose_state <> ["empty"] then
     failwith "Choose did not add its witness to the global constants";
   begin match Proof_session.global_facts choose_state with
-  | [("Hempty", Syntax.Forall (_, Syntax.Not (Syntax.Mem (_, "empty"))))] -> ()
+  | [("Hempty", Syntax.Forall (_, Syntax.Not (Syntax.Mem (_, Syntax.Name "empty"))))] -> ()
   | _ -> failwith "Choose did not add its instantiated global fact"
   end;
   let aliases_only, _ =
@@ -196,7 +200,7 @@ let run () =
   in
   begin
     match has_qed, Proof_session.goals interactive with
-    | false, [{ context = []; target = Syntax.Eq ("x", "x") }] -> ()
+    | false, [{ context = []; target = Syntax.Eq (Syntax.Name "x", Syntax.Name "x") }] -> ()
     | _ ->
         failwith
           "Interactive analysis did not preserve the named current goal"
@@ -210,8 +214,8 @@ intro H")
   in
   begin
     match Proof_session.goals named_context with
-    | [{ context = [("H", Syntax.Eq ("a", "a"))];
-         target = Syntax.Eq ("a", "a") }] -> ()
+    | [{ context = [("H", Syntax.Eq (Syntax.Name "a", Syntax.Name "a"))];
+         target = Syntax.Eq (Syntax.Name "a", Syntax.Name "a") }] -> ()
     | _ ->
         failwith
           "The extracted proof state did not preserve variable and hypothesis names"
@@ -269,6 +273,22 @@ Choose empty2 Hempty from empty_set")
 Choose impossible Himpossible from Hempty")
   then
     failwith "Choose accepted a non-existential global fact";
+  if not
+       (rejected "Skolem bad Hbad from extensionality")
+  then
+    failwith "Skolem accepted a source without a universal-existential shape";
+  begin
+    try
+      ignore
+        (Proof_session.check_script
+           (terminate_lines
+              "theorem bad_application : forall x, x = pair x x\nqed"));
+      failwith "The parser accepted a whitespace function application"
+    with
+    | Proof_session.Proof_error (_, message) ->
+        if not (contains message "Function applications use f(a, b), not f a b")
+        then failwith "The function-application parser error was not informative"
+  end;
   if not
        (rejected
           "Choose empty Hempty from empty_set

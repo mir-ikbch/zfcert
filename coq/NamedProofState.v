@@ -13,10 +13,19 @@ Open Scope string_scope.
 
 Set Implicit Arguments.
 
+Inductive named_term : Type :=
+| NName (name : string)
+| NApp (name : string) (arguments : named_arguments)
+with named_arguments : Type :=
+| NNNil
+| NNCons (argument : named_term) (rest : named_arguments).
+
+Coercion NName : string >-> named_term.
+
 Inductive named_formula : Type :=
 | NFalsum
-| NEqual (left right : string)
-| NMember (left right : string)
+| NEqual (left right : named_term)
+| NMember (left right : named_term)
 | NConj (left right : named_formula)
 | NDisj (left right : named_formula)
 | NImpl (left right : named_formula)
@@ -96,6 +105,38 @@ Fixpoint merge_names (left right : list string) : list string :=
   | name :: rest => merge_names (add_name left name) rest
   end.
 
+Fixpoint named_term_names (source : named_term) : list string :=
+  match source with
+  | NName name => [name]
+  | NApp name arguments =>
+      merge_names [name] (named_arguments_names arguments)
+  end
+
+with named_arguments_names (source : named_arguments) : list string :=
+  match source with
+  | NNNil => []
+  | NNCons argument rest =>
+      merge_names (named_term_names argument) (named_arguments_names rest)
+  end.
+
+Fixpoint named_term_subst
+  (variable replacement : string) (source : named_term) : named_term :=
+  match source with
+  | NName name =>
+      if String.eqb name variable then NName replacement else NName name
+  | NApp name arguments =>
+      NApp name (named_arguments_subst variable replacement arguments)
+  end
+
+with named_arguments_subst
+  (variable replacement : string) (source : named_arguments) : named_arguments :=
+  match source with
+  | NNNil => NNNil
+  | NNCons argument rest =>
+      NNCons (named_term_subst variable replacement argument)
+        (named_arguments_subst variable replacement rest)
+  end.
+
 Fixpoint filter_environment
   (excluded environment : list string) : list string :=
   match environment with
@@ -124,7 +165,8 @@ Fixpoint named_free_variables (source : named_formula) : list string :=
   match source with
   | NFalsum => []
   | NEqual first second
-  | NMember first second => add_name [first] second
+  | NMember first second =>
+      merge_names (named_term_names first) (named_term_names second)
   | NConj first second
   | NDisj first second
   | NImpl first second
@@ -177,14 +219,35 @@ Definition variable_index
       end
   end.
 
-Definition elaborate_term
+Fixpoint elaborate_arguments
   (constants bound environment : list string)
-  (name : string) : named_result term :=
-  match variable_index bound environment name with
-  | NOk index => NOk (Var index)
-  | NError _ =>
+  (sources : named_arguments) : named_result term_arguments :=
+  match sources with
+  | NNNil => NOk TNil
+  | NNCons source rest =>
+      named_bind (elaborate_term constants bound environment source)
+        (fun core_source =>
+      named_bind (elaborate_arguments constants bound environment rest)
+        (fun core_rest => NOk (TCons core_source core_rest)))
+  end
+
+with elaborate_term
+  (constants bound environment : list string)
+  (source : named_term) : named_result term :=
+  match source with
+  | NName name =>
+      match variable_index bound environment name with
+      | NOk index => NOk (Var index)
+      | NError _ =>
+          if string_mem name constants
+          then NOk (App name TNil)
+          else NError (NUnknownVariable name)
+      end
+  | NApp name arguments =>
       if string_mem name constants
-      then NOk (Const name)
+      then named_bind (elaborate_arguments constants bound environment arguments)
+        (fun core_arguments =>
+           NOk (App name core_arguments))
       else NError (NUnknownVariable name)
   end.
 
@@ -259,12 +322,30 @@ Definition nth_name
     | None => NError NMetadataMismatch
     end.
 
-Definition reify_term
+Fixpoint reify_term
   (bound environment : list string) (source : term)
-  : named_result string :=
+  : named_result named_term :=
   match source with
-  | Var index => nth_name bound environment index
-  | Const name => NOk name
+  | Var index =>
+      named_bind (nth_name bound environment index)
+        (fun name => NOk (NName name))
+  | App name TNil => NOk (NName name)
+  | App name arguments =>
+      named_bind
+        (reify_arguments bound environment arguments)
+        (fun named_arguments => NOk (NApp name named_arguments))
+  end
+
+with reify_arguments
+  (bound environment : list string) (sources : term_arguments)
+  : named_result named_arguments :=
+  match sources with
+  | TNil => NOk NNNil
+  | TCons source rest =>
+      named_bind (reify_term bound environment source)
+        (fun named_source =>
+      named_bind (reify_arguments bound environment rest)
+        (fun named_rest => NOk (NNCons named_source named_rest)))
   end.
 
 Fixpoint fresh_string_with_fuel
@@ -446,7 +527,7 @@ Definition named_start (source : named_formula)
 
 Example elaborate_global_constant_example :
   elaborate_closed ["empty"] (NEqual "empty" "empty") =
-  NOk (Equal (Const "empty") (Const "empty")).
+  NOk (Equal (App "empty" TNil) (App "empty" TNil)).
 Proof. reflexivity. Qed.
 
 Example reject_constant_shadowing_example :
@@ -618,8 +699,8 @@ Inductive named_rule : Type :=
     (left right : named_formula)
     (left_hypothesis right_hypothesis : string)
 | NRAllIntro (variable : string)
-| NRAllElim (term : string) (universal : named_formula)
-| NRExIntro (term : string)
+| NRAllElim (term : named_term) (universal : named_formula)
+| NRExIntro (term : named_term)
 | NRExElim
     (witness hypothesis : string)
     (existential : named_formula)
@@ -697,9 +778,14 @@ Definition elaborate_in_environment
   elaborate constants [] environment source.
 
 Definition term_index
-  (constants environment : list string) (source : string)
+  (constants environment : list string) (source : named_term)
   : named_result term :=
   elaborate_term constants [] environment source.
+
+Definition extend_environment_term
+  (constants environment : list string) (source : named_term) : list string :=
+  fold_left (add_environment_name constants)
+    (named_term_names source) environment.
 
 Definition plan_named_rule
   (metadata : goal_metadata)
@@ -854,8 +940,8 @@ Definition plan_named_rule
       match universal with
       | NAll binder body =>
           let next_environment :=
-            add_environment_name constants
-              (extend_environment constants environment universal) term
+              extend_environment_term constants
+                (extend_environment constants environment universal) term
           in
           named_bind
             (elaborate constants [binder] next_environment body)
@@ -872,7 +958,7 @@ Definition plan_named_rule
       match target with
       | NEx _ body =>
           let next_environment :=
-            add_environment_name constants environment term in
+            extend_environment_term constants environment term in
           named_bind (term_index constants next_environment term)
             (fun core_term =>
           NOk (RulePlan (RExIntro core_term)
@@ -1004,7 +1090,7 @@ Inductive named_tactic : Type :=
 | NTacSplit
 | NTacLeft
 | NTacRight
-| NTacUse (term : string)
+| NTacUse (term : named_term)
 | NTacRefl
 | NTacContradiction
 | NTacCases
@@ -1078,7 +1164,7 @@ Definition plan_named_tactic
       match find_named_hypothesis hypothesis (named_assumptions view) with
       | Some (NAll _ body) =>
           let next_environment :=
-            add_environment_name constants environment term in
+            extend_environment_term constants environment term in
           named_bind (term_index constants next_environment term)
             (fun core_term =>
           NOk (TacticPlan (TacSpecialize index core_term)
@@ -1130,7 +1216,7 @@ Definition plan_named_tactic
       match target with
       | NEx _ body =>
           let next_environment :=
-            add_environment_name constants environment term in
+            extend_environment_term constants environment term in
           named_bind (term_index constants next_environment term)
             (fun core_term =>
           NOk (TacticPlan (TacUse core_term)

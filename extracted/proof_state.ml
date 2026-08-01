@@ -61,23 +61,42 @@ let rec fold_left f l a0 =
 
 type term =
 | Var of int
-| Const of string
+| App of string * term_arguments
+and term_arguments =
+| TNil
+| TCons of term * term_arguments
+
+(** val term_eqb : term -> term -> bool **)
+
+let rec term_eqb s t =
+  match s with
+  | Var n -> (match t with
+              | Var m -> (=) n m
+              | App (_, _) -> false)
+  | App (name, arguments) ->
+    (match t with
+     | Var _ -> false
+     | App (other_name, other_arguments) ->
+       (&&) ((=) name other_name)
+         (term_arguments_eqb arguments other_arguments))
+
+(** val term_arguments_eqb : term_arguments -> term_arguments -> bool **)
+
+and term_arguments_eqb left right =
+  match left with
+  | TNil -> (match right with
+             | TNil -> true
+             | TCons (_, _) -> false)
+  | TCons (term0, rest) ->
+    (match right with
+     | TNil -> false
+     | TCons (other_term, other_rest) ->
+       (&&) (term_eqb term0 other_term) (term_arguments_eqb rest other_rest))
 
 (** val term_eq_dec : term -> term -> bool **)
 
 let term_eq_dec s t =
-  match s with
-  | Var n -> (match t with
-              | Var n0 -> (=) n n0
-              | Const _ -> false)
-  | Const s0 -> (match t with
-                 | Var _ -> false
-                 | Const s1 -> (=) s0 s1)
-
-(** val term_eqb : term -> term -> bool **)
-
-let term_eqb s t =
-  if term_eq_dec s t then true else false
+  let b = term_eqb s t in if b then true else false
 
 type formula =
 | Falsum
@@ -152,9 +171,17 @@ let up xi n =
 
 (** val rename_term : (int -> int) -> term -> term **)
 
-let rename_term xi = function
+let rec rename_term xi = function
 | Var n -> Var (xi n)
-| Const name -> Const name
+| App (name, arguments) -> App (name, (rename_arguments xi arguments))
+
+(** val rename_arguments :
+    (int -> int) -> term_arguments -> term_arguments **)
+
+and rename_arguments xi = function
+| TNil -> TNil
+| TCons (term0, rest) ->
+  TCons ((rename_term xi term0), (rename_arguments xi rest))
 
 (** val rename : (int -> int) -> formula -> formula **)
 
@@ -188,9 +215,17 @@ let up_substitution sigma n =
 
 (** val substitute_term : (int -> term) -> term -> term **)
 
-let substitute_term sigma = function
+let rec substitute_term sigma = function
 | Var n -> sigma n
-| Const name -> Const name
+| App (name, arguments) -> App (name, (substitute_arguments sigma arguments))
+
+(** val substitute_arguments :
+    (int -> term) -> term_arguments -> term_arguments **)
+
+and substitute_arguments sigma = function
+| TNil -> TNil
+| TCons (term0, rest) ->
+  TCons ((substitute_term sigma term0), (substitute_arguments sigma rest))
 
 (** val substitute : (int -> term) -> formula -> formula **)
 
@@ -619,10 +654,17 @@ let choice_axiom =
     (Member ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ
     0)))))))), (Equal ((Var 0), (Var (Stdlib.Int.succ 0))))))))))))))))
 
+type named_term =
+| NName of string
+| NApp of string * named_arguments
+and named_arguments =
+| NNNil
+| NNCons of named_term * named_arguments
+
 type named_formula =
 | NFalsum
-| NEqual of string * string
-| NMember of string * string
+| NEqual of named_term * named_term
+| NMember of named_term * named_term
 | NConj of named_formula * named_formula
 | NDisj of named_formula * named_formula
 | NImpl of named_formula * named_formula
@@ -699,6 +741,36 @@ let rec merge_names left = function
 | [] -> left
 | name :: rest -> merge_names (add_name left name) rest
 
+(** val named_term_names : named_term -> string list **)
+
+let rec named_term_names = function
+| NName name -> name :: []
+| NApp (name, arguments) ->
+  merge_names (name :: []) (named_arguments_names arguments)
+
+(** val named_arguments_names : named_arguments -> string list **)
+
+and named_arguments_names = function
+| NNNil -> []
+| NNCons (argument, rest) ->
+  merge_names (named_term_names argument) (named_arguments_names rest)
+
+(** val named_term_subst : string -> string -> named_term -> named_term **)
+
+let rec named_term_subst variable replacement = function
+| NName name -> if (=) name variable then NName replacement else NName name
+| NApp (name, arguments) ->
+  NApp (name, (named_arguments_subst variable replacement arguments))
+
+(** val named_arguments_subst :
+    string -> string -> named_arguments -> named_arguments **)
+
+and named_arguments_subst variable replacement = function
+| NNNil -> NNNil
+| NNCons (argument, rest) ->
+  NNCons ((named_term_subst variable replacement argument),
+    (named_arguments_subst variable replacement rest))
+
 (** val filter_environment : string list -> string list -> string list **)
 
 let rec filter_environment excluded = function
@@ -726,8 +798,10 @@ let add_environment_name constants environment name =
 
 let rec named_free_variables = function
 | NFalsum -> []
-| NEqual (first, second) -> add_name (first :: []) second
-| NMember (first, second) -> add_name (first :: []) second
+| NEqual (first, second) ->
+  merge_names (named_term_names first) (named_term_names second)
+| NMember (first, second) ->
+  merge_names (named_term_names first) (named_term_names second)
 | NConj (first, second) ->
   merge_names (named_free_variables first) (named_free_variables second)
 | NDisj (first, second) ->
@@ -780,16 +854,35 @@ let variable_index bound environment name =
      | Some index -> NOk (add (length bound) index)
      | None -> NError (NUnknownVariable name))
 
-(** val elaborate_term :
-    string list -> string list -> string list -> string -> term named_result **)
+(** val elaborate_arguments :
+    string list -> string list -> string list -> named_arguments ->
+    term_arguments named_result **)
 
-let elaborate_term constants bound environment name =
-  match variable_index bound environment name with
-  | NOk index -> NOk (Var index)
-  | NError _ ->
-    if string_mem name constants
-    then NOk (Const name)
-    else NError (NUnknownVariable name)
+let rec elaborate_arguments constants bound environment = function
+| NNNil -> NOk TNil
+| NNCons (source, rest) ->
+  named_bind (elaborate_term constants bound environment source)
+    (fun core_source ->
+    named_bind (elaborate_arguments constants bound environment rest)
+      (fun core_rest -> NOk (TCons (core_source, core_rest))))
+
+(** val elaborate_term :
+    string list -> string list -> string list -> named_term -> term
+    named_result **)
+
+and elaborate_term constants bound environment = function
+| NName name ->
+  (match variable_index bound environment name with
+   | NOk index -> NOk (Var index)
+   | NError _ ->
+     if string_mem name constants
+     then NOk (App (name, TNil))
+     else NError (NUnknownVariable name))
+| NApp (name, arguments) ->
+  if string_mem name constants
+  then named_bind (elaborate_arguments constants bound environment arguments)
+         (fun core_arguments -> NOk (App (name, core_arguments)))
+  else NError (NUnknownVariable name)
 
 (** val elaborate :
     string list -> string list -> string list -> named_formula -> formula
@@ -854,11 +947,28 @@ let nth_name bound environment index =
         | None -> NError NMetadataMismatch)
 
 (** val reify_term :
-    string list -> string list -> term -> string named_result **)
+    string list -> string list -> term -> named_term named_result **)
 
-let reify_term bound environment = function
-| Var index -> nth_name bound environment index
-| Const name -> NOk name
+let rec reify_term bound environment = function
+| Var index ->
+  named_bind (nth_name bound environment index) (fun name -> NOk (NName name))
+| App (name, arguments) ->
+  (match arguments with
+   | TNil -> NOk (NName name)
+   | TCons (_, _) ->
+     named_bind (reify_arguments bound environment arguments)
+       (fun named_arguments0 -> NOk (NApp (name, named_arguments0))))
+
+(** val reify_arguments :
+    string list -> string list -> term_arguments -> named_arguments
+    named_result **)
+
+and reify_arguments bound environment = function
+| TNil -> NOk NNNil
+| TCons (source, rest) ->
+  named_bind (reify_term bound environment source) (fun named_source ->
+    named_bind (reify_arguments bound environment rest) (fun named_rest ->
+      NOk (NNCons (named_source, named_rest))))
 
 (** val fresh_string_with_fuel : int -> string -> string list -> string **)
 
@@ -1386,8 +1496,8 @@ type named_rule =
 | NRDisjIntroR
 | NRDisjElim of named_formula * named_formula * string * string
 | NRAllIntro of string
-| NRAllElim of string * named_formula
-| NRExIntro of string
+| NRAllElim of named_term * named_formula
+| NRExIntro of named_term
 | NRExElim of string * string * named_formula
 | NREqualRefl
 | NREqualElim of string * string * named_formula
@@ -1459,10 +1569,17 @@ let elaborate_in_environment constants environment source =
   elaborate constants [] environment source
 
 (** val term_index :
-    string list -> string list -> string -> term named_result **)
+    string list -> string list -> named_term -> term named_result **)
 
 let term_index constants environment source =
   elaborate_term constants [] environment source
+
+(** val extend_environment_term :
+    string list -> string list -> named_term -> string list **)
+
+let extend_environment_term constants environment source =
+  fold_left (add_environment_name constants) (named_term_names source)
+    environment
 
 (** val plan_named_rule :
     goal_metadata -> named_goal -> named_rule -> rule_plan named_result **)
@@ -1599,7 +1716,7 @@ let plan_named_rule metadata view primitive =
      (match universal with
       | NAll (binder, body) ->
         let next_environment =
-          add_environment_name constants
+          extend_environment_term constants
             (extend_environment constants environment universal) term0
         in
         named_bind (elaborate constants (binder :: []) next_environment body)
@@ -1615,7 +1732,7 @@ let plan_named_rule metadata view primitive =
      (match target with
       | NEx (_, body) ->
         let next_environment =
-          add_environment_name constants environment term0
+          extend_environment_term constants environment term0
         in
         named_bind (term_index constants next_environment term0)
           (fun core_term -> NOk { planned_rule = (RExIntro core_term);
@@ -1660,9 +1777,9 @@ let plan_named_rule metadata view primitive =
         in
         named_bind (elaborate constants (binder :: []) next_environment body)
           (fun core_predicate ->
-          named_bind (term_index constants next_environment first)
+          named_bind (term_index constants next_environment (NName first))
             (fun core_first ->
-            named_bind (term_index constants next_environment second)
+            named_bind (term_index constants next_environment (NName second))
               (fun core_second -> NOk { planned_rule = (REqualElim
               (core_predicate, core_first, core_second));
               planned_generated_metadata =
@@ -1731,7 +1848,7 @@ type named_tactic =
 | NTacSplit
 | NTacLeft
 | NTacRight
-| NTacUse of string
+| NTacUse of named_term
 | NTacRefl
 | NTacContradiction
 | NTacCases of string * string * string
@@ -1801,9 +1918,10 @@ let plan_named_tactic metadata view command =
            (match n with
             | NAll (_, body) ->
               let next_environment =
-                add_environment_name constants environment term0
+                extend_environment_term constants environment (NName term0)
               in
-              named_bind (term_index constants next_environment term0)
+              named_bind
+                (term_index constants next_environment (NName term0))
                 (fun core_term -> NOk { planned_tactic = (TacSpecialize
                 (index, core_term)); tactic_generated_metadata =
                 ((metadata_with_hypothesis metadata new_hypothesis
@@ -1846,7 +1964,7 @@ let plan_named_tactic metadata view command =
      (match target with
       | NEx (_, body) ->
         let next_environment =
-          add_environment_name constants environment term0
+          extend_environment_term constants environment term0
         in
         named_bind (term_index constants next_environment term0)
           (fun core_term -> NOk { planned_tactic = (TacUse core_term);
@@ -1965,8 +2083,10 @@ let rec named_run axioms commands state =
 
 let rec named_all_variables = function
 | NFalsum -> []
-| NEqual (first, second) -> add_name (first :: []) second
-| NMember (first, second) -> add_name (first :: []) second
+| NEqual (first, second) ->
+  merge_names (named_term_names first) (named_term_names second)
+| NMember (first, second) ->
+  merge_names (named_term_names first) (named_term_names second)
 | NConj (first, second) ->
   merge_names (named_all_variables first) (named_all_variables second)
 | NDisj (first, second) ->
@@ -1982,33 +2102,35 @@ let rec named_all_variables = function
 (** val named_substitute_variable :
     string -> string -> named_formula -> named_formula **)
 
-let rec named_substitute_variable variable replacement source =
-  let replace = fun name -> if (=) name variable then replacement else name in
-  (match source with
-   | NFalsum -> NFalsum
-   | NEqual (first, second) -> NEqual ((replace first), (replace second))
-   | NMember (first, second) -> NMember ((replace first), (replace second))
-   | NConj (first, second) ->
-     NConj ((named_substitute_variable variable replacement first),
-       (named_substitute_variable variable replacement second))
-   | NDisj (first, second) ->
-     NDisj ((named_substitute_variable variable replacement first),
-       (named_substitute_variable variable replacement second))
-   | NImpl (first, second) ->
-     NImpl ((named_substitute_variable variable replacement first),
-       (named_substitute_variable variable replacement second))
-   | NNeg body -> NNeg (named_substitute_variable variable replacement body)
-   | NIff (first, second) ->
-     NIff ((named_substitute_variable variable replacement first),
-       (named_substitute_variable variable replacement second))
-   | NAll (binder, body) ->
-     if (=) binder variable
-     then NAll (binder, body)
-     else NAll (binder, (named_substitute_variable variable replacement body))
-   | NEx (binder, body) ->
-     if (=) binder variable
-     then NEx (binder, body)
-     else NEx (binder, (named_substitute_variable variable replacement body)))
+let rec named_substitute_variable variable replacement = function
+| NFalsum -> NFalsum
+| NEqual (first, second) ->
+  NEqual ((named_term_subst variable replacement first),
+    (named_term_subst variable replacement second))
+| NMember (first, second) ->
+  NMember ((named_term_subst variable replacement first),
+    (named_term_subst variable replacement second))
+| NConj (first, second) ->
+  NConj ((named_substitute_variable variable replacement first),
+    (named_substitute_variable variable replacement second))
+| NDisj (first, second) ->
+  NDisj ((named_substitute_variable variable replacement first),
+    (named_substitute_variable variable replacement second))
+| NImpl (first, second) ->
+  NImpl ((named_substitute_variable variable replacement first),
+    (named_substitute_variable variable replacement second))
+| NNeg body -> NNeg (named_substitute_variable variable replacement body)
+| NIff (first, second) ->
+  NIff ((named_substitute_variable variable replacement first),
+    (named_substitute_variable variable replacement second))
+| NAll (binder, body) ->
+  if (=) binder variable
+  then NAll (binder, body)
+  else NAll (binder, (named_substitute_variable variable replacement body))
+| NEx (binder, body) ->
+  if (=) binder variable
+  then NEx (binder, body)
+  else NEx (binder, (named_substitute_variable variable replacement body))
 
 (** val named_separation_instance :
     string -> string -> named_formula -> named_formula **)
@@ -2018,8 +2140,9 @@ let named_separation_instance source element predicate =
     add_name (add_name (named_all_variables predicate) source) element
   in
   let subset = fresh_string "b" used in
-  NEx (subset, (NAll (element, (NIff ((NMember (element, subset)), (NConj
-  ((NMember (element, source)), predicate)))))))
+  NEx (subset, (NAll (element, (NIff ((NMember ((NName element), (NName
+  subset))), (NConj ((NMember ((NName element), (NName source))),
+  predicate)))))))
 
 type named_replacement_parts = { named_replacement_functional : named_formula;
                                  named_replacement_image : named_formula;
@@ -2040,12 +2163,12 @@ let make_named_replacement_parts source input output predicate =
     named_substitute_variable output alternate predicate
   in
   let functional = NAll (input, (NEx (output, (NConj (predicate, (NAll
-    (alternate, (NImpl (alternate_predicate, (NEqual (alternate,
-    output)))))))))))
+    (alternate, (NImpl (alternate_predicate, (NEqual ((NName alternate),
+    (NName output))))))))))))
   in
-  let image = NEx (image_set, (NAll (output, (NIff ((NMember (output,
-    image_set)), (NEx (input, (NConj ((NMember (input, source)),
-    predicate)))))))))
+  let image = NEx (image_set, (NAll (output, (NIff ((NMember ((NName output),
+    (NName image_set))), (NEx (input, (NConj ((NMember ((NName input), (NName
+    source))), predicate)))))))))
   in
   { named_replacement_functional = functional; named_replacement_image =
   image; named_replacement_instance = (NImpl (functional, image)) }
@@ -2085,7 +2208,8 @@ let named_fixed_axiom_rule_step state =
 let named_separation_axiom_rule_step source element predicate state =
   let instance = named_separation_instance source element predicate in
   named_rule_run ((NSeparationAxiom (source, element, predicate)) :: [])
-    ((NRAllElim (source, (NAll (source, instance)))) :: (NRAxiom :: [])) state
+    ((NRAllElim ((NName source), (NAll (source,
+    instance)))) :: (NRAxiom :: [])) state
 
 (** val current_hypothesis_names : named_state -> string list **)
 
@@ -2109,7 +2233,7 @@ let named_replacement_axiom_rule_step source input output predicate state =
   let image = parts.named_replacement_image in
   let internal = replacement_internal_hypothesis state in
   named_rule_run ((NReplacementAxiom (input, output, predicate)) :: [])
-    ((NRImplIntro internal) :: ((NRAllElim (source, (NAll (source,
+    ((NRImplIntro internal) :: ((NRAllElim ((NName source), (NAll (source,
     image)))) :: ((NRImplElim functional) :: (NRAxiom :: ((NRHypothesis
     internal) :: []))))) state
 
@@ -2120,7 +2244,7 @@ let named_replacement_axiom_rule_step source input output predicate state =
 let named_separation_tactic_step fact source element predicate state =
   let instance = named_separation_instance source element predicate in
   named_rule_run ((NSeparationAxiom (source, element, predicate)) :: [])
-    ((NRCut (fact, instance)) :: ((NRAllElim (source, (NAll (source,
+    ((NRCut (fact, instance)) :: ((NRAllElim ((NName source), (NAll (source,
     instance)))) :: (NRAxiom :: []))) state
 
 (** val named_replacement_tactic_step :
@@ -2135,7 +2259,7 @@ let named_replacement_tactic_step fact source input output predicate state =
   let internal = replacement_internal_hypothesis state in
   named_rule_run ((NReplacementAxiom (input, output, predicate)) :: [])
     ((NRCut (fact, instance)) :: ((NRImplIntro internal) :: ((NRAllElim
-    (source, (NAll (source, image)))) :: ((NRImplElim
+    ((NName source), (NAll (source, image)))) :: ((NRImplElim
     functional) :: (NRAxiom :: ((NRHypothesis internal) :: [])))))) state
 
 type named_rule_request =
@@ -2316,7 +2440,7 @@ let named_rule_request_program request state =
     let instance = named_separation_instance source element predicate in
     let capability = NSeparationAxiom (source, element, predicate) in
     NOk
-    ((one_step [] (NRAllElim (source, (NAll (source, instance))))) :: (
+    ((one_step [] (NRAllElim ((NName source), (NAll (source, instance))))) :: (
     (one_step (capability :: []) NRAxiom) :: []))
   | NReplacementAxiomRule (source, input, output, predicate) ->
     let parts = make_named_replacement_parts source input output predicate in
@@ -2325,8 +2449,8 @@ let named_rule_request_program request state =
     let internal = replacement_internal_hypothesis state in
     let capability = NReplacementAxiom (input, output, predicate) in
     NOk
-    ((one_step [] (NRImplIntro internal)) :: ((one_step [] (NRAllElim
-                                                (source, (NAll (source,
+    ((one_step [] (NRImplIntro internal)) :: ((one_step [] (NRAllElim ((NName
+                                                source), (NAll (source,
                                                 image))))) :: ((one_step []
                                                                  (NRImplElim
                                                                  functional)) :: (
@@ -2347,9 +2471,11 @@ let certified_execute_rule request state =
 let separation_tactic_program fact source element predicate =
   let instance = named_separation_instance source element predicate in
   let capability = NSeparationAxiom (source, element, predicate) in
-  (one_step [] (NRCut (fact, instance))) :: ((one_step [] (NRAllElim (source,
-                                               (NAll (source, instance))))) :: (
-  (one_step (capability :: []) NRAxiom) :: []))
+  (one_step [] (NRCut (fact, instance))) :: ((one_step [] (NRAllElim ((NName
+                                               source), (NAll (source,
+                                               instance))))) :: ((one_step
+                                                                   (capability :: [])
+                                                                   NRAxiom) :: []))
 
 (** val certified_separation_tactic :
     string -> string -> string -> named_formula -> certified_state ->
@@ -2373,7 +2499,8 @@ let replacement_tactic_program fact source input output predicate state =
   (one_step [] (NRCut (fact, instance))) :: ((one_step [] (NRImplIntro
                                                internal)) :: ((one_step []
                                                                 (NRAllElim
-                                                                (source,
+                                                                ((NName
+                                                                source),
                                                                 (NAll
                                                                 (source,
                                                                 image))))) :: (
@@ -2394,6 +2521,80 @@ let certified_replacement_tactic fact source input output predicate state =
 type global_environment = { global_constants : string list;
                             global_named_facts : named_hypothesis list;
                             global_core_facts : formula list }
+
+(** val named_arguments_of_names : string list -> named_arguments **)
+
+let rec named_arguments_of_names = function
+| [] -> NNNil
+| name :: rest -> NNCons ((NName name), (named_arguments_of_names rest))
+
+(** val named_term_replace :
+    string -> named_term -> named_term -> named_term **)
+
+let rec named_term_replace variable replacement = function
+| NName name -> if (=) name variable then replacement else NName name
+| NApp (name, arguments) ->
+  NApp (name, (named_arguments_replace variable replacement arguments))
+
+(** val named_arguments_replace :
+    string -> named_term -> named_arguments -> named_arguments **)
+
+and named_arguments_replace variable replacement = function
+| NNNil -> NNNil
+| NNCons (argument, rest) ->
+  NNCons ((named_term_replace variable replacement argument),
+    (named_arguments_replace variable replacement rest))
+
+(** val named_formula_replace :
+    string -> named_term -> named_formula -> named_formula **)
+
+let rec named_formula_replace variable replacement = function
+| NFalsum -> NFalsum
+| NEqual (left_term, right_term) ->
+  NEqual ((named_term_replace variable replacement left_term),
+    (named_term_replace variable replacement right_term))
+| NMember (left_term, right_term) ->
+  NMember ((named_term_replace variable replacement left_term),
+    (named_term_replace variable replacement right_term))
+| NConj (left_formula, right_formula) ->
+  NConj ((named_formula_replace variable replacement left_formula),
+    (named_formula_replace variable replacement right_formula))
+| NDisj (left_formula, right_formula) ->
+  NDisj ((named_formula_replace variable replacement left_formula),
+    (named_formula_replace variable replacement right_formula))
+| NImpl (left_formula, right_formula) ->
+  NImpl ((named_formula_replace variable replacement left_formula),
+    (named_formula_replace variable replacement right_formula))
+| NNeg body -> NNeg (named_formula_replace variable replacement body)
+| NIff (left_formula, right_formula) ->
+  NIff ((named_formula_replace variable replacement left_formula),
+    (named_formula_replace variable replacement right_formula))
+| NAll (binder, body) ->
+  if (=) binder variable
+  then NAll (binder, body)
+  else NAll (binder, (named_formula_replace variable replacement body))
+| NEx (binder, body) ->
+  if (=) binder variable
+  then NEx (binder, body)
+  else NEx (binder, (named_formula_replace variable replacement body))
+
+(** val named_skolemize :
+    string -> string list -> named_formula -> named_formula option **)
+
+let rec named_skolemize function_name binders = function
+| NAll (binder, body) ->
+  if string_mem binder binders
+  then None
+  else (match named_skolemize function_name (app binders (binder :: [])) body with
+        | Some result -> Some (NAll (binder, result))
+        | None -> None)
+| NEx (witness, body) ->
+  if string_mem witness binders
+  then None
+  else Some
+         (named_formula_replace witness (NApp (function_name,
+           (named_arguments_of_names binders))) body)
+| _ -> None
 
 (** val empty_global_environment : global_environment **)
 
@@ -2443,7 +2644,7 @@ let global_declare_choice constant_name fact_name source proof environment =
                             constant_name :: environment.global_constants
                           in
                           let core_fact =
-                            instantiate (Const constant_name) core_body
+                            instantiate (App (constant_name, TNil)) core_body
                           in
                           named_bind
                             (reify constants [] (named_binder_names body)
@@ -2457,3 +2658,30 @@ let global_declare_choice constant_name fact_name source proof environment =
                         | _ -> NError NWrongNamedShape)
                  else NError NWrongNamedShape)
              | _ -> NError NWrongNamedShape)
+
+(** val global_declare_skolem :
+    string -> string -> named_formula -> certificate -> global_environment ->
+    global_environment named_result **)
+
+let global_declare_skolem function_name fact_name source proof environment =
+  if string_mem function_name environment.global_constants
+  then NError (NVariableAlreadyUsed function_name)
+  else if string_mem fact_name (global_fact_names environment)
+       then NError (NHypothesisAlreadyUsed fact_name)
+       else (match named_skolemize function_name [] source with
+             | Some skolemized ->
+               named_bind (global_replay environment source proof)
+                 (fun replayed ->
+                 if named_solved replayed
+                 then let constants =
+                        function_name :: environment.global_constants
+                      in
+                      named_bind (elaborate constants [] [] skolemized)
+                        (fun core_fact -> NOk { global_constants = constants;
+                        global_named_facts = ({ named_hypothesis_name =
+                        fact_name; named_hypothesis_formula =
+                        skolemized } :: environment.global_named_facts);
+                        global_core_facts =
+                        (core_fact :: environment.global_core_facts) })
+                 else NError NWrongNamedShape)
+             | None -> NError NWrongNamedShape)
