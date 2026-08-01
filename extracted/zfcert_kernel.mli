@@ -68,6 +68,7 @@ type fixed_axiom =
   | Choice
 
 val start : formula -> (state, error) result
+val start_with_constants : string list -> formula -> (state, error) result
 val goals : state -> (goal_view list, error) result
 val solved : state -> bool
 

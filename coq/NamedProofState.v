@@ -96,6 +96,30 @@ Fixpoint merge_names (left right : list string) : list string :=
   | name :: rest => merge_names (add_name left name) rest
   end.
 
+Fixpoint filter_environment
+  (excluded environment : list string) : list string :=
+  match environment with
+  | [] => []
+  | name :: rest =>
+      if string_mem name excluded
+      then filter_environment excluded rest
+      else name :: filter_environment excluded rest
+  end.
+
+Fixpoint shared_name
+  (left right : list string) : option string :=
+  match left with
+  | [] => None
+  | name :: rest =>
+      if string_mem name right
+      then Some name
+      else shared_name rest right
+  end.
+
+Definition add_environment_name
+  (constants environment : list string) (name : string) : list string :=
+  if string_mem name constants then environment else add_name environment name.
+
 Fixpoint named_free_variables (source : named_formula) : list string :=
   match source with
   | NFalsum => []
@@ -131,12 +155,15 @@ Fixpoint named_binder_names (source : named_formula) : list string :=
   end.
 
 Definition extend_environment
-  (environment : list string) (source : named_formula) : list string :=
-  fold_left add_name (named_free_variables source) environment.
+  (constants environment : list string)
+  (source : named_formula) : list string :=
+  fold_left (add_environment_name constants)
+    (named_free_variables source) environment.
 
 Definition extend_environments
-  (environment : list string) (sources : list named_formula) : list string :=
-  fold_left extend_environment sources environment.
+  (constants environment : list string)
+  (sources : list named_formula) : list string :=
+  fold_left (extend_environment constants) sources environment.
 
 Definition variable_index
   (bound environment : list string)
@@ -150,49 +177,72 @@ Definition variable_index
       end
   end.
 
+Definition elaborate_term
+  (constants bound environment : list string)
+  (name : string) : named_result term :=
+  match variable_index bound environment name with
+  | NOk index => NOk (Var index)
+  | NError _ =>
+      if string_mem name constants
+      then NOk (Const name)
+      else NError (NUnknownVariable name)
+  end.
+
 Fixpoint elaborate
-  (bound environment : list string)
+  (constants bound environment : list string)
   (source : named_formula) : named_result formula :=
   match source with
   | NFalsum => NOk Falsum
   | NEqual first second =>
-      named_bind (variable_index bound environment first) (fun first_index =>
-      named_bind (variable_index bound environment second) (fun second_index =>
-      NOk (Equal first_index second_index)))
+      named_bind (elaborate_term constants bound environment first)
+        (fun first_term =>
+      named_bind (elaborate_term constants bound environment second)
+        (fun second_term =>
+      NOk (Equal first_term second_term)))
   | NMember first second =>
-      named_bind (variable_index bound environment first) (fun first_index =>
-      named_bind (variable_index bound environment second) (fun second_index =>
-      NOk (Member first_index second_index)))
+      named_bind (elaborate_term constants bound environment first)
+        (fun first_term =>
+      named_bind (elaborate_term constants bound environment second)
+        (fun second_term =>
+      NOk (Member first_term second_term)))
   | NConj first second =>
-      named_bind (elaborate bound environment first) (fun first_formula =>
-      named_bind (elaborate bound environment second) (fun second_formula =>
+      named_bind (elaborate constants bound environment first) (fun first_formula =>
+      named_bind (elaborate constants bound environment second) (fun second_formula =>
       NOk (Conj first_formula second_formula)))
   | NDisj first second =>
-      named_bind (elaborate bound environment first) (fun first_formula =>
-      named_bind (elaborate bound environment second) (fun second_formula =>
+      named_bind (elaborate constants bound environment first) (fun first_formula =>
+      named_bind (elaborate constants bound environment second) (fun second_formula =>
       NOk (Disj first_formula second_formula)))
   | NImpl first second =>
-      named_bind (elaborate bound environment first) (fun first_formula =>
-      named_bind (elaborate bound environment second) (fun second_formula =>
+      named_bind (elaborate constants bound environment first) (fun first_formula =>
+      named_bind (elaborate constants bound environment second) (fun second_formula =>
       NOk (Impl first_formula second_formula)))
   | NNeg body =>
-      named_bind (elaborate bound environment body) (fun body_formula =>
+      named_bind (elaborate constants bound environment body) (fun body_formula =>
       NOk (Neg body_formula))
   | NIff first second =>
-      named_bind (elaborate bound environment first) (fun first_formula =>
-      named_bind (elaborate bound environment second) (fun second_formula =>
+      named_bind (elaborate constants bound environment first) (fun first_formula =>
+      named_bind (elaborate constants bound environment second) (fun second_formula =>
       NOk (Iff first_formula second_formula)))
   | NAll binder body =>
-      named_bind (elaborate (binder :: bound) environment body)
-        (fun body_formula => NOk (All body_formula))
+      if string_mem binder constants
+      then NError (NVariableAlreadyUsed binder)
+      else
+        named_bind (elaborate constants (binder :: bound) environment body)
+          (fun body_formula => NOk (All body_formula))
   | NEx binder body =>
-      named_bind (elaborate (binder :: bound) environment body)
-        (fun body_formula => NOk (Ex body_formula))
+      if string_mem binder constants
+      then NError (NVariableAlreadyUsed binder)
+      else
+        named_bind (elaborate constants (binder :: bound) environment body)
+          (fun body_formula => NOk (Ex body_formula))
   end.
 
-Definition elaborate_closed (source : named_formula)
+Definition elaborate_closed
+  (constants : list string) (source : named_formula)
   : named_result formula :=
-  elaborate [] (named_free_variables source) source.
+  elaborate constants []
+    (filter_environment constants (named_free_variables source)) source.
 
 Definition nth_name
   (bound environment : list string) (index : nat)
@@ -209,6 +259,14 @@ Definition nth_name
     | None => NError NMetadataMismatch
     end.
 
+Definition reify_term
+  (bound environment : list string) (source : term)
+  : named_result string :=
+  match source with
+  | Var index => nth_name bound environment index
+  | Const name => NOk name
+  end.
+
 Fixpoint fresh_string_with_fuel
   (fuel : nat) (candidate : string) (used : list string) : string :=
   match fuel with
@@ -223,9 +281,9 @@ Definition fresh_string (base : string) (used : list string) : string :=
   fresh_string_with_fuel (S (List.length used)) base used.
 
 Definition choose_binder
-  (bound environment preferred : list string)
+  (constants bound environment preferred : list string)
   : string * list string :=
-  let used := List.app bound environment in
+  let used := List.app constants (List.app bound environment) in
   match preferred with
   | candidate :: rest =>
       if string_mem candidate used
@@ -235,18 +293,18 @@ Definition choose_binder
   end.
 
 Fixpoint reify_with_names
-  (bound environment preferred : list string)
+  (constants bound environment preferred : list string)
   (source : formula)
   : named_result (named_formula * list string) :=
   match source with
   | Falsum => NOk (NFalsum, preferred)
   | Equal first second =>
-      named_bind (nth_name bound environment first) (fun first_name =>
-      named_bind (nth_name bound environment second) (fun second_name =>
+      named_bind (reify_term bound environment first) (fun first_name =>
+      named_bind (reify_term bound environment second) (fun second_name =>
       NOk (NEqual first_name second_name, preferred)))
   | Member first second =>
-      named_bind (nth_name bound environment first) (fun first_name =>
-      named_bind (nth_name bound environment second) (fun second_name =>
+      named_bind (reify_term bound environment first) (fun first_name =>
+      named_bind (reify_term bound environment second) (fun second_name =>
       NOk (NMember first_name second_name, preferred)))
   | Conj first second =>
       match first, second with
@@ -257,80 +315,83 @@ Fixpoint reify_with_names
           then
             named_bind
               (reify_with_names
-                bound environment preferred first_left)
+                constants bound environment preferred first_left)
               (fun '(left_named, after_left) =>
             named_bind
               (reify_with_names
-                bound environment after_left first_right)
+                constants bound environment after_left first_right)
               (fun '(right_named, after_right) =>
             NOk (NIff left_named right_named, after_right)))
           else
             named_bind
-              (reify_with_names bound environment preferred first)
+              (reify_with_names constants bound environment preferred first)
               (fun '(first_named, after_first) =>
             named_bind
-              (reify_with_names bound environment after_first second)
+              (reify_with_names constants bound environment after_first second)
               (fun '(second_named, after_second) =>
             NOk (NConj first_named second_named, after_second)))
       | _, _ =>
           named_bind
-            (reify_with_names bound environment preferred first)
+            (reify_with_names constants bound environment preferred first)
             (fun '(first_named, after_first) =>
           named_bind
-            (reify_with_names bound environment after_first second)
+            (reify_with_names constants bound environment after_first second)
             (fun '(second_named, after_second) =>
           NOk (NConj first_named second_named, after_second)))
       end
   | Disj first second =>
       named_bind
-        (reify_with_names bound environment preferred first)
+        (reify_with_names constants bound environment preferred first)
         (fun '(first_named, after_first) =>
       named_bind
-        (reify_with_names bound environment after_first second)
+        (reify_with_names constants bound environment after_first second)
         (fun '(second_named, after_second) =>
       NOk (NDisj first_named second_named, after_second)))
   | Impl body Falsum =>
       named_bind
-        (reify_with_names bound environment preferred body)
+        (reify_with_names constants bound environment preferred body)
         (fun '(body_named, after_body) =>
       NOk (NNeg body_named, after_body))
   | Impl first second =>
       named_bind
-        (reify_with_names bound environment preferred first)
+        (reify_with_names constants bound environment preferred first)
         (fun '(first_named, after_first) =>
       named_bind
-        (reify_with_names bound environment after_first second)
+        (reify_with_names constants bound environment after_first second)
         (fun '(second_named, after_second) =>
       NOk (NImpl first_named second_named, after_second)))
   | All body =>
       let '(binder, after_binder) :=
-        choose_binder bound environment preferred
+        choose_binder constants bound environment preferred
       in
       named_bind
-        (reify_with_names (binder :: bound) environment after_binder body)
+        (reify_with_names
+          constants (binder :: bound) environment after_binder body)
         (fun '(body_named, after_body) =>
       NOk (NAll binder body_named, after_body))
   | Ex body =>
       let '(binder, after_binder) :=
-        choose_binder bound environment preferred
+        choose_binder constants bound environment preferred
       in
       named_bind
-        (reify_with_names (binder :: bound) environment after_binder body)
+        (reify_with_names
+          constants (binder :: bound) environment after_binder body)
         (fun '(body_named, after_body) =>
       NOk (NEx binder body_named, after_body))
   end.
 
 Definition reify
-  (environment preferred : list string)
+  (constants environment preferred : list string)
   (source : formula) : named_result named_formula :=
-  named_bind (reify_with_names [] environment preferred source)
+  named_bind (reify_with_names constants [] environment preferred source)
     (fun '(named, _) => NOk named).
 
 Record goal_metadata : Type := GoalMetadata {
   metadata_hypothesis_names : list string;
   metadata_assumption_binders : list (list string);
   metadata_conclusion_binders : list string;
-  metadata_environment : list string
+  metadata_environment : list string;
+  metadata_constants : list string
 }.
 
 Record named_state : Type := NamedState {
@@ -338,17 +399,34 @@ Record named_state : Type := NamedState {
   named_goal_metadata : list goal_metadata
 }.
 
-Definition initial_metadata (source : named_formula) : goal_metadata :=
+Definition initial_metadata
+  (constants : list string) (source : named_formula) : goal_metadata :=
   GoalMetadata [] [] (named_binder_names source)
-    (named_free_variables source).
+    (filter_environment constants (named_free_variables source))
+    constants.
+
+Definition named_start_with_constants
+  (constants : list string) (source : named_formula)
+  : named_result named_state :=
+  named_bind (elaborate_closed constants source) (fun core =>
+  NOk (NamedState (start core) [initial_metadata constants source])).
 
 Definition named_start (source : named_formula)
   : named_result named_state :=
-  named_bind (elaborate_closed source) (fun core =>
-  NOk (NamedState (start core) [initial_metadata source])).
+  named_start_with_constants [] source.
+
+Example elaborate_global_constant_example :
+  elaborate_closed ["empty"] (NEqual "empty" "empty") =
+  NOk (Equal (Const "empty") (Const "empty")).
+Proof. reflexivity. Qed.
+
+Example reject_constant_shadowing_example :
+  elaborate_closed ["empty"] (NAll "empty" (NEqual "empty" "empty")) =
+  NError (NVariableAlreadyUsed "empty").
+Proof. reflexivity. Qed.
 
 Fixpoint reify_assumptions
-  (environment : list string)
+  (constants environment : list string)
   (names : list string)
   (binders : list (list string))
   (sources : list formula)
@@ -358,9 +436,11 @@ Fixpoint reify_assumptions
   | name :: name_rest,
     preferred :: binder_rest,
     source :: source_rest =>
-      named_bind (reify environment preferred source) (fun named_source =>
+      named_bind (reify constants environment preferred source)
+        (fun named_source =>
       named_bind
-        (reify_assumptions environment name_rest binder_rest source_rest)
+        (reify_assumptions
+          constants environment name_rest binder_rest source_rest)
         (fun rest =>
       NOk (NamedHypothesis name named_source :: rest)))
   | _, _, _ => NError NMetadataMismatch
@@ -371,6 +451,7 @@ Definition reify_goal
   : named_result named_goal :=
   named_bind
     (reify_assumptions
+      (metadata_constants metadata)
       (metadata_environment metadata)
       (metadata_hypothesis_names metadata)
       (metadata_assumption_binders metadata)
@@ -378,6 +459,7 @@ Definition reify_goal
     (fun named_context =>
   named_bind
     (reify
+      (metadata_constants metadata)
       (metadata_environment metadata)
       (metadata_conclusion_binders metadata)
       (conclusion source))
@@ -442,48 +524,43 @@ Definition fixed_axiom_formula (kind : named_fixed_axiom) : formula :=
   | NChoice => choice_axiom
   end.
 
-Fixpoint filter_environment
-  (excluded environment : list string) : list string :=
-  match environment with
-  | [] => []
-  | name :: rest =>
-      if string_mem name excluded
-      then filter_environment excluded rest
-      else name :: filter_environment excluded rest
+Definition elaborate_schema_predicate
+  (constants binders environment : list string)
+  (predicate : named_formula) : named_result formula :=
+  match shared_name binders constants with
+  | Some name => NError (NVariableAlreadyUsed name)
+  | None =>
+      elaborate constants binders
+        (filter_environment binders environment) predicate
   end.
 
-Definition elaborate_schema_predicate
-  (binders environment : list string)
-  (predicate : named_formula) : named_result formula :=
-  elaborate binders (filter_environment binders environment) predicate.
-
 Definition compile_axiom
-  (environment : list string) (axiom : named_axiom)
+  (constants environment : list string) (axiom : named_axiom)
   : named_result formula :=
   match axiom with
   | NFixedAxiom kind => NOk (fixed_axiom_formula kind)
   | NSeparationAxiom source element predicate =>
       named_bind
         (elaborate_schema_predicate
-          [element; source] environment predicate)
+          constants [element; source] environment predicate)
         (fun core_predicate =>
       NOk (separation_instance core_predicate))
   | NReplacementAxiom input output predicate =>
       named_bind
         (elaborate_schema_predicate
-          [output; input] environment predicate)
+          constants [output; input] environment predicate)
         (fun core_predicate =>
       NOk (replacement_instance core_predicate))
   end.
 
 Fixpoint compile_axioms
-  (environment : list string) (axioms : list named_axiom)
+  (constants environment : list string) (axioms : list named_axiom)
   : named_result (list formula) :=
   match axioms with
   | [] => NOk []
   | axiom :: rest =>
-      named_bind (compile_axiom environment axiom) (fun core_axiom =>
-      named_bind (compile_axioms environment rest) (fun core_rest =>
+      named_bind (compile_axiom constants environment axiom) (fun core_axiom =>
+      named_bind (compile_axioms constants environment rest) (fun core_rest =>
       NOk (core_axiom :: core_rest)))
   end.
 
@@ -536,7 +613,8 @@ Definition metadata_with_conclusion
     (metadata_hypothesis_names metadata)
     (metadata_assumption_binders metadata)
     binders
-    environment.
+    environment
+    (metadata_constants metadata).
 
 Definition metadata_with_hypothesis
   (metadata : goal_metadata)
@@ -547,7 +625,8 @@ Definition metadata_with_hypothesis
     (hypothesis :: metadata_hypothesis_names metadata)
     (hypothesis_binders :: metadata_assumption_binders metadata)
     conclusion_binders
-    environment.
+    environment
+    (metadata_constants metadata).
 
 Definition ensure_hypothesis_fresh
   (metadata : goal_metadata) (name : string)
@@ -559,7 +638,8 @@ Definition ensure_hypothesis_fresh
 Definition ensure_variable_fresh
   (metadata : goal_metadata) (name : string)
   : named_result unit :=
-  if string_mem name (metadata_environment metadata)
+  if string_mem name (metadata_constants metadata)
+     || string_mem name (metadata_environment metadata)
   then NError (NVariableAlreadyUsed name)
   else NOk tt.
 
@@ -583,20 +663,21 @@ Fixpoint find_named_hypothesis
   end.
 
 Definition elaborate_in_environment
-  (environment : list string) (source : named_formula)
+  (constants environment : list string) (source : named_formula)
   : named_result formula :=
-  elaborate [] environment source.
+  elaborate constants [] environment source.
 
 Definition term_index
-  (environment : list string) (term : string)
-  : named_result nat :=
-  variable_index [] environment term.
+  (constants environment : list string) (source : string)
+  : named_result term :=
+  elaborate_term constants [] environment source.
 
 Definition plan_named_rule
   (metadata : goal_metadata)
   (view : named_goal)
   (primitive : named_rule)
   : named_result rule_plan :=
+  let constants := metadata_constants metadata in
   let environment := metadata_environment metadata in
   let target := named_conclusion view in
   match primitive with
@@ -627,9 +708,10 @@ Definition plan_named_rule
       | _ => NError NWrongNamedShape
       end)
   | NRImplElim premise =>
-      let next_environment := extend_environment environment premise in
+      let next_environment :=
+        extend_environment constants environment premise in
       named_bind
-        (elaborate_in_environment next_environment premise)
+        (elaborate_in_environment constants next_environment premise)
         (fun core_premise =>
       NOk (RulePlan (RImplElim core_premise)
         [metadata_with_conclusion metadata
@@ -661,8 +743,9 @@ Definition plan_named_rule
       | _ => NError NWrongNamedShape
       end
   | NRConjElimL extra =>
-      let next_environment := extend_environment environment extra in
-      named_bind (elaborate_in_environment next_environment extra)
+      let next_environment :=
+        extend_environment constants environment extra in
+      named_bind (elaborate_in_environment constants next_environment extra)
         (fun core_extra =>
       NOk (RulePlan (RConjElimL core_extra)
         [metadata_with_conclusion metadata
@@ -671,8 +754,9 @@ Definition plan_named_rule
            next_environment]
         next_environment))
   | NRConjElimR extra =>
-      let next_environment := extend_environment environment extra in
-      named_bind (elaborate_in_environment next_environment extra)
+      let next_environment :=
+        extend_environment constants environment extra in
+      named_bind (elaborate_in_environment constants next_environment extra)
         (fun core_extra =>
       NOk (RulePlan (RConjElimR core_extra)
         [metadata_with_conclusion metadata
@@ -705,13 +789,13 @@ Definition plan_named_rule
       then NError (NHypothesisAlreadyUsed second_name)
       else
         let next_environment :=
-          extend_environments environment [first; second]
+          extend_environments constants environment [first; second]
         in
         named_bind
-          (elaborate_in_environment next_environment first)
+          (elaborate_in_environment constants next_environment first)
           (fun core_first =>
         named_bind
-          (elaborate_in_environment next_environment second)
+          (elaborate_in_environment constants next_environment second)
           (fun core_second =>
         NOk (RulePlan (RDisjElim core_first core_second)
           [metadata_with_conclusion metadata
@@ -741,12 +825,14 @@ Definition plan_named_rule
       match universal with
       | NAll binder body =>
           let next_environment :=
-            add_name (extend_environment environment universal) term
+            add_environment_name constants
+              (extend_environment constants environment universal) term
           in
           named_bind
-            (elaborate [binder] next_environment body)
+            (elaborate constants [binder] next_environment body)
             (fun core_body =>
-          named_bind (term_index next_environment term) (fun core_term =>
+          named_bind (term_index constants next_environment term)
+            (fun core_term =>
           NOk (RulePlan (RAllElim core_body core_term)
             [metadata_with_conclusion metadata
                (named_binder_names universal) next_environment]
@@ -756,8 +842,10 @@ Definition plan_named_rule
   | NRExIntro term =>
       match target with
       | NEx _ body =>
-          let next_environment := add_name environment term in
-          named_bind (term_index next_environment term) (fun core_term =>
+          let next_environment :=
+            add_environment_name constants environment term in
+          named_bind (term_index constants next_environment term)
+            (fun core_term =>
           NOk (RulePlan (RExIntro core_term)
             [metadata_with_conclusion metadata
                (named_binder_names body) next_environment]
@@ -769,16 +857,17 @@ Definition plan_named_rule
       match existential with
       | NEx binder body =>
           let before_environment :=
-            extend_environment environment existential
+            extend_environment constants environment existential
           in
-          if string_mem witness before_environment
+          if string_mem witness constants
+             || string_mem witness before_environment
           then NError (NVariableAlreadyUsed witness)
           else
             let generated_environment :=
               witness :: before_environment
             in
             named_bind
-              (elaborate [binder] before_environment body)
+              (elaborate constants [binder] before_environment body)
               (fun core_body =>
             NOk (RulePlan (RExElim core_body)
               [metadata_with_conclusion metadata
@@ -797,15 +886,18 @@ Definition plan_named_rule
       match predicate with
       | NAll binder body =>
           let next_environment :=
-            add_name
-              (add_name (extend_environment environment predicate) first)
+            add_environment_name constants
+              (add_environment_name constants
+                (extend_environment constants environment predicate) first)
               second
           in
           named_bind
-            (elaborate [binder] next_environment body)
+            (elaborate constants [binder] next_environment body)
             (fun core_predicate =>
-          named_bind (term_index next_environment first) (fun core_first =>
-          named_bind (term_index next_environment second) (fun core_second =>
+          named_bind (term_index constants next_environment first)
+            (fun core_first =>
+          named_bind (term_index constants next_environment second)
+            (fun core_second =>
           NOk (RulePlan
             (REqualElim core_predicate core_first core_second)
             [metadata_with_conclusion metadata [] next_environment;
@@ -816,9 +908,10 @@ Definition plan_named_rule
       end
   | NRCut hypothesis lemma =>
       named_bind (ensure_hypothesis_fresh metadata hypothesis) (fun _ =>
-      let next_environment := extend_environment environment lemma in
+      let next_environment :=
+        extend_environment constants environment lemma in
       named_bind
-        (elaborate_in_environment next_environment lemma)
+        (elaborate_in_environment constants next_environment lemma)
         (fun core_lemma =>
       NOk (RulePlan (RCut core_lemma)
         [metadata_with_conclusion metadata
@@ -843,7 +936,9 @@ Definition named_rule_step
       named_bind (reify_goal metadata goal) (fun view =>
       named_bind (plan_named_rule metadata view primitive) (fun plan =>
       named_bind
-        (compile_axioms (planned_environment plan) axioms)
+        (compile_axioms
+          (metadata_constants metadata)
+          (planned_environment plan) axioms)
         (fun core_axioms =>
       match
         TacticCompleteness.rule_step
@@ -897,6 +992,7 @@ Definition plan_named_tactic
   (view : named_goal)
   (command : named_tactic)
   : named_result tactic_plan :=
+  let constants := metadata_constants metadata in
   let environment := metadata_environment metadata in
   let target := named_conclusion view in
   match command with
@@ -952,8 +1048,10 @@ Definition plan_named_tactic
       named_bind (hypothesis_index metadata hypothesis) (fun index =>
       match find_named_hypothesis hypothesis (named_assumptions view) with
       | Some (NAll _ body) =>
-          let next_environment := add_name environment term in
-          named_bind (term_index next_environment term) (fun core_term =>
+          let next_environment :=
+            add_environment_name constants environment term in
+          named_bind (term_index constants next_environment term)
+            (fun core_term =>
           NOk (TacticPlan (TacSpecialize index core_term)
             [metadata_with_hypothesis metadata new_hypothesis
               (named_binder_names body)
@@ -1002,8 +1100,10 @@ Definition plan_named_tactic
   | NTacUse term =>
       match target with
       | NEx _ body =>
-          let next_environment := add_name environment term in
-          named_bind (term_index next_environment term) (fun core_term =>
+          let next_environment :=
+            add_environment_name constants environment term in
+          named_bind (term_index constants next_environment term)
+            (fun core_term =>
           NOk (TacticPlan (TacUse core_term)
             [metadata_with_conclusion metadata
               (named_binder_names body) next_environment]
@@ -1033,7 +1133,8 @@ Definition plan_named_tactic
                    named_binder_names first ::
                    metadata_assumption_binders metadata)
                 (metadata_conclusion_binders metadata)
-                environment]
+                environment
+                constants]
               environment)))
       | Some (NIff first second) =>
           named_bind
@@ -1051,7 +1152,8 @@ Definition plan_named_tactic
                    named_binder_names (NImpl first second) ::
                    metadata_assumption_binders metadata)
                 (metadata_conclusion_binders metadata)
-                environment]
+                environment
+                constants]
               environment)))
       | Some (NEx _ body) =>
           named_bind
@@ -1126,8 +1228,8 @@ Definition named_state_provable
 
 Definition named_axioms_sound
   (T : theory) (axioms : list named_axiom) : Prop :=
-  forall environment core_axioms,
-    compile_axioms environment axioms = NOk core_axioms ->
+  forall constants environment core_axioms,
+    compile_axioms constants environment axioms = NOk core_axioms ->
     forall candidate,
       formula_in candidate core_axioms = true ->
       T candidate.
@@ -1152,7 +1254,9 @@ Proof.
         eqn:Hview.
       * destruct (plan_named_rule metadata view primitive)
           as [plan | plan_error] eqn:Hplan.
-        -- destruct (compile_axioms (planned_environment plan) axioms)
+        -- destruct (compile_axioms
+             (metadata_constants metadata)
+             (planned_environment plan) axioms)
              as [core_axioms | axiom_error] eqn:Hcompile.
            ++ destruct
                 (TacticCompleteness.rule_step
@@ -1327,11 +1431,11 @@ Proof.
 Qed.
 
 Lemma compile_axiom_is_zfc :
-  forall environment axiom core_axiom,
-    compile_axiom environment axiom = NOk core_axiom ->
+  forall constants environment axiom core_axiom,
+    compile_axiom constants environment axiom = NOk core_axiom ->
     zfc_theory core_axiom.
 Proof.
-  intros environment axiom core_axiom Hcompile.
+  intros constants environment axiom core_axiom Hcompile.
   destruct axiom as
     [kind
     |source element predicate
@@ -1341,7 +1445,7 @@ Proof.
   - cbn in Hcompile.
     destruct
       (elaborate_schema_predicate
-        [element; source] environment predicate)
+        constants [element; source] environment predicate)
       as [core_predicate | error] eqn:Hpredicate;
       try discriminate.
     inversion Hcompile; subst.
@@ -1349,7 +1453,7 @@ Proof.
   - cbn in Hcompile.
     destruct
       (elaborate_schema_predicate
-        [output; input] environment predicate)
+        constants [output; input] environment predicate)
       as [core_predicate | error] eqn:Hpredicate;
       try discriminate.
     inversion Hcompile; subst.
@@ -1357,21 +1461,21 @@ Proof.
 Qed.
 
 Lemma compile_axioms_are_zfc :
-  forall environment axioms core_axioms,
-    compile_axioms environment axioms = NOk core_axioms ->
+  forall constants environment axioms core_axioms,
+    compile_axioms constants environment axioms = NOk core_axioms ->
     forall candidate,
       In candidate core_axioms ->
       zfc_theory candidate.
 Proof.
-  intros environment axioms.
+  intros constants environment axioms.
   induction axioms as [|axiom rest IH];
     intros core_axioms Hcompile candidate Hin.
   - cbn in Hcompile. inversion Hcompile; subst. inversion Hin.
   - cbn in Hcompile.
-    destruct (compile_axiom environment axiom)
+    destruct (compile_axiom constants environment axiom)
       as [core_axiom | axiom_error] eqn:Haxiom;
       try discriminate.
-    destruct (compile_axioms environment rest)
+    destruct (compile_axioms constants environment rest)
       as [core_rest | rest_error] eqn:Hrest;
       try discriminate.
     inversion Hcompile; subst.
@@ -1384,7 +1488,8 @@ Theorem named_axioms_are_zfc_sound :
   forall axioms,
     named_axioms_sound zfc_theory axioms.
 Proof.
-  intros axioms environment core_axioms Hcompile candidate Hcandidate.
+  intros axioms constants environment core_axioms
+    Hcompile candidate Hcandidate.
   eapply compile_axioms_are_zfc.
   - exact Hcompile.
   - apply formula_in_correct. exact Hcandidate.

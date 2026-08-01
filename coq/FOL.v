@@ -1,19 +1,46 @@
 (** First-order logic for the language of set theory.
 
-    Terms are variables represented by de Bruijn indices.  ZFC has no
-    function symbols, so this is the complete term language that we need.
+    Bound and local variables use de Bruijn indices.  Global constants are
+    stable string-named symbols: they are never shifted or captured by a
+    quantifier.  ZFC has no positive-arity function symbols.
     Equality is interpreted as Coq equality; [member] is supplied by a model.
  *)
 
-From Coq Require Import List PeanoNat.
+From Coq Require Import List PeanoNat String.
 Import ListNotations.
 
 Set Implicit Arguments.
 
+Inductive term : Type :=
+| Var : nat -> term
+| Const : string -> term.
+
+Coercion Var : nat >-> term.
+
+Definition term_eq_dec :
+  forall s t : term, {s = t} + {s <> t}.
+Proof.
+  decide equality.
+  - apply Nat.eq_dec.
+  - apply String.string_dec.
+Defined.
+
+Definition term_eqb (s t : term) : bool :=
+  if term_eq_dec s t then true else false.
+
+Lemma term_eqb_true_iff :
+  forall s t, term_eqb s t = true <-> s = t.
+Proof.
+  intros s t.
+  unfold term_eqb.
+  destruct (term_eq_dec s t); split; intro H; try reflexivity;
+    try discriminate; congruence.
+Qed.
+
 Inductive formula : Type :=
 | Falsum : formula
-| Equal : nat -> nat -> formula
-| Member : nat -> nat -> formula
+| Equal : term -> term -> formula
+| Member : term -> term -> formula
 | Conj : formula -> formula -> formula
 | Disj : formula -> formula -> formula
 | Impl : formula -> formula -> formula
@@ -23,7 +50,7 @@ Inductive formula : Type :=
 Definition formula_eq_dec :
   forall A B : formula, {A = B} + {A <> B}.
 Proof.
-  decide equality; apply Nat.eq_dec.
+  decide equality; apply term_eq_dec.
 Defined.
 
 Definition formula_eqb (A B : formula) : bool :=
@@ -50,11 +77,17 @@ Definition up (xi : nat -> nat) (n : nat) : nat :=
   | S k => S (xi k)
   end.
 
+Definition rename_term (xi : nat -> nat) (t : term) : term :=
+  match t with
+  | Var n => Var (xi n)
+  | Const name => Const name
+  end.
+
 Fixpoint rename (xi : nat -> nat) (A : formula) : formula :=
   match A with
   | Falsum => Falsum
-  | Equal x y => Equal (xi x) (xi y)
-  | Member x y => Member (xi x) (xi y)
+  | Equal x y => Equal (rename_term xi x) (rename_term xi y)
+  | Member x y => Member (rename_term xi x) (rename_term xi y)
   | Conj B C => Conj (rename xi B) (rename xi C)
   | Disj B C => Disj (rename xi B) (rename xi C)
   | Impl B C => Impl (rename xi B) (rename xi C)
@@ -64,16 +97,55 @@ Fixpoint rename (xi : nat -> nat) (A : formula) : formula :=
 
 Definition lift (A : formula) : formula := rename S A.
 
-Definition subst_zero (t n : nat) : nat :=
+Definition lift_term (t : term) : term := rename_term S t.
+
+Definition up_substitution (sigma : nat -> term) (n : nat) : term :=
+  match n with
+  | O => Var O
+  | S k => lift_term (sigma k)
+  end.
+
+Definition substitute_term (sigma : nat -> term) (t : term) : term :=
+  match t with
+  | Var n => sigma n
+  | Const name => Const name
+  end.
+
+Fixpoint substitute (sigma : nat -> term) (A : formula) : formula :=
+  match A with
+  | Falsum => Falsum
+  | Equal x y =>
+      Equal (substitute_term sigma x) (substitute_term sigma y)
+  | Member x y =>
+      Member (substitute_term sigma x) (substitute_term sigma y)
+  | Conj B C => Conj (substitute sigma B) (substitute sigma C)
+  | Disj B C => Disj (substitute sigma B) (substitute sigma C)
+  | Impl B C => Impl (substitute sigma B) (substitute sigma C)
+  | All B => All (substitute (up_substitution sigma) B)
+  | Ex B => Ex (substitute (up_substitution sigma) B)
+  end.
+
+Definition subst_zero (t : term) (n : nat) : term :=
   match n with
   | O => t
-  | S k => k
+  | S k => Var k
   end.
 
 (** [instantiate t A] replaces the variable bound by an outer quantifier
-    with variable [t], shifting correctly below nested quantifiers. *)
-Definition instantiate (t : nat) (A : formula) : formula :=
-  rename (subst_zero t) A.
+    with term [t], shifting variables correctly below nested quantifiers while
+    leaving constants unchanged. *)
+Definition instantiate (t : term) (A : formula) : formula :=
+  substitute (subst_zero t) A.
+
+Example lift_preserves_constant_example :
+  lift (Member (Const "empty"%string) (Var 0)) =
+  Member (Const "empty"%string) (Var 1).
+Proof. reflexivity. Qed.
+
+Example instantiate_with_constant_example :
+  instantiate (Const "empty"%string) (Member (Var 0) (Var 1)) =
+  Member (Const "empty"%string) (Var 0).
+Proof. reflexivity. Qed.
 
 (** Tarskian semantics. *)
 
@@ -82,6 +154,7 @@ Section Semantics.
   Variable member : D -> D -> Prop.
 
   Definition valuation := nat -> D.
+  Definition constant_valuation := string -> D.
 
   Definition extend (d : D) (rho : valuation) : valuation :=
     fun n =>
@@ -90,162 +163,304 @@ Section Semantics.
       | S k => rho k
       end.
 
-  Fixpoint satisfies (rho : valuation) (A : formula) : Prop :=
-    match A with
-    | Falsum => False
-    | Equal x y => rho x = rho y
-    | Member x y => member (rho x) (rho y)
-    | Conj B C => satisfies rho B /\ satisfies rho C
-    | Disj B C => satisfies rho B \/ satisfies rho C
-    | Impl B C => satisfies rho B -> satisfies rho C
-    | All B => forall d : D, satisfies (extend d rho) B
-    | Ex B => exists d : D, satisfies (extend d rho) B
+  Definition eval_term
+    (constants : constant_valuation) (rho : valuation) (t : term) : D :=
+    match t with
+    | Var n => rho n
+    | Const name => constants name
     end.
 
-  Theorem satisfies_ext :
-    forall (A : formula) (rho sigma : valuation),
+  Fixpoint satisfies
+    (constants : constant_valuation) (rho : valuation) (A : formula) : Prop :=
+    match A with
+    | Falsum => False
+    | Equal x y => eval_term constants rho x = eval_term constants rho y
+    | Member x y => member (eval_term constants rho x) (eval_term constants rho y)
+    | Conj B C => satisfies constants rho B /\ satisfies constants rho C
+    | Disj B C => satisfies constants rho B \/ satisfies constants rho C
+    | Impl B C => satisfies constants rho B -> satisfies constants rho C
+    | All B => forall d : D, satisfies constants (extend d rho) B
+    | Ex B => exists d : D, satisfies constants (extend d rho) B
+    end.
+
+  Lemma eval_term_ext :
+    forall constants (rho sigma : valuation) t,
       (forall n, rho n = sigma n) ->
-      (satisfies rho A <-> satisfies sigma A).
+      eval_term constants rho t = eval_term constants sigma t.
   Proof.
-    induction A; intros rho sigma Heq; simpl.
+    intros constants rho sigma [n | name] Heq; simpl.
+    - apply Heq.
+    - reflexivity.
+  Qed.
+
+  Theorem satisfies_ext :
+    forall constants (A : formula) (rho sigma : valuation),
+      (forall n, rho n = sigma n) ->
+      (satisfies constants rho A <-> satisfies constants sigma A).
+  Proof.
+    intros constants A.
+    induction A as
+      [|s t|s t|B IHB C IHC|B IHB C IHC|B IHB C IHC|B IHB|B IHB];
+      intros rho sigma Heq; simpl.
     - tauto.
-    - rewrite (Heq n), (Heq n0). tauto.
-    - rewrite (Heq n), (Heq n0). tauto.
-    - rewrite (IHA1 rho sigma Heq), (IHA2 rho sigma Heq). tauto.
-    - rewrite (IHA1 rho sigma Heq), (IHA2 rho sigma Heq). tauto.
-    - rewrite (IHA1 rho sigma Heq), (IHA2 rho sigma Heq). tauto.
+    - rewrite (eval_term_ext constants rho sigma s Heq).
+      rewrite (eval_term_ext constants rho sigma t Heq). tauto.
+    - rewrite (eval_term_ext constants rho sigma s Heq).
+      rewrite (eval_term_ext constants rho sigma t Heq). tauto.
+    - rewrite (IHB rho sigma Heq), (IHC rho sigma Heq). tauto.
+    - rewrite (IHB rho sigma Heq), (IHC rho sigma Heq). tauto.
+    - rewrite (IHB rho sigma Heq), (IHC rho sigma Heq). tauto.
     - split; intros H d.
       + assert (Hext : forall n,
           extend d rho n = extend d sigma n).
         { intros [|n]; simpl. reflexivity. apply Heq. }
-        apply (proj1 (IHA (extend d rho) (extend d sigma) Hext)).
+        apply (proj1 (IHB (extend d rho) (extend d sigma) Hext)).
         apply H.
       + assert (Hext : forall n,
           extend d rho n = extend d sigma n).
         { intros [|n]; simpl. reflexivity. apply Heq. }
-        apply (proj2 (IHA (extend d rho) (extend d sigma) Hext)).
+        apply (proj2 (IHB (extend d rho) (extend d sigma) Hext)).
         apply H.
     - split; intros [d H]; exists d.
       + assert (Hext : forall n,
           extend d rho n = extend d sigma n).
         { intros [|n]; simpl. reflexivity. apply Heq. }
-        apply (proj1 (IHA (extend d rho) (extend d sigma) Hext)).
+        apply (proj1 (IHB (extend d rho) (extend d sigma) Hext)).
         exact H.
       + assert (Hext : forall n,
           extend d rho n = extend d sigma n).
         { intros [|n]; simpl. reflexivity. apply Heq. }
-        apply (proj2 (IHA (extend d rho) (extend d sigma) Hext)).
+        apply (proj2 (IHB (extend d rho) (extend d sigma) Hext)).
         exact H.
   Qed.
 
-  Theorem satisfies_rename :
-    forall (A : formula) (rho : valuation) (xi : nat -> nat),
-      satisfies rho (rename xi A) <->
-      satisfies (fun n => rho (xi n)) A.
+  Lemma eval_rename_term :
+    forall constants (rho : valuation) xi t,
+      eval_term constants rho (rename_term xi t) =
+      eval_term constants (fun n => rho (xi n)) t.
   Proof.
-    induction A; intros rho xi; simpl.
+    intros constants rho xi [n | name]; reflexivity.
+  Qed.
+
+  Theorem satisfies_rename :
+    forall constants (A : formula) (rho : valuation) (xi : nat -> nat),
+      satisfies constants rho (rename xi A) <->
+      satisfies constants (fun n => rho (xi n)) A.
+  Proof.
+    intros constants A.
+    induction A as
+      [|s t|s t|B IHB C IHC|B IHB C IHC|B IHB C IHC|B IHB|B IHB];
+      intros rho xi; simpl.
     - tauto.
-    - reflexivity.
-    - reflexivity.
-    - rewrite IHA1, IHA2. tauto.
-    - rewrite IHA1, IHA2. tauto.
-    - rewrite IHA1, IHA2. tauto.
+    - rewrite !eval_rename_term. reflexivity.
+    - rewrite !eval_rename_term. reflexivity.
+    - rewrite IHB, IHC. tauto.
+    - rewrite IHB, IHC. tauto.
+    - rewrite IHB, IHC. tauto.
     - split.
       + intros H d.
         specialize (H d).
-        apply (proj1 (IHA (extend d rho) (up xi))) in H.
+        apply (proj1 (IHB (extend d rho) (up xi))) in H.
         assert (Hext : forall n,
           extend d rho (up xi n) =
           extend d (fun n => rho (xi n)) n).
         { intros [|n]; reflexivity. }
         apply (proj1
-          (satisfies_ext A
+          (satisfies_ext constants B
             (fun n => extend d rho (up xi n))
             (extend d (fun n => rho (xi n))) Hext)).
         exact H.
       + intros H d.
-        apply (proj2 (IHA (extend d rho) (up xi))).
+        apply (proj2 (IHB (extend d rho) (up xi))).
         assert (Hext : forall n,
           extend d rho (up xi n) =
           extend d (fun n => rho (xi n)) n).
         { intros [|n]; reflexivity. }
         apply (proj2
-          (satisfies_ext A
+          (satisfies_ext constants B
             (fun n => extend d rho (up xi n))
             (extend d (fun n => rho (xi n))) Hext)).
         apply H.
     - split.
       + intros [d H].
         exists d.
-        apply (proj1 (IHA (extend d rho) (up xi))) in H.
+        apply (proj1 (IHB (extend d rho) (up xi))) in H.
         assert (Hext : forall n,
           extend d rho (up xi n) =
           extend d (fun n => rho (xi n)) n).
         { intros [|n]; reflexivity. }
         apply (proj1
-          (satisfies_ext A
+          (satisfies_ext constants B
             (fun n => extend d rho (up xi n))
             (extend d (fun n => rho (xi n))) Hext)).
         exact H.
       + intros [d H].
         exists d.
-        apply (proj2 (IHA (extend d rho) (up xi))).
+        apply (proj2 (IHB (extend d rho) (up xi))).
         assert (Hext : forall n,
           extend d rho (up xi n) =
           extend d (fun n => rho (xi n)) n).
         { intros [|n]; reflexivity. }
         apply (proj2
-          (satisfies_ext A
+          (satisfies_ext constants B
             (fun n => extend d rho (up xi n))
             (extend d (fun n => rho (xi n))) Hext)).
         exact H.
   Qed.
 
-  Lemma subst_zero_semantics :
-    forall (rho : valuation) (t n : nat),
-      rho (subst_zero t n) = extend (rho t) rho n.
+  Lemma eval_lift_term :
+    forall constants (rho : valuation) d t,
+      eval_term constants (extend d rho) (lift_term t) =
+      eval_term constants rho t.
   Proof.
-    intros rho t [|n]; reflexivity.
+    intros constants rho d [n | name]; reflexivity.
+  Qed.
+
+  Lemma eval_up_substitution :
+    forall constants (rho : valuation) d sigma n,
+      eval_term constants (extend d rho) (up_substitution sigma n) =
+      extend d (fun k => eval_term constants rho (sigma k)) n.
+  Proof.
+    intros constants rho d sigma [|n]; simpl.
+    - reflexivity.
+    - apply eval_lift_term.
+  Qed.
+
+  Lemma eval_substitute_term :
+    forall constants (rho : valuation) sigma t,
+      eval_term constants rho (substitute_term sigma t) =
+      eval_term constants
+        (fun n => eval_term constants rho (sigma n)) t.
+  Proof.
+    intros constants rho sigma [n | name]; reflexivity.
+  Qed.
+
+  Theorem satisfies_substitute :
+    forall constants (A : formula) (rho : valuation) (sigma : nat -> term),
+      satisfies constants rho (substitute sigma A) <->
+      satisfies constants
+        (fun n => eval_term constants rho (sigma n)) A.
+  Proof.
+    intros constants A.
+    induction A as
+      [|s t|s t|B IHB C IHC|B IHB C IHC|B IHB C IHC|B IHB|B IHB];
+      intros rho sigma; simpl.
+    - tauto.
+    - rewrite !eval_substitute_term. reflexivity.
+    - rewrite !eval_substitute_term. reflexivity.
+    - rewrite IHB, IHC. tauto.
+    - rewrite IHB, IHC. tauto.
+    - rewrite IHB, IHC. tauto.
+    - split.
+      + intros H d.
+        specialize (H d).
+        apply (proj1 (IHB (extend d rho) (up_substitution sigma))) in H.
+        assert (Hext : forall n,
+          eval_term constants (extend d rho) (up_substitution sigma n) =
+          extend d (fun k => eval_term constants rho (sigma k)) n).
+        { intro n. apply eval_up_substitution. }
+        apply (proj1
+          (satisfies_ext constants B
+            (fun n =>
+              eval_term constants (extend d rho) (up_substitution sigma n))
+            (extend d (fun k => eval_term constants rho (sigma k)))
+            Hext)).
+        exact H.
+      + intros H d.
+        apply (proj2 (IHB (extend d rho) (up_substitution sigma))).
+        assert (Hext : forall n,
+          eval_term constants (extend d rho) (up_substitution sigma n) =
+          extend d (fun k => eval_term constants rho (sigma k)) n).
+        { intro n. apply eval_up_substitution. }
+        apply (proj2
+          (satisfies_ext constants B
+            (fun n =>
+              eval_term constants (extend d rho) (up_substitution sigma n))
+            (extend d (fun k => eval_term constants rho (sigma k)))
+            Hext)).
+        apply H.
+    - split.
+      + intros [d H].
+        exists d.
+        apply (proj1 (IHB (extend d rho) (up_substitution sigma))) in H.
+        assert (Hext : forall n,
+          eval_term constants (extend d rho) (up_substitution sigma n) =
+          extend d (fun k => eval_term constants rho (sigma k)) n).
+        { intro n. apply eval_up_substitution. }
+        apply (proj1
+          (satisfies_ext constants B
+            (fun n =>
+              eval_term constants (extend d rho) (up_substitution sigma n))
+            (extend d (fun k => eval_term constants rho (sigma k)))
+            Hext)).
+        exact H.
+      + intros [d H].
+        exists d.
+        apply (proj2 (IHB (extend d rho) (up_substitution sigma))).
+        assert (Hext : forall n,
+          eval_term constants (extend d rho) (up_substitution sigma n) =
+          extend d (fun k => eval_term constants rho (sigma k)) n).
+        { intro n. apply eval_up_substitution. }
+        apply (proj2
+          (satisfies_ext constants B
+            (fun n =>
+              eval_term constants (extend d rho) (up_substitution sigma n))
+            (extend d (fun k => eval_term constants rho (sigma k)))
+            Hext)).
+        exact H.
+  Qed.
+
+  Lemma subst_zero_semantics :
+    forall constants (rho : valuation) (t : term) n,
+      eval_term constants rho (subst_zero t n) =
+      extend (eval_term constants rho t) rho n.
+  Proof.
+    intros constants rho t [|n]; reflexivity.
   Qed.
 
   Theorem satisfies_instantiate :
-    forall (A : formula) (rho : valuation) (t : nat),
-      satisfies rho (instantiate t A) <->
-      satisfies (extend (rho t) rho) A.
+    forall constants (A : formula) (rho : valuation) (t : term),
+      satisfies constants rho (instantiate t A) <->
+      satisfies constants (extend (eval_term constants rho t) rho) A.
   Proof.
-    intros A rho t.
+    intros constants A rho t.
     unfold instantiate.
-    rewrite satisfies_rename.
+    rewrite satisfies_substitute.
     apply satisfies_ext.
     intro n.
     apply subst_zero_semantics.
   Qed.
 
-  Definition satisfies_context (rho : valuation) (Gamma : list formula) :=
-    forall A, In A Gamma -> satisfies rho A.
+  Definition satisfies_context
+    (constants : constant_valuation)
+    (rho : valuation) (Gamma : list formula) :=
+    forall A, In A Gamma -> satisfies constants rho A.
 
   Lemma satisfies_lifted_context :
-    forall (rho : valuation) (Gamma : list formula),
-      satisfies_context rho Gamma ->
-      forall d : D, satisfies_context (extend d rho) (map lift Gamma).
+    forall constants (rho : valuation) (Gamma : list formula),
+      satisfies_context constants rho Gamma ->
+      forall d : D,
+        satisfies_context constants (extend d rho) (map lift Gamma).
   Proof.
-    intros rho Gamma Hctx d A Hin.
+    intros constants rho Gamma Hctx d A Hin.
     apply in_map_iff in Hin.
     destruct Hin as [B [<- Hin]].
     unfold lift.
-    apply (proj2 (satisfies_rename B (extend d rho) S)).
+    apply (proj2 (satisfies_rename constants B (extend d rho) S)).
     assert (Hext : forall n, rho n = extend d rho (S n)).
     { intro n. reflexivity. }
     apply (proj2
-      (satisfies_ext B rho (fun n => extend d rho (S n)) Hext)).
+      (satisfies_ext constants B
+        rho (fun n => extend d rho (S n)) Hext)).
     apply Hctx. exact Hin.
   Qed.
 
   Lemma satisfies_unlift :
-    forall (rho : valuation) (d : D) (A : formula),
-      satisfies (extend d rho) (lift A) <-> satisfies rho A.
+    forall constants (rho : valuation) (d : D) (A : formula),
+      satisfies constants (extend d rho) (lift A) <->
+      satisfies constants rho A.
   Proof.
-    intros rho d A.
+    intros constants rho d A.
     unfold lift.
     rewrite satisfies_rename.
     apply satisfies_ext.
@@ -419,19 +634,20 @@ Qed.
 Section Soundness.
   Context {D : Type}.
   Variable member : D -> D -> Prop.
+  Variable constants : string -> D.
   Variable T : theory.
 
   Definition theory_valid : Prop :=
     forall (A : formula) (rho : nat -> D),
-      T A -> satisfies member rho A.
+      T A -> satisfies member constants rho A.
 
   Theorem natural_deduction_sound :
     theory_valid ->
     forall (Gamma : list formula) (A : formula),
       derives T Gamma A ->
       forall rho : nat -> D,
-        satisfies_context member rho Gamma ->
-        satisfies member rho A.
+        satisfies_context member constants rho Gamma ->
+        satisfies member constants rho A.
   Proof.
     intros Htheory Gamma A Hderiv.
     induction Hderiv; intros rho Hctx; simpl in *.
@@ -465,27 +681,28 @@ Section Soundness.
       apply IHHderiv.
       apply satisfies_lifted_context.
       exact Hctx.
-    - apply (proj2 (satisfies_instantiate member A rho t)).
+    - apply (proj2 (satisfies_instantiate member constants A rho t)).
       apply (IHHderiv rho Hctx).
-    - exists (rho t).
-      apply (proj1 (satisfies_instantiate member A rho t)).
+    - exists (eval_term constants rho t).
+      apply (proj1 (satisfies_instantiate member constants A rho t)).
       apply IHHderiv. exact Hctx.
     - destruct (IHHderiv1 rho Hctx) as [d HA].
       assert (Hlifted :
-        satisfies_context member (extend d rho) (map lift Gamma)).
+        satisfies_context member constants
+          (extend d rho) (map lift Gamma)).
       { apply satisfies_lifted_context. exact Hctx. }
       assert (Hbranch :
-        satisfies member (extend d rho) (lift B)).
+        satisfies member constants (extend d rho) (lift B)).
       { apply IHHderiv2.
         intros X [HX | HX].
         - subst X. exact HA.
         - apply Hlifted. exact HX. }
-      apply (proj1 (satisfies_unlift member rho d B)).
+      apply (proj1 (satisfies_unlift member constants rho d B)).
       exact Hbranch.
     - reflexivity.
-    - apply (proj2 (satisfies_instantiate member P rho t)).
+    - apply (proj2 (satisfies_instantiate member constants P rho t)).
       rewrite <- (IHHderiv1 rho Hctx).
-      apply (proj1 (satisfies_instantiate member P rho s)).
+      apply (proj1 (satisfies_instantiate member constants P rho s)).
       apply IHHderiv2.
       exact Hctx.
     - apply IHHderiv2.
@@ -497,7 +714,7 @@ Section Soundness.
   Corollary closed_theorem_sound :
     theory_valid ->
     forall A, derives T [] A ->
-    forall rho, satisfies member rho A.
+    forall rho, satisfies member constants rho A.
   Proof.
     intros HT A H rho.
     eapply natural_deduction_sound; eauto.

@@ -7,9 +7,9 @@
 
 [coq/FOL.v](coq/FOL.v) に、一階述語論理と自然演繹を形式化しています。
 
-- ZFCの項（de Bruijn indexによる変数）
+- ZFCの項（de Bruijn indexによる変数と文字列名のグローバル定数）
 - 等号、所属、論理結合子、全称・存在量化
-- 捕獲を起こさないrenamingと量化子の具体化
+- 定数を変化させず、捕獲を起こさないrenaming・代入・量化子の具体化
 - Tarski型のモデル意味論
 - 直観主義自然演繹（等号規則を含む）
 - 全称仮定の具体化と矛盾除去
@@ -51,11 +51,14 @@ exists rules,
 成功する有限列として実行できます。`map TacRule rules`を使うことで、同じ列を
 タクティクとして適用できることも`run_rule_list`で証明しています。
 
-[coq/NamedProofState.v](coq/NamedProofState.v) は、このde Bruijn核を文字列名で扱う
+[coq/NamedProofState.v](coq/NamedProofState.v) は、この論理核を文字列名で扱う
 抽出可能な層です。論理式の変数、仮定、量化子導入、`cut`などに必要な名前を
 Coq側で管理し、名前付きの`named_start`・`named_goals`・`named_step`・
 `named_rule_run`を提供します。各名前付き遷移について、成功後の状態が証明可能なら
 成功前も証明可能であることを、既存のde Bruijn核の健全性へ帰着して証明しています。
+`named_start_with_constants`へ定数名の一覧を渡すと、それらは局所変数とは別に
+`Const string`へ変換され、量化子の導入や代入では変化しません。同名の局所変数による
+シャドーイングは拒否されます。
 
 [coq/NamedCommands.v](coq/NamedCommands.v) は、固定ZFC公理、分出、置換の
 表面コマンドを名前付きプリミティブ規則列へ展開します。公理図式のインスタンス、
@@ -67,7 +70,8 @@ freshな内部仮定名、規則列はCoq側で生成され、各実行関数の
 プリミティブ規則列を計算可能な証明書として保持します。`certified_finalize`は
 初期命題から証明書を再実行し、成功時にはその命題について
 `derives zfc_theory [] ...`が成り立つことを`certified_finalize_sound`で
-証明しています。
+証明しています。`certified_start_with_constants`で開始したセッションでは、定数環境も
+証明書の再実行時に保存されます。
 
 [coq/ZFC.v](coq/ZFC.v) には、空集合、外延性、対、和、冪集合、正則性、
 無限、分出公理図式、置換公理図式、選択を明示的な論理式として収録しています。

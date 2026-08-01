@@ -77,6 +77,29 @@ let run () =
        | None -> failwith "A completed proof was not finalized by replay"
        end)
     valid_scripts;
+  let constant_state =
+    match
+      Zfcert_kernel.start_with_constants ["empty"]
+        (Zfcert_kernel.NEqual ("empty", "empty"))
+    with
+    | Ok state -> state
+    | Error _ -> failwith "The extracted kernel rejected a declared constant"
+  in
+  let constant_state =
+    match
+      Zfcert_kernel.rule_step ~axioms:[] Zfcert_kernel.NREqualRefl
+        constant_state
+    with
+    | Ok state -> state
+    | Error _ -> failwith "A constant was not stable under equality reflexivity"
+  in
+  if not (Zfcert_kernel.solved constant_state) then
+    failwith "The constant equality proof left an unresolved goal";
+  begin match Zfcert_kernel.finalize constant_state with
+  | Ok _ -> ()
+  | Error _ ->
+      failwith "The constant environment was not retained during replay"
+  end;
   let primitive_state =
     Proof_session.check_script
       (terminate_lines

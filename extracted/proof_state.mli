@@ -20,10 +20,18 @@ val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list
 
 val fold_left : ('a1 -> 'a2 -> 'a1) -> 'a2 list -> 'a1 -> 'a1
 
+type term =
+| Var of int
+| Const of string
+
+val term_eq_dec : term -> term -> bool
+
+val term_eqb : term -> term -> bool
+
 type formula =
 | Falsum
-| Equal of int * int
-| Member of int * int
+| Equal of term * term
+| Member of term * term
 | Conj of formula * formula
 | Disj of formula * formula
 | Impl of formula * formula
@@ -40,13 +48,23 @@ val iff : formula -> formula -> formula
 
 val up : (int -> int) -> int -> int
 
+val rename_term : (int -> int) -> term -> term
+
 val rename : (int -> int) -> formula -> formula
 
 val lift : formula -> formula
 
-val subst_zero : int -> int -> int
+val lift_term : term -> term
 
-val instantiate : int -> formula -> formula
+val up_substitution : (int -> term) -> int -> term
+
+val substitute_term : (int -> term) -> term -> term
+
+val substitute : (int -> term) -> formula -> formula
+
+val subst_zero : term -> int -> term
+
+val instantiate : term -> formula -> formula
 
 type goal = { assumptions : formula list; conclusion : formula }
 
@@ -69,11 +87,11 @@ type rule =
 | RDisjIntroR
 | RDisjElim of formula * formula
 | RAllIntro
-| RAllElim of formula * int
-| RExIntro of int
+| RAllElim of formula * term
+| RExIntro of term
 | RExElim of formula
 | REqualRefl
-| REqualElim of formula * int * int
+| REqualElim of formula * term * term
 | RCut of formula
 
 type tactic =
@@ -81,11 +99,11 @@ type tactic =
 | TacIntro
 | TacExact of int
 | TacApply of int
-| TacSpecialize of int * int
+| TacSpecialize of int * term
 | TacSplit
 | TacLeft
 | TacRight
-| TacUse of int
+| TacUse of term
 | TacRefl
 | TacContradiction
 | TacCases of int
@@ -191,52 +209,72 @@ val remove_name : string -> string list -> string list
 
 val merge_names : string list -> string list -> string list
 
+val filter_environment : string list -> string list -> string list
+
+val shared_name : string list -> string list -> string option
+
+val add_environment_name : string list -> string list -> string -> string list
+
 val named_free_variables : named_formula -> string list
 
 val named_binder_names : named_formula -> string list
 
-val extend_environment : string list -> named_formula -> string list
+val extend_environment :
+  string list -> string list -> named_formula -> string list
 
-val extend_environments : string list -> named_formula list -> string list
+val extend_environments :
+  string list -> string list -> named_formula list -> string list
 
 val variable_index : string list -> string list -> string -> int named_result
 
-val elaborate :
-  string list -> string list -> named_formula -> formula named_result
+val elaborate_term :
+  string list -> string list -> string list -> string -> term named_result
 
-val elaborate_closed : named_formula -> formula named_result
+val elaborate :
+  string list -> string list -> string list -> named_formula -> formula
+  named_result
+
+val elaborate_closed : string list -> named_formula -> formula named_result
 
 val nth_name : string list -> string list -> int -> string named_result
+
+val reify_term : string list -> string list -> term -> string named_result
 
 val fresh_string_with_fuel : int -> string -> string list -> string
 
 val fresh_string : string -> string list -> string
 
 val choose_binder :
-  string list -> string list -> string list -> string * string list
+  string list -> string list -> string list -> string list -> string * string
+  list
 
 val reify_with_names :
-  string list -> string list -> string list -> formula ->
+  string list -> string list -> string list -> string list -> formula ->
   (named_formula * string list) named_result
 
 val reify :
-  string list -> string list -> formula -> named_formula named_result
+  string list -> string list -> string list -> formula -> named_formula
+  named_result
 
 type goal_metadata = { metadata_hypothesis_names : string list;
                        metadata_assumption_binders : string list list;
                        metadata_conclusion_binders : string list;
-                       metadata_environment : string list }
+                       metadata_environment : string list;
+                       metadata_constants : string list }
 
 type named_state = { named_kernel_state : proof_state;
                      named_goal_metadata : goal_metadata list }
 
-val initial_metadata : named_formula -> goal_metadata
+val initial_metadata : string list -> named_formula -> goal_metadata
+
+val named_start_with_constants :
+  string list -> named_formula -> named_state named_result
 
 val named_start : named_formula -> named_state named_result
 
 val reify_assumptions :
-  string list -> string list -> string list list -> formula list ->
-  named_hypothesis list named_result
+  string list -> string list -> string list -> string list list -> formula
+  list -> named_hypothesis list named_result
 
 val reify_goal : goal_metadata -> goal -> named_goal named_result
 
@@ -264,15 +302,15 @@ type named_axiom =
 
 val fixed_axiom_formula : named_fixed_axiom -> formula
 
-val filter_environment : string list -> string list -> string list
-
 val elaborate_schema_predicate :
-  string list -> string list -> named_formula -> formula named_result
+  string list -> string list -> string list -> named_formula -> formula
+  named_result
 
-val compile_axiom : string list -> named_axiom -> formula named_result
+val compile_axiom :
+  string list -> string list -> named_axiom -> formula named_result
 
 val compile_axioms :
-  string list -> named_axiom list -> formula list named_result
+  string list -> string list -> named_axiom list -> formula list named_result
 
 val formula_in : formula -> formula list -> bool
 
@@ -317,9 +355,9 @@ val find_named_hypothesis :
   string -> named_hypothesis list -> named_formula option
 
 val elaborate_in_environment :
-  string list -> named_formula -> formula named_result
+  string list -> string list -> named_formula -> formula named_result
 
-val term_index : string list -> string -> int named_result
+val term_index : string list -> string list -> string -> term named_result
 
 val plan_named_rule :
   goal_metadata -> named_goal -> named_rule -> rule_plan named_result
@@ -424,8 +462,12 @@ val run_certificate_step :
 val replay_steps : certificate -> named_state -> named_state named_result
 
 type certified_state = { certified_initial_formula : named_formula;
+                         certified_constants : string list;
                          certified_current_state : named_state;
                          certified_reverse_certificate : certificate }
+
+val certified_start_with_constants :
+  string list -> named_formula -> certified_state named_result
 
 val certified_start : named_formula -> certified_state named_result
 
@@ -440,6 +482,9 @@ val certified_step :
 
 val certified_run :
   certificate -> certified_state -> certified_state named_result
+
+val replay_certificate_with_constants :
+  string list -> named_formula -> certificate -> named_state named_result
 
 val replay_certificate :
   named_formula -> certificate -> named_state named_result

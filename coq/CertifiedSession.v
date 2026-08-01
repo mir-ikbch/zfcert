@@ -39,14 +39,20 @@ Fixpoint replay_steps
 
 Record certified_state : Type := CertifiedState {
   certified_initial_formula : named_formula;
+  certified_constants : list string;
   certified_current_state : named_state;
   certified_reverse_certificate : certificate
 }.
 
+Definition certified_start_with_constants
+  (constants : list string) (source : named_formula)
+  : named_result certified_state :=
+  named_bind (named_start_with_constants constants source) (fun state =>
+  NOk (CertifiedState source constants state [])).
+
 Definition certified_start
   (source : named_formula) : named_result certified_state :=
-  named_bind (named_start source) (fun state =>
-  NOk (CertifiedState source state [])).
+  certified_start_with_constants [] source.
 
 Definition certified_goals
   (state : certified_state) : named_result (list named_goal) :=
@@ -66,6 +72,7 @@ Definition certified_step
     (fun next =>
   NOk (CertifiedState
     (certified_initial_formula state)
+    (certified_constants state)
     next
     (step :: certified_reverse_certificate state))).
 
@@ -79,11 +86,16 @@ Fixpoint certified_run
         (fun next => certified_run rest next)
   end.
 
+Definition replay_certificate_with_constants
+  (constants : list string) (source : named_formula)
+  (steps : certificate) : named_result named_state :=
+  named_bind (named_start_with_constants constants source) (fun state =>
+  replay_steps steps state).
+
 Definition replay_certificate
   (source : named_formula)
   (steps : certificate) : named_result named_state :=
-  named_bind (named_start source) (fun state =>
-  replay_steps steps state).
+  replay_certificate_with_constants [] source steps.
 
 (** [certified_finalize] deliberately ignores the cached current proof state.
     It starts again from the theorem statement and accepts only when replaying
@@ -92,7 +104,9 @@ Definition certified_finalize
   (state : certified_state) : named_result certificate :=
   let steps := certified_certificate state in
   named_bind
-    (replay_certificate (certified_initial_formula state) steps)
+    (replay_certificate_with_constants
+      (certified_constants state)
+      (certified_initial_formula state) steps)
     (fun replayed =>
   if named_solved replayed
   then NOk steps
@@ -273,10 +287,31 @@ Proof.
   - discriminate.
 Qed.
 
-Definition named_formula_provable (source : named_formula) : Prop :=
+Definition named_formula_provable_with_constants
+  (constants : list string) (source : named_formula) : Prop :=
   exists core,
-    elaborate_closed source = NOk core /\
+    elaborate_closed constants source = NOk core /\
     derives zfc_theory [] core.
+
+Definition named_formula_provable (source : named_formula) : Prop :=
+  named_formula_provable_with_constants [] source.
+
+Lemma named_start_with_constants_provable :
+  forall constants source state,
+    named_start_with_constants constants source = NOk state ->
+    named_state_provable zfc_theory state ->
+    named_formula_provable_with_constants constants source.
+Proof.
+  intros constants source state Hstart Hstate.
+  unfold named_start_with_constants in Hstart.
+  destruct (elaborate_closed constants source)
+    as [core | error] eqn:Helaborate; try discriminate.
+  inversion Hstart; subst.
+  exists core. split.
+  - exact Helaborate.
+  - unfold named_state_provable, state_provable in Hstate.
+    inversion Hstate; subst. exact H1.
+Qed.
 
 Lemma named_start_provable :
   forall source state,
@@ -285,14 +320,25 @@ Lemma named_start_provable :
     named_formula_provable source.
 Proof.
   intros source state Hstart Hstate.
-  unfold named_start in Hstart.
-  destruct (elaborate_closed source)
-    as [core | error] eqn:Helaborate; try discriminate.
-  inversion Hstart; subst.
-  exists core. split.
-  - exact Helaborate.
-  - unfold named_state_provable, state_provable in Hstate.
-    inversion Hstate; subst. exact H1.
+  unfold named_start, named_formula_provable in *.
+  eapply named_start_with_constants_provable; eauto.
+Qed.
+
+Theorem replay_certificate_with_constants_sound :
+  forall constants source steps final,
+    replay_certificate_with_constants constants source steps = NOk final ->
+    named_solved final = true ->
+    named_formula_provable_with_constants constants source.
+Proof.
+  intros constants source steps final Hreplay Hsolved.
+  unfold replay_certificate_with_constants in Hreplay.
+  destruct (named_start_with_constants constants source)
+    as [initial | error] eqn:Hstart; try discriminate.
+  eapply named_start_with_constants_provable.
+  - exact Hstart.
+  - eapply replay_steps_sound.
+    + exact Hreplay.
+    + apply named_solved_provable. exact Hsolved.
 Qed.
 
 Theorem replay_certificate_sound :
@@ -302,33 +348,31 @@ Theorem replay_certificate_sound :
     named_formula_provable source.
 Proof.
   intros source steps final Hreplay Hsolved.
-  unfold replay_certificate in Hreplay.
-  destruct (named_start source)
-    as [initial | error] eqn:Hstart; try discriminate.
-  eapply named_start_provable.
-  - exact Hstart.
-  - eapply replay_steps_sound.
-    + exact Hreplay.
-    + apply named_solved_provable. exact Hsolved.
+  unfold replay_certificate, named_formula_provable in *.
+  eapply replay_certificate_with_constants_sound; eauto.
 Qed.
 
 Theorem certified_finalize_sound :
   forall state steps,
     certified_finalize state = NOk steps ->
-    named_formula_provable (certified_initial_formula state).
+    named_formula_provable_with_constants
+      (certified_constants state)
+      (certified_initial_formula state).
 Proof.
   intros state steps Hfinalize.
   unfold certified_finalize in Hfinalize.
   destruct
-    (replay_certificate
+    (replay_certificate_with_constants
+      (certified_constants state)
       (certified_initial_formula state)
       (certified_certificate state))
     as [replayed | error] eqn:Hreplay.
   - destruct replayed as [kernel metadata].
     destruct kernel as [|goal rest].
     + cbn in Hfinalize. inversion Hfinalize; subst.
-      eapply replay_certificate_sound
-        with (steps := certified_certificate state)
+      eapply replay_certificate_with_constants_sound
+        with (constants := certified_constants state)
+             (steps := certified_certificate state)
              (final := NamedState [] metadata).
       * exact Hreplay.
       * reflexivity.

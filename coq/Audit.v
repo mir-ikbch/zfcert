@@ -5,6 +5,7 @@ From ZFCert Require Import
   CertifiedSession.
 
 Print Assumptions natural_deduction_sound.
+Print Assumptions satisfies_substitute.
 Print Assumptions closed_theorem_sound.
 Print Assumptions relative_consistency.
 Print Assumptions derives_empty_set.
@@ -38,4 +39,5 @@ Print Assumptions replay_steps_sound.
 Print Assumptions certified_step_sound.
 Print Assumptions certified_run_sound.
 Print Assumptions replay_certificate_sound.
+Print Assumptions replay_certificate_with_constants_sound.
 Print Assumptions certified_finalize_sound.

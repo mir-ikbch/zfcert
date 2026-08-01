@@ -37,11 +37,11 @@ Inductive rule : Type :=
 | RDisjIntroR
 | RDisjElim (left right : formula)
 | RAllIntro
-| RAllElim (body : formula) (term : nat)
-| RExIntro (term : nat)
+| RAllElim (body : formula) (term : term)
+| RExIntro (term : term)
 | RExElim (body : formula)
 | REqualRefl
-| REqualElim (predicate : formula) (left right : nat)
+| REqualElim (predicate : formula) (left right : term)
 | RCut (lemma : formula).
 
 Inductive tactic : Type :=
@@ -49,11 +49,11 @@ Inductive tactic : Type :=
 | TacIntro
 | TacExact (hypothesis : nat)
 | TacApply (hypothesis : nat)
-| TacSpecialize (hypothesis term : nat)
+| TacSpecialize (hypothesis : nat) (term : term)
 | TacSplit
 | TacLeft
 | TacRight
-| TacUse (term : nat)
+| TacUse (term : term)
 | TacRefl
 | TacContradiction
 | TacCases (hypothesis : nat).
@@ -141,7 +141,7 @@ Definition rule_step_focus
   | REqualRefl =>
       match C with
       | Equal s t =>
-          if Nat.eqb s t then Success []
+          if term_eqb s t then Success []
           else Failure FormulaMismatch
       | _ => Failure WrongGoalShape
       end
@@ -234,7 +234,7 @@ Definition step_focus
   | TacRefl =>
       match C with
       | Equal s t =>
-          if Nat.eqb s t then Success []
+          if term_eqb s t then Success []
           else Failure FormulaMismatch
       | _ => Failure WrongGoalShape
       end
@@ -418,9 +418,9 @@ Section Correctness.
       inversion Hempty.
       eapply D_ex_elim; eauto.
     - destruct C; try discriminate Hstep.
-      destruct (Nat.eqb n n0) eqn:Heq; try discriminate Hstep.
+      destruct (term_eqb t t0) eqn:Heq; try discriminate Hstep.
       inversion Hstep; subst.
-      apply Nat.eqb_eq in Heq. subst n0.
+      apply term_eqb_true_iff in Heq. subst t0.
       apply D_equal_refl.
     - destruct (formula_eqb (instantiate right predicate) C) eqn:Heq;
         try discriminate Hstep.
@@ -492,9 +492,9 @@ Section Correctness.
       inversion Hstep; subst. inversion Hgenerated; subst.
       apply D_ex_intro with (t := term). assumption.
     - destruct C; try discriminate Hstep.
-      destruct (Nat.eqb n n0) eqn:Heq; try discriminate Hstep.
+      destruct (term_eqb t t0) eqn:Heq; try discriminate Hstep.
       inversion Hstep; subst.
-      apply Nat.eqb_eq in Heq. subst n0.
+      apply term_eqb_true_iff in Heq. subst t0.
       apply D_equal_refl.
     - destruct (contradictory Gamma) eqn:Hcontra; try discriminate Hstep.
       inversion Hstep; subst.

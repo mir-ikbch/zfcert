@@ -59,10 +59,30 @@ let rec fold_left f l a0 =
   | [] -> a0
   | b :: t -> fold_left f t (f a0 b)
 
+type term =
+| Var of int
+| Const of string
+
+(** val term_eq_dec : term -> term -> bool **)
+
+let term_eq_dec s t =
+  match s with
+  | Var n -> (match t with
+              | Var n0 -> (=) n n0
+              | Const _ -> false)
+  | Const s0 -> (match t with
+                 | Var _ -> false
+                 | Const s1 -> (=) s0 s1)
+
+(** val term_eqb : term -> term -> bool **)
+
+let term_eqb s t =
+  if term_eq_dec s t then true else false
+
 type formula =
 | Falsum
-| Equal of int * int
-| Member of int * int
+| Equal of term * term
+| Member of term * term
 | Conj of formula * formula
 | Disj of formula * formula
 | Impl of formula * formula
@@ -76,13 +96,14 @@ let rec formula_eq_dec f x =
   | Falsum -> (match x with
                | Falsum -> true
                | _ -> false)
-  | Equal (n, n0) ->
+  | Equal (t, t0) ->
     (match x with
-     | Equal (n1, n2) -> if (=) n n1 then (=) n0 n2 else false
+     | Equal (t1, t2) -> if term_eq_dec t t1 then term_eq_dec t0 t2 else false
      | _ -> false)
-  | Member (n, n0) ->
+  | Member (t, t0) ->
     (match x with
-     | Member (n1, n2) -> if (=) n n1 then (=) n0 n2 else false
+     | Member (t1, t2) ->
+       if term_eq_dec t t1 then term_eq_dec t0 t2 else false
      | _ -> false)
   | Conj (f0, f1) ->
     (match x with
@@ -129,12 +150,18 @@ let up xi n =
     (fun k -> Stdlib.Int.succ (xi k))
     n
 
+(** val rename_term : (int -> int) -> term -> term **)
+
+let rename_term xi = function
+| Var n -> Var (xi n)
+| Const name -> Const name
+
 (** val rename : (int -> int) -> formula -> formula **)
 
 let rec rename xi = function
 | Falsum -> Falsum
-| Equal (x, y) -> Equal ((xi x), (xi y))
-| Member (x, y) -> Member ((xi x), (xi y))
+| Equal (x, y) -> Equal ((rename_term xi x), (rename_term xi y))
+| Member (x, y) -> Member ((rename_term xi x), (rename_term xi y))
 | Conj (b, c) -> Conj ((rename xi b), (rename xi c))
 | Disj (b, c) -> Disj ((rename xi b), (rename xi c))
 | Impl (b, c) -> Impl ((rename xi b), (rename xi c))
@@ -146,18 +173,50 @@ let rec rename xi = function
 let lift a =
   rename (fun x -> Stdlib.Int.succ x) a
 
-(** val subst_zero : int -> int -> int **)
+(** val lift_term : term -> term **)
+
+let lift_term t =
+  rename_term (fun x -> Stdlib.Int.succ x) t
+
+(** val up_substitution : (int -> term) -> int -> term **)
+
+let up_substitution sigma n =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> Var 0)
+    (fun k -> lift_term (sigma k))
+    n
+
+(** val substitute_term : (int -> term) -> term -> term **)
+
+let substitute_term sigma = function
+| Var n -> sigma n
+| Const name -> Const name
+
+(** val substitute : (int -> term) -> formula -> formula **)
+
+let rec substitute sigma = function
+| Falsum -> Falsum
+| Equal (x, y) -> Equal ((substitute_term sigma x), (substitute_term sigma y))
+| Member (x, y) ->
+  Member ((substitute_term sigma x), (substitute_term sigma y))
+| Conj (b, c) -> Conj ((substitute sigma b), (substitute sigma c))
+| Disj (b, c) -> Disj ((substitute sigma b), (substitute sigma c))
+| Impl (b, c) -> Impl ((substitute sigma b), (substitute sigma c))
+| All b -> All (substitute (up_substitution sigma) b)
+| Ex b -> Ex (substitute (up_substitution sigma) b)
+
+(** val subst_zero : term -> int -> term **)
 
 let subst_zero t n =
   (fun fO fS n -> if n=0 then fO () else fS (n-1))
     (fun _ -> t)
-    (fun k -> k)
+    (fun k -> Var k)
     n
 
-(** val instantiate : int -> formula -> formula **)
+(** val instantiate : term -> formula -> formula **)
 
 let instantiate t a =
-  rename (subst_zero t) a
+  substitute (subst_zero t) a
 
 type goal = { assumptions : formula list; conclusion : formula }
 
@@ -186,11 +245,11 @@ type rule =
 | RDisjIntroR
 | RDisjElim of formula * formula
 | RAllIntro
-| RAllElim of formula * int
-| RExIntro of int
+| RAllElim of formula * term
+| RExIntro of term
 | RExElim of formula
 | REqualRefl
-| REqualElim of formula * int * int
+| REqualElim of formula * term * term
 | RCut of formula
 
 type tactic =
@@ -198,11 +257,11 @@ type tactic =
 | TacIntro
 | TacExact of int
 | TacApply of int
-| TacSpecialize of int * int
+| TacSpecialize of int * term
 | TacSplit
 | TacLeft
 | TacRight
-| TacUse of int
+| TacUse of term
 | TacRefl
 | TacContradiction
 | TacCases of int
@@ -284,7 +343,7 @@ let rule_step_focus is_axiom primitive g =
    | REqualRefl ->
      (match c with
       | Equal (s, t) ->
-        if (=) s t then Success [] else Failure FormulaMismatch
+        if term_eqb s t then Success [] else Failure FormulaMismatch
       | _ -> Failure WrongGoalShape)
    | REqualElim (p, s, t) ->
      if formula_eqb (instantiate t p) c
@@ -377,7 +436,7 @@ let step_focus is_axiom command g =
    | TacRefl ->
      (match c with
       | Equal (s, t) ->
-        if (=) s t then Success [] else Failure FormulaMismatch
+        if term_eqb s t then Success [] else Failure FormulaMismatch
       | _ -> Failure WrongGoalShape)
    | TacContradiction ->
      if contradictory gamma then Success [] else Failure FormulaMismatch
@@ -439,56 +498,59 @@ let rec rule_run is_axiom rules state =
 (** val empty_set_axiom : formula **)
 
 let empty_set_axiom =
-  Ex (All (neg (Member (0, (Stdlib.Int.succ 0)))))
+  Ex (All (neg (Member ((Var 0), (Var (Stdlib.Int.succ 0))))))
 
 (** val extensionality_axiom : formula **)
 
 let extensionality_axiom =
   All (All (Impl ((All
-    (iff (Member (0, (Stdlib.Int.succ (Stdlib.Int.succ 0)))) (Member (0,
-      (Stdlib.Int.succ 0))))), (Equal ((Stdlib.Int.succ 0), 0)))))
+    (iff (Member ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ 0)))))
+      (Member ((Var 0), (Var (Stdlib.Int.succ 0)))))), (Equal ((Var
+    (Stdlib.Int.succ 0)), (Var 0))))))
 
 (** val pairing_axiom : formula **)
 
 let pairing_axiom =
   All (All (Ex (All
-    (iff (Member (0, (Stdlib.Int.succ 0))) (Disj ((Equal (0, (Stdlib.Int.succ
-      (Stdlib.Int.succ (Stdlib.Int.succ 0))))), (Equal (0, (Stdlib.Int.succ
-      (Stdlib.Int.succ 0))))))))))
+    (iff (Member ((Var 0), (Var (Stdlib.Int.succ 0)))) (Disj ((Equal ((Var
+      0), (Var (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ 0)))))),
+      (Equal ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ 0)))))))))))
 
 (** val union_axiom : formula **)
 
 let union_axiom =
   All (Ex (All
-    (iff (Member (0, (Stdlib.Int.succ 0))) (Ex (Conj ((Member
-      ((Stdlib.Int.succ 0), 0)), (Member (0, (Stdlib.Int.succ
-      (Stdlib.Int.succ (Stdlib.Int.succ 0)))))))))))
+    (iff (Member ((Var 0), (Var (Stdlib.Int.succ 0)))) (Ex (Conj ((Member
+      ((Var (Stdlib.Int.succ 0)), (Var 0))), (Member ((Var 0), (Var
+      (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ 0))))))))))))
 
 (** val power_set_axiom : formula **)
 
 let power_set_axiom =
   All (Ex (All
-    (iff (Member (0, (Stdlib.Int.succ 0))) (All (Impl ((Member (0,
-      (Stdlib.Int.succ 0))), (Member (0, (Stdlib.Int.succ (Stdlib.Int.succ
-      (Stdlib.Int.succ 0)))))))))))
+    (iff (Member ((Var 0), (Var (Stdlib.Int.succ 0)))) (All (Impl ((Member
+      ((Var 0), (Var (Stdlib.Int.succ 0)))), (Member ((Var 0), (Var
+      (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ 0))))))))))))
 
 (** val foundation_axiom : formula **)
 
 let foundation_axiom =
-  All (Impl ((Ex (Member (0, (Stdlib.Int.succ 0)))), (Ex (Conj ((Member (0,
-    (Stdlib.Int.succ 0))), (All (Impl ((Member (0, (Stdlib.Int.succ 0))),
-    (neg (Member (0, (Stdlib.Int.succ (Stdlib.Int.succ 0)))))))))))))
+  All (Impl ((Ex (Member ((Var 0), (Var (Stdlib.Int.succ 0))))), (Ex (Conj
+    ((Member ((Var 0), (Var (Stdlib.Int.succ 0)))), (All (Impl ((Member ((Var
+    0), (Var (Stdlib.Int.succ 0)))),
+    (neg (Member ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ 0))))))))))))))
 
 (** val infinity_axiom : formula **)
 
 let infinity_axiom =
-  Ex (Conj ((Ex (Conj ((All (neg (Member (0, (Stdlib.Int.succ 0))))), (Member
-    (0, (Stdlib.Int.succ 0)))))), (All (Impl ((Member (0, (Stdlib.Int.succ
-    0))), (Ex (Conj ((Member (0, (Stdlib.Int.succ (Stdlib.Int.succ 0)))),
-    (All
-    (iff (Member (0, (Stdlib.Int.succ 0))) (Disj ((Member (0,
-      (Stdlib.Int.succ (Stdlib.Int.succ 0)))), (Equal (0, (Stdlib.Int.succ
-      (Stdlib.Int.succ 0))))))))))))))))
+  Ex (Conj ((Ex (Conj ((All
+    (neg (Member ((Var 0), (Var (Stdlib.Int.succ 0)))))), (Member ((Var 0),
+    (Var (Stdlib.Int.succ 0))))))), (All (Impl ((Member ((Var 0), (Var
+    (Stdlib.Int.succ 0)))), (Ex (Conj ((Member ((Var 0), (Var
+    (Stdlib.Int.succ (Stdlib.Int.succ 0))))), (All
+    (iff (Member ((Var 0), (Var (Stdlib.Int.succ 0)))) (Disj ((Member ((Var
+      0), (Var (Stdlib.Int.succ (Stdlib.Int.succ 0))))), (Equal ((Var 0),
+      (Var (Stdlib.Int.succ (Stdlib.Int.succ 0)))))))))))))))))
 
 (** val insert_subset : int -> int **)
 
@@ -502,8 +564,9 @@ let insert_subset n =
 
 let separation_instance p =
   All (Ex (All
-    (iff (Member (0, (Stdlib.Int.succ 0))) (Conj ((Member (0,
-      (Stdlib.Int.succ (Stdlib.Int.succ 0)))), (rename insert_subset p))))))
+    (iff (Member ((Var 0), (Var (Stdlib.Int.succ 0)))) (Conj ((Member ((Var
+      0), (Var (Stdlib.Int.succ (Stdlib.Int.succ 0))))),
+      (rename insert_subset p))))))
 
 (** val replacement_alternate : int -> int **)
 
@@ -534,21 +597,22 @@ let replacement_image n =
 
 let replacement_instance p =
   Impl ((All (Ex (Conj (p, (All (Impl ((rename replacement_alternate p),
-    (Equal (0, (Stdlib.Int.succ 0)))))))))), (All (Ex (All
-    (iff (Member (0, (Stdlib.Int.succ 0))) (Ex (Conj ((Member (0,
-      (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ 0))))),
-      (rename replacement_image p)))))))))
+    (Equal ((Var 0), (Var (Stdlib.Int.succ 0))))))))))), (All (Ex (All
+    (iff (Member ((Var 0), (Var (Stdlib.Int.succ 0)))) (Ex (Conj ((Member
+      ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ
+      0)))))), (rename replacement_image p)))))))))
 
 (** val choice_axiom : formula **)
 
 let choice_axiom =
-  All (Impl ((All (Impl ((Member (0, (Stdlib.Int.succ 0))), (Ex (Member (0,
-    (Stdlib.Int.succ 0))))))), (Ex (All (Impl ((Member (0, (Stdlib.Int.succ
-    (Stdlib.Int.succ 0)))), (Ex (Conj ((Conj ((Member (0, (Stdlib.Int.succ
-    0))), (Member (0, (Stdlib.Int.succ (Stdlib.Int.succ 0)))))), (All (Impl
-    ((Conj ((Member (0, (Stdlib.Int.succ (Stdlib.Int.succ 0)))), (Member (0,
-    (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ 0))))))), (Equal (0,
-    (Stdlib.Int.succ 0)))))))))))))))
+  All (Impl ((All (Impl ((Member ((Var 0), (Var (Stdlib.Int.succ 0)))), (Ex
+    (Member ((Var 0), (Var (Stdlib.Int.succ 0)))))))), (Ex (All (Impl
+    ((Member ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ 0))))), (Ex
+    (Conj ((Conj ((Member ((Var 0), (Var (Stdlib.Int.succ 0)))), (Member
+    ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ 0))))))), (All (Impl
+    ((Conj ((Member ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ 0))))),
+    (Member ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ
+    0)))))))), (Equal ((Var 0), (Var (Stdlib.Int.succ 0))))))))))))))))
 
 type named_formula =
 | NFalsum
@@ -630,6 +694,29 @@ let rec merge_names left = function
 | [] -> left
 | name :: rest -> merge_names (add_name left name) rest
 
+(** val filter_environment : string list -> string list -> string list **)
+
+let rec filter_environment excluded = function
+| [] -> []
+| name :: rest ->
+  if string_mem name excluded
+  then filter_environment excluded rest
+  else name :: (filter_environment excluded rest)
+
+(** val shared_name : string list -> string list -> string option **)
+
+let rec shared_name left right =
+  match left with
+  | [] -> None
+  | name :: rest ->
+    if string_mem name right then Some name else shared_name rest right
+
+(** val add_environment_name :
+    string list -> string list -> string -> string list **)
+
+let add_environment_name constants environment name =
+  if string_mem name constants then environment else add_name environment name
+
 (** val named_free_variables : named_formula -> string list **)
 
 let rec named_free_variables = function
@@ -664,16 +751,18 @@ let rec named_binder_names = function
 | NEx (binder, body) -> binder :: (named_binder_names body)
 | _ -> []
 
-(** val extend_environment : string list -> named_formula -> string list **)
+(** val extend_environment :
+    string list -> string list -> named_formula -> string list **)
 
-let extend_environment environment source =
-  fold_left add_name (named_free_variables source) environment
+let extend_environment constants environment source =
+  fold_left (add_environment_name constants) (named_free_variables source)
+    environment
 
 (** val extend_environments :
-    string list -> named_formula list -> string list **)
+    string list -> string list -> named_formula list -> string list **)
 
-let extend_environments environment sources =
-  fold_left extend_environment sources environment
+let extend_environments constants environment sources =
+  fold_left (extend_environment constants) sources environment
 
 (** val variable_index :
     string list -> string list -> string -> int named_result **)
@@ -686,49 +775,73 @@ let variable_index bound environment name =
      | Some index -> NOk (add (length bound) index)
      | None -> NError (NUnknownVariable name))
 
-(** val elaborate :
-    string list -> string list -> named_formula -> formula named_result **)
+(** val elaborate_term :
+    string list -> string list -> string list -> string -> term named_result **)
 
-let rec elaborate bound environment = function
+let elaborate_term constants bound environment name =
+  match variable_index bound environment name with
+  | NOk index -> NOk (Var index)
+  | NError _ ->
+    if string_mem name constants
+    then NOk (Const name)
+    else NError (NUnknownVariable name)
+
+(** val elaborate :
+    string list -> string list -> string list -> named_formula -> formula
+    named_result **)
+
+let rec elaborate constants bound environment = function
 | NFalsum -> NOk Falsum
 | NEqual (first, second) ->
-  named_bind (variable_index bound environment first) (fun first_index ->
-    named_bind (variable_index bound environment second) (fun second_index ->
-      NOk (Equal (first_index, second_index))))
+  named_bind (elaborate_term constants bound environment first)
+    (fun first_term ->
+    named_bind (elaborate_term constants bound environment second)
+      (fun second_term -> NOk (Equal (first_term, second_term))))
 | NMember (first, second) ->
-  named_bind (variable_index bound environment first) (fun first_index ->
-    named_bind (variable_index bound environment second) (fun second_index ->
-      NOk (Member (first_index, second_index))))
+  named_bind (elaborate_term constants bound environment first)
+    (fun first_term ->
+    named_bind (elaborate_term constants bound environment second)
+      (fun second_term -> NOk (Member (first_term, second_term))))
 | NConj (first, second) ->
-  named_bind (elaborate bound environment first) (fun first_formula ->
-    named_bind (elaborate bound environment second) (fun second_formula ->
-      NOk (Conj (first_formula, second_formula))))
+  named_bind (elaborate constants bound environment first)
+    (fun first_formula ->
+    named_bind (elaborate constants bound environment second)
+      (fun second_formula -> NOk (Conj (first_formula, second_formula))))
 | NDisj (first, second) ->
-  named_bind (elaborate bound environment first) (fun first_formula ->
-    named_bind (elaborate bound environment second) (fun second_formula ->
-      NOk (Disj (first_formula, second_formula))))
+  named_bind (elaborate constants bound environment first)
+    (fun first_formula ->
+    named_bind (elaborate constants bound environment second)
+      (fun second_formula -> NOk (Disj (first_formula, second_formula))))
 | NImpl (first, second) ->
-  named_bind (elaborate bound environment first) (fun first_formula ->
-    named_bind (elaborate bound environment second) (fun second_formula ->
-      NOk (Impl (first_formula, second_formula))))
+  named_bind (elaborate constants bound environment first)
+    (fun first_formula ->
+    named_bind (elaborate constants bound environment second)
+      (fun second_formula -> NOk (Impl (first_formula, second_formula))))
 | NNeg body ->
-  named_bind (elaborate bound environment body) (fun body_formula -> NOk
-    (neg body_formula))
+  named_bind (elaborate constants bound environment body)
+    (fun body_formula -> NOk (neg body_formula))
 | NIff (first, second) ->
-  named_bind (elaborate bound environment first) (fun first_formula ->
-    named_bind (elaborate bound environment second) (fun second_formula ->
-      NOk (iff first_formula second_formula)))
+  named_bind (elaborate constants bound environment first)
+    (fun first_formula ->
+    named_bind (elaborate constants bound environment second)
+      (fun second_formula -> NOk (iff first_formula second_formula)))
 | NAll (binder, body) ->
-  named_bind (elaborate (binder :: bound) environment body)
-    (fun body_formula -> NOk (All body_formula))
+  if string_mem binder constants
+  then NError (NVariableAlreadyUsed binder)
+  else named_bind (elaborate constants (binder :: bound) environment body)
+         (fun body_formula -> NOk (All body_formula))
 | NEx (binder, body) ->
-  named_bind (elaborate (binder :: bound) environment body)
-    (fun body_formula -> NOk (Ex body_formula))
+  if string_mem binder constants
+  then NError (NVariableAlreadyUsed binder)
+  else named_bind (elaborate constants (binder :: bound) environment body)
+         (fun body_formula -> NOk (Ex body_formula))
 
-(** val elaborate_closed : named_formula -> formula named_result **)
+(** val elaborate_closed :
+    string list -> named_formula -> formula named_result **)
 
-let elaborate_closed source =
-  elaborate [] (named_free_variables source) source
+let elaborate_closed constants source =
+  elaborate constants []
+    (filter_environment constants (named_free_variables source)) source
 
 (** val nth_name :
     string list -> string list -> int -> string named_result **)
@@ -741,6 +854,13 @@ let nth_name bound environment index =
   else (match nth_error environment (sub index (length bound)) with
         | Some name -> NOk name
         | None -> NError NMetadataMismatch)
+
+(** val reify_term :
+    string list -> string list -> term -> string named_result **)
+
+let reify_term bound environment = function
+| Var index -> nth_name bound environment index
+| Const name -> NOk name
 
 (** val fresh_string_with_fuel : int -> string -> string list -> string **)
 
@@ -759,10 +879,11 @@ let fresh_string base used =
   fresh_string_with_fuel (Stdlib.Int.succ (length used)) base used
 
 (** val choose_binder :
-    string list -> string list -> string list -> string * string list **)
+    string list -> string list -> string list -> string list ->
+    string * string list **)
 
-let choose_binder bound environment preferred =
-  let used = app bound environment in
+let choose_binder constants bound environment preferred =
+  let used = app constants (app bound environment) in
   (match preferred with
    | [] -> ((fresh_string "x" used), [])
    | candidate :: rest ->
@@ -771,100 +892,120 @@ let choose_binder bound environment preferred =
      else (candidate, rest))
 
 (** val reify_with_names :
-    string list -> string list -> string list -> formula ->
+    string list -> string list -> string list -> string list -> formula ->
     (named_formula * string list) named_result **)
 
-let rec reify_with_names bound environment preferred = function
+let rec reify_with_names constants bound environment preferred = function
 | Falsum -> NOk (NFalsum, preferred)
 | Equal (first, second) ->
-  named_bind (nth_name bound environment first) (fun first_name ->
-    named_bind (nth_name bound environment second) (fun second_name -> NOk
+  named_bind (reify_term bound environment first) (fun first_name ->
+    named_bind (reify_term bound environment second) (fun second_name -> NOk
       ((NEqual (first_name, second_name)), preferred)))
 | Member (first, second) ->
-  named_bind (nth_name bound environment first) (fun first_name ->
-    named_bind (nth_name bound environment second) (fun second_name -> NOk
+  named_bind (reify_term bound environment first) (fun first_name ->
+    named_bind (reify_term bound environment second) (fun second_name -> NOk
       ((NMember (first_name, second_name)), preferred)))
 | Conj (first, second) ->
   (match first with
    | Falsum ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NConj (first_named, second_named)), after_second)))
    | Equal (_, _) ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NConj (first_named, second_named)), after_second)))
    | Member (_, _) ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NConj (first_named, second_named)), after_second)))
    | Conj (_, _) ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NConj (first_named, second_named)), after_second)))
    | Disj (_, _) ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NConj (first_named, second_named)), after_second)))
    | Impl (first_left, first_right) ->
      (match second with
       | Falsum ->
-        named_bind (reify_with_names bound environment preferred first)
+        named_bind
+          (reify_with_names constants bound environment preferred first)
           (fun pat ->
           let (first_named, after_first) = pat in
-          named_bind (reify_with_names bound environment after_first second)
+          named_bind
+            (reify_with_names constants bound environment after_first second)
             (fun pat0 ->
             let (second_named, after_second) = pat0 in
             NOk ((NConj (first_named, second_named)), after_second)))
       | Equal (_, _) ->
-        named_bind (reify_with_names bound environment preferred first)
+        named_bind
+          (reify_with_names constants bound environment preferred first)
           (fun pat ->
           let (first_named, after_first) = pat in
-          named_bind (reify_with_names bound environment after_first second)
+          named_bind
+            (reify_with_names constants bound environment after_first second)
             (fun pat0 ->
             let (second_named, after_second) = pat0 in
             NOk ((NConj (first_named, second_named)), after_second)))
       | Member (_, _) ->
-        named_bind (reify_with_names bound environment preferred first)
+        named_bind
+          (reify_with_names constants bound environment preferred first)
           (fun pat ->
           let (first_named, after_first) = pat in
-          named_bind (reify_with_names bound environment after_first second)
+          named_bind
+            (reify_with_names constants bound environment after_first second)
             (fun pat0 ->
             let (second_named, after_second) = pat0 in
             NOk ((NConj (first_named, second_named)), after_second)))
       | Conj (_, _) ->
-        named_bind (reify_with_names bound environment preferred first)
+        named_bind
+          (reify_with_names constants bound environment preferred first)
           (fun pat ->
           let (first_named, after_first) = pat in
-          named_bind (reify_with_names bound environment after_first second)
+          named_bind
+            (reify_with_names constants bound environment after_first second)
             (fun pat0 ->
             let (second_named, after_second) = pat0 in
             NOk ((NConj (first_named, second_named)), after_second)))
       | Disj (_, _) ->
-        named_bind (reify_with_names bound environment preferred first)
+        named_bind
+          (reify_with_names constants bound environment preferred first)
           (fun pat ->
           let (first_named, after_first) = pat in
-          named_bind (reify_with_names bound environment after_first second)
+          named_bind
+            (reify_with_names constants bound environment after_first second)
             (fun pat0 ->
             let (second_named, after_second) = pat0 in
             NOk ((NConj (first_named, second_named)), after_second)))
@@ -872,173 +1013,213 @@ let rec reify_with_names bound environment preferred = function
         if (&&) (formula_eqb first_left second_right)
              (formula_eqb first_right second_left)
         then named_bind
-               (reify_with_names bound environment preferred first_left)
-               (fun pat ->
+               (reify_with_names constants bound environment preferred
+                 first_left) (fun pat ->
                let (left_named, after_left) = pat in
                named_bind
-                 (reify_with_names bound environment after_left first_right)
-                 (fun pat0 ->
+                 (reify_with_names constants bound environment after_left
+                   first_right) (fun pat0 ->
                  let (right_named, after_right) = pat0 in
                  NOk ((NIff (left_named, right_named)), after_right)))
-        else named_bind (reify_with_names bound environment preferred first)
+        else named_bind
+               (reify_with_names constants bound environment preferred first)
                (fun pat ->
                let (first_named, after_first) = pat in
                named_bind
-                 (reify_with_names bound environment after_first second)
-                 (fun pat0 ->
+                 (reify_with_names constants bound environment after_first
+                   second) (fun pat0 ->
                  let (second_named, after_second) = pat0 in
                  NOk ((NConj (first_named, second_named)), after_second)))
       | All _ ->
-        named_bind (reify_with_names bound environment preferred first)
+        named_bind
+          (reify_with_names constants bound environment preferred first)
           (fun pat ->
           let (first_named, after_first) = pat in
-          named_bind (reify_with_names bound environment after_first second)
+          named_bind
+            (reify_with_names constants bound environment after_first second)
             (fun pat0 ->
             let (second_named, after_second) = pat0 in
             NOk ((NConj (first_named, second_named)), after_second)))
       | Ex _ ->
-        named_bind (reify_with_names bound environment preferred first)
+        named_bind
+          (reify_with_names constants bound environment preferred first)
           (fun pat ->
           let (first_named, after_first) = pat in
-          named_bind (reify_with_names bound environment after_first second)
+          named_bind
+            (reify_with_names constants bound environment after_first second)
             (fun pat0 ->
             let (second_named, after_second) = pat0 in
             NOk ((NConj (first_named, second_named)), after_second))))
    | All _ ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NConj (first_named, second_named)), after_second)))
    | Ex _ ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NConj (first_named, second_named)), after_second))))
 | Disj (first, second) ->
-  named_bind (reify_with_names bound environment preferred first) (fun pat ->
+  named_bind (reify_with_names constants bound environment preferred first)
+    (fun pat ->
     let (first_named, after_first) = pat in
-    named_bind (reify_with_names bound environment after_first second)
+    named_bind
+      (reify_with_names constants bound environment after_first second)
       (fun pat0 ->
       let (second_named, after_second) = pat0 in
       NOk ((NDisj (first_named, second_named)), after_second)))
 | Impl (first, second) ->
   (match second with
    | Falsum ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (body_named, after_body) = pat in
        NOk ((NNeg body_named), after_body))
    | Equal (_, _) ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NImpl (first_named, second_named)), after_second)))
    | Member (_, _) ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NImpl (first_named, second_named)), after_second)))
    | Conj (_, _) ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NImpl (first_named, second_named)), after_second)))
    | Disj (_, _) ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NImpl (first_named, second_named)), after_second)))
    | Impl (_, _) ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NImpl (first_named, second_named)), after_second)))
    | All _ ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NImpl (first_named, second_named)), after_second)))
    | Ex _ ->
-     named_bind (reify_with_names bound environment preferred first)
+     named_bind
+       (reify_with_names constants bound environment preferred first)
        (fun pat ->
        let (first_named, after_first) = pat in
-       named_bind (reify_with_names bound environment after_first second)
+       named_bind
+         (reify_with_names constants bound environment after_first second)
          (fun pat0 ->
          let (second_named, after_second) = pat0 in
          NOk ((NImpl (first_named, second_named)), after_second))))
 | All body ->
-  let (binder, after_binder) = choose_binder bound environment preferred in
+  let (binder, after_binder) =
+    choose_binder constants bound environment preferred
+  in
   named_bind
-    (reify_with_names (binder :: bound) environment after_binder body)
-    (fun pat ->
+    (reify_with_names constants (binder :: bound) environment after_binder
+      body) (fun pat ->
     let (body_named, after_body) = pat in
     NOk ((NAll (binder, body_named)), after_body))
 | Ex body ->
-  let (binder, after_binder) = choose_binder bound environment preferred in
+  let (binder, after_binder) =
+    choose_binder constants bound environment preferred
+  in
   named_bind
-    (reify_with_names (binder :: bound) environment after_binder body)
-    (fun pat ->
+    (reify_with_names constants (binder :: bound) environment after_binder
+      body) (fun pat ->
     let (body_named, after_body) = pat in
     NOk ((NEx (binder, body_named)), after_body))
 
 (** val reify :
-    string list -> string list -> formula -> named_formula named_result **)
+    string list -> string list -> string list -> formula -> named_formula
+    named_result **)
 
-let reify environment preferred source =
-  named_bind (reify_with_names [] environment preferred source) (fun pat ->
-    let (named, _) = pat in NOk named)
+let reify constants environment preferred source =
+  named_bind (reify_with_names constants [] environment preferred source)
+    (fun pat -> let (named, _) = pat in NOk named)
 
 type goal_metadata = { metadata_hypothesis_names : string list;
                        metadata_assumption_binders : string list list;
                        metadata_conclusion_binders : string list;
-                       metadata_environment : string list }
+                       metadata_environment : string list;
+                       metadata_constants : string list }
 
 type named_state = { named_kernel_state : proof_state;
                      named_goal_metadata : goal_metadata list }
 
-(** val initial_metadata : named_formula -> goal_metadata **)
+(** val initial_metadata : string list -> named_formula -> goal_metadata **)
 
-let initial_metadata source =
+let initial_metadata constants source =
   { metadata_hypothesis_names = []; metadata_assumption_binders = [];
     metadata_conclusion_binders = (named_binder_names source);
-    metadata_environment = (named_free_variables source) }
+    metadata_environment =
+    (filter_environment constants (named_free_variables source));
+    metadata_constants = constants }
+
+(** val named_start_with_constants :
+    string list -> named_formula -> named_state named_result **)
+
+let named_start_with_constants constants source =
+  named_bind (elaborate_closed constants source) (fun core -> NOk
+    { named_kernel_state = (start core); named_goal_metadata =
+    ((initial_metadata constants source) :: []) })
 
 (** val named_start : named_formula -> named_state named_result **)
 
 let named_start source =
-  named_bind (elaborate_closed source) (fun core -> NOk
-    { named_kernel_state = (start core); named_goal_metadata =
-    ((initial_metadata source) :: []) })
+  named_start_with_constants [] source
 
 (** val reify_assumptions :
-    string list -> string list -> string list list -> formula list ->
-    named_hypothesis list named_result **)
+    string list -> string list -> string list -> string list list -> formula
+    list -> named_hypothesis list named_result **)
 
-let rec reify_assumptions environment names binders sources =
+let rec reify_assumptions constants environment names binders sources =
   match names with
   | [] ->
     (match binders with
@@ -1054,10 +1235,10 @@ let rec reify_assumptions environment names binders sources =
        (match sources with
         | [] -> NError NMetadataMismatch
         | source :: source_rest ->
-          named_bind (reify environment preferred source)
+          named_bind (reify constants environment preferred source)
             (fun named_source ->
             named_bind
-              (reify_assumptions environment name_rest binder_rest
+              (reify_assumptions constants environment name_rest binder_rest
                 source_rest) (fun rest -> NOk ({ named_hypothesis_name =
               name; named_hypothesis_formula = named_source } :: rest)))))
 
@@ -1065,11 +1246,12 @@ let rec reify_assumptions environment names binders sources =
 
 let reify_goal metadata source =
   named_bind
-    (reify_assumptions metadata.metadata_environment
-      metadata.metadata_hypothesis_names metadata.metadata_assumption_binders
-      source.assumptions) (fun named_context ->
+    (reify_assumptions metadata.metadata_constants
+      metadata.metadata_environment metadata.metadata_hypothesis_names
+      metadata.metadata_assumption_binders source.assumptions)
+    (fun named_context ->
     named_bind
-      (reify metadata.metadata_environment
+      (reify metadata.metadata_constants metadata.metadata_environment
         metadata.metadata_conclusion_binders source.conclusion)
       (fun named_target -> NOk { named_assumptions = named_context;
       named_conclusion = named_target }))
@@ -1130,45 +1312,43 @@ let fixed_axiom_formula = function
 | NInfinity -> infinity_axiom
 | NChoice -> choice_axiom
 
-(** val filter_environment : string list -> string list -> string list **)
-
-let rec filter_environment excluded = function
-| [] -> []
-| name :: rest ->
-  if string_mem name excluded
-  then filter_environment excluded rest
-  else name :: (filter_environment excluded rest)
-
 (** val elaborate_schema_predicate :
-    string list -> string list -> named_formula -> formula named_result **)
+    string list -> string list -> string list -> named_formula -> formula
+    named_result **)
 
-let elaborate_schema_predicate binders environment predicate =
-  elaborate binders (filter_environment binders environment) predicate
+let elaborate_schema_predicate constants binders environment predicate =
+  match shared_name binders constants with
+  | Some name -> NError (NVariableAlreadyUsed name)
+  | None ->
+    elaborate constants binders (filter_environment binders environment)
+      predicate
 
-(** val compile_axiom : string list -> named_axiom -> formula named_result **)
+(** val compile_axiom :
+    string list -> string list -> named_axiom -> formula named_result **)
 
-let compile_axiom environment = function
+let compile_axiom constants environment = function
 | NFixedAxiom kind -> NOk (fixed_axiom_formula kind)
 | NSeparationAxiom (source, element, predicate) ->
   named_bind
-    (elaborate_schema_predicate (element :: (source :: [])) environment
-      predicate) (fun core_predicate -> NOk
+    (elaborate_schema_predicate constants (element :: (source :: []))
+      environment predicate) (fun core_predicate -> NOk
     (separation_instance core_predicate))
 | NReplacementAxiom (input, output, predicate) ->
   named_bind
-    (elaborate_schema_predicate (output :: (input :: [])) environment
-      predicate) (fun core_predicate -> NOk
+    (elaborate_schema_predicate constants (output :: (input :: []))
+      environment predicate) (fun core_predicate -> NOk
     (replacement_instance core_predicate))
 
 (** val compile_axioms :
-    string list -> named_axiom list -> formula list named_result **)
+    string list -> string list -> named_axiom list -> formula list
+    named_result **)
 
-let rec compile_axioms environment = function
+let rec compile_axioms constants environment = function
 | [] -> NOk []
 | axiom :: rest ->
-  named_bind (compile_axiom environment axiom) (fun core_axiom ->
-    named_bind (compile_axioms environment rest) (fun core_rest -> NOk
-      (core_axiom :: core_rest)))
+  named_bind (compile_axiom constants environment axiom) (fun core_axiom ->
+    named_bind (compile_axioms constants environment rest) (fun core_rest ->
+      NOk (core_axiom :: core_rest)))
 
 (** val formula_in : formula -> formula list -> bool **)
 
@@ -1208,7 +1388,7 @@ let metadata_with_conclusion metadata binders environment =
   { metadata_hypothesis_names = metadata.metadata_hypothesis_names;
     metadata_assumption_binders = metadata.metadata_assumption_binders;
     metadata_conclusion_binders = binders; metadata_environment =
-    environment }
+    environment; metadata_constants = metadata.metadata_constants }
 
 (** val metadata_with_hypothesis :
     goal_metadata -> string -> string list -> string list -> string list ->
@@ -1220,7 +1400,7 @@ let metadata_with_hypothesis metadata hypothesis hypothesis_binders conclusion_b
     metadata_assumption_binders =
     (hypothesis_binders :: metadata.metadata_assumption_binders);
     metadata_conclusion_binders = conclusion_binders; metadata_environment =
-    environment }
+    environment; metadata_constants = metadata.metadata_constants }
 
 (** val ensure_hypothesis_fresh :
     goal_metadata -> string -> unit named_result **)
@@ -1234,7 +1414,8 @@ let ensure_hypothesis_fresh metadata name =
     goal_metadata -> string -> unit named_result **)
 
 let ensure_variable_fresh metadata name =
-  if string_mem name metadata.metadata_environment
+  if (||) (string_mem name metadata.metadata_constants)
+       (string_mem name metadata.metadata_environment)
   then NError (NVariableAlreadyUsed name)
   else NOk ()
 
@@ -1256,20 +1437,22 @@ let rec find_named_hypothesis name = function
   else find_named_hypothesis name rest
 
 (** val elaborate_in_environment :
-    string list -> named_formula -> formula named_result **)
+    string list -> string list -> named_formula -> formula named_result **)
 
-let elaborate_in_environment environment source =
-  elaborate [] environment source
+let elaborate_in_environment constants environment source =
+  elaborate constants [] environment source
 
-(** val term_index : string list -> string -> int named_result **)
+(** val term_index :
+    string list -> string list -> string -> term named_result **)
 
-let term_index environment term =
-  variable_index [] environment term
+let term_index constants environment source =
+  elaborate_term constants [] environment source
 
 (** val plan_named_rule :
     goal_metadata -> named_goal -> named_rule -> rule_plan named_result **)
 
 let plan_named_rule metadata view primitive =
+  let constants = metadata.metadata_constants in
   let environment = metadata.metadata_environment in
   let target = view.named_conclusion in
   (match primitive with
@@ -1299,8 +1482,9 @@ let plan_named_rule metadata view primitive =
            planned_environment = environment }
        | _ -> NError NWrongNamedShape)
    | NRImplElim premise ->
-     let next_environment = extend_environment environment premise in
-     named_bind (elaborate_in_environment next_environment premise)
+     let next_environment = extend_environment constants environment premise
+     in
+     named_bind (elaborate_in_environment constants next_environment premise)
        (fun core_premise -> NOk { planned_rule = (RImplElim core_premise);
        planned_generated_metadata =
        ((metadata_with_conclusion metadata
@@ -1325,8 +1509,8 @@ let plan_named_rule metadata view primitive =
           planned_environment = environment }
       | _ -> NError NWrongNamedShape)
    | NRConjElimL extra ->
-     let next_environment = extend_environment environment extra in
-     named_bind (elaborate_in_environment next_environment extra)
+     let next_environment = extend_environment constants environment extra in
+     named_bind (elaborate_in_environment constants next_environment extra)
        (fun core_extra -> NOk { planned_rule = (RConjElimL core_extra);
        planned_generated_metadata =
        ((metadata_with_conclusion metadata
@@ -1334,8 +1518,8 @@ let plan_named_rule metadata view primitive =
             (named_binder_names extra)) next_environment) :: []);
        planned_environment = next_environment })
    | NRConjElimR extra ->
-     let next_environment = extend_environment environment extra in
-     named_bind (elaborate_in_environment next_environment extra)
+     let next_environment = extend_environment constants environment extra in
+     named_bind (elaborate_in_environment constants next_environment extra)
        (fun core_extra -> NOk { planned_rule = (RConjElimR core_extra);
        planned_generated_metadata =
        ((metadata_with_conclusion metadata
@@ -1362,11 +1546,14 @@ let plan_named_rule metadata view primitive =
          if (=) first_name second_name
          then NError (NHypothesisAlreadyUsed second_name)
          else let next_environment =
-                extend_environments environment (first :: (second :: []))
+                extend_environments constants environment
+                  (first :: (second :: []))
               in
-              named_bind (elaborate_in_environment next_environment first)
+              named_bind
+                (elaborate_in_environment constants next_environment first)
                 (fun core_first ->
-                named_bind (elaborate_in_environment next_environment second)
+                named_bind
+                  (elaborate_in_environment constants next_environment second)
                   (fun core_second -> NOk { planned_rule = (RDisjElim
                   (core_first, core_second)); planned_generated_metadata =
                   ((metadata_with_conclusion metadata
@@ -1392,27 +1579,31 @@ let plan_named_rule metadata view primitive =
          ((metadata_with_conclusion metadata (named_binder_names body)
             next_environment) :: []); planned_environment = next_environment }
        | _ -> NError NWrongNamedShape)
-   | NRAllElim (term, universal) ->
+   | NRAllElim (term0, universal) ->
      (match universal with
       | NAll (binder, body) ->
         let next_environment =
-          add_name (extend_environment environment universal) term
+          add_environment_name constants
+            (extend_environment constants environment universal) term0
         in
-        named_bind (elaborate (binder :: []) next_environment body)
+        named_bind (elaborate constants (binder :: []) next_environment body)
           (fun core_body ->
-          named_bind (term_index next_environment term) (fun core_term -> NOk
-            { planned_rule = (RAllElim (core_body, core_term));
-            planned_generated_metadata =
+          named_bind (term_index constants next_environment term0)
+            (fun core_term -> NOk { planned_rule = (RAllElim (core_body,
+            core_term)); planned_generated_metadata =
             ((metadata_with_conclusion metadata
                (named_binder_names universal) next_environment) :: []);
             planned_environment = next_environment }))
       | _ -> NError NWrongNamedShape)
-   | NRExIntro term ->
+   | NRExIntro term0 ->
      (match target with
       | NEx (_, body) ->
-        let next_environment = add_name environment term in
-        named_bind (term_index next_environment term) (fun core_term -> NOk
-          { planned_rule = (RExIntro core_term); planned_generated_metadata =
+        let next_environment =
+          add_environment_name constants environment term0
+        in
+        named_bind (term_index constants next_environment term0)
+          (fun core_term -> NOk { planned_rule = (RExIntro core_term);
+          planned_generated_metadata =
           ((metadata_with_conclusion metadata (named_binder_names body)
              next_environment) :: []); planned_environment =
           next_environment })
@@ -1421,12 +1612,15 @@ let plan_named_rule metadata view primitive =
      named_bind (ensure_hypothesis_fresh metadata hypothesis) (fun _ ->
        match existential with
        | NEx (binder, body) ->
-         let before_environment = extend_environment environment existential
+         let before_environment =
+           extend_environment constants environment existential
          in
-         if string_mem witness before_environment
+         if (||) (string_mem witness constants)
+              (string_mem witness before_environment)
          then NError (NVariableAlreadyUsed witness)
          else let generated_environment = witness :: before_environment in
-              named_bind (elaborate (binder :: []) before_environment body)
+              named_bind
+                (elaborate constants (binder :: []) before_environment body)
                 (fun core_body -> NOk { planned_rule = (RExElim core_body);
                 planned_generated_metadata =
                 ((metadata_with_conclusion metadata
@@ -1443,13 +1637,16 @@ let plan_named_rule metadata view primitive =
      (match predicate with
       | NAll (binder, body) ->
         let next_environment =
-          add_name
-            (add_name (extend_environment environment predicate) first) second
+          add_environment_name constants
+            (add_environment_name constants
+              (extend_environment constants environment predicate) first)
+            second
         in
-        named_bind (elaborate (binder :: []) next_environment body)
+        named_bind (elaborate constants (binder :: []) next_environment body)
           (fun core_predicate ->
-          named_bind (term_index next_environment first) (fun core_first ->
-            named_bind (term_index next_environment second)
+          named_bind (term_index constants next_environment first)
+            (fun core_first ->
+            named_bind (term_index constants next_environment second)
               (fun core_second -> NOk { planned_rule = (REqualElim
               (core_predicate, core_first, core_second));
               planned_generated_metadata =
@@ -1460,8 +1657,9 @@ let plan_named_rule metadata view primitive =
       | _ -> NError NWrongNamedShape)
    | NRCut (hypothesis, lemma) ->
      named_bind (ensure_hypothesis_fresh metadata hypothesis) (fun _ ->
-       let next_environment = extend_environment environment lemma in
-       named_bind (elaborate_in_environment next_environment lemma)
+       let next_environment = extend_environment constants environment lemma
+       in
+       named_bind (elaborate_in_environment constants next_environment lemma)
          (fun core_lemma -> NOk { planned_rule = (RCut core_lemma);
          planned_generated_metadata =
          ((metadata_with_conclusion metadata (named_binder_names lemma)
@@ -1486,8 +1684,9 @@ let named_rule_step axioms primitive state =
      | metadata :: metadata_rest ->
        named_bind (reify_goal metadata goal0) (fun view ->
          named_bind (plan_named_rule metadata view primitive) (fun plan ->
-           named_bind (compile_axioms plan.planned_environment axioms)
-             (fun core_axioms ->
+           named_bind
+             (compile_axioms metadata.metadata_constants
+               plan.planned_environment axioms) (fun core_axioms ->
              match rule_step (fun candidate ->
                      formula_in candidate core_axioms) plan.planned_rule
                      state.named_kernel_state with
@@ -1529,6 +1728,7 @@ type tactic_plan = { planned_tactic : tactic;
     goal_metadata -> named_goal -> named_tactic -> tactic_plan named_result **)
 
 let plan_named_tactic metadata view command =
+  let constants = metadata.metadata_constants in
   let environment = metadata.metadata_environment in
   let target = view.named_conclusion in
   (match command with
@@ -1577,17 +1777,19 @@ let plan_named_tactic metadata view command =
               tactic_environment = environment }
           | _ -> NError NWrongNamedShape)
        | None -> NError (NHypothesisNotFound hypothesis))
-   | NTacSpecialize (hypothesis, term, new_hypothesis) ->
+   | NTacSpecialize (hypothesis, term0, new_hypothesis) ->
      named_bind (ensure_hypothesis_fresh metadata new_hypothesis) (fun _ ->
        named_bind (hypothesis_index metadata hypothesis) (fun index ->
          match find_named_hypothesis hypothesis view.named_assumptions with
          | Some n ->
            (match n with
             | NAll (_, body) ->
-              let next_environment = add_name environment term in
-              named_bind (term_index next_environment term) (fun core_term ->
-                NOk { planned_tactic = (TacSpecialize (index, core_term));
-                tactic_generated_metadata =
+              let next_environment =
+                add_environment_name constants environment term0
+              in
+              named_bind (term_index constants next_environment term0)
+                (fun core_term -> NOk { planned_tactic = (TacSpecialize
+                (index, core_term)); tactic_generated_metadata =
                 ((metadata_with_hypothesis metadata new_hypothesis
                    (named_binder_names body)
                    metadata.metadata_conclusion_binders next_environment) :: []);
@@ -1624,12 +1826,15 @@ let plan_named_tactic metadata view command =
           ((metadata_with_conclusion metadata (named_binder_names second)
              environment) :: []); tactic_environment = environment }
       | _ -> NError NWrongNamedShape)
-   | NTacUse term ->
+   | NTacUse term0 ->
      (match target with
       | NEx (_, body) ->
-        let next_environment = add_name environment term in
-        named_bind (term_index next_environment term) (fun core_term -> NOk
-          { planned_tactic = (TacUse core_term); tactic_generated_metadata =
+        let next_environment =
+          add_environment_name constants environment term0
+        in
+        named_bind (term_index constants next_environment term0)
+          (fun core_term -> NOk { planned_tactic = (TacUse core_term);
+          tactic_generated_metadata =
           ((metadata_with_conclusion metadata (named_binder_names body)
              next_environment) :: []); tactic_environment =
           next_environment })
@@ -1661,7 +1866,8 @@ let plan_named_tactic metadata view command =
                                                           first) :: metadata.metadata_assumption_binders));
                        metadata_conclusion_binders =
                        metadata.metadata_conclusion_binders;
-                       metadata_environment = environment } :: []);
+                       metadata_environment = environment;
+                       metadata_constants = constants } :: []);
                        tactic_environment = environment }))
           | NIff (first, second) ->
             named_bind (ensure_hypothesis_fresh metadata first_name)
@@ -1679,7 +1885,8 @@ let plan_named_tactic metadata view command =
                        (named_binder_names (NImpl (first, second))) :: metadata.metadata_assumption_binders));
                        metadata_conclusion_binders =
                        metadata.metadata_conclusion_binders;
-                       metadata_environment = environment } :: []);
+                       metadata_environment = environment;
+                       metadata_constants = constants } :: []);
                        tactic_environment = environment }))
           | NEx (_, body) ->
             named_bind (ensure_hypothesis_fresh metadata second_name)
@@ -1957,15 +2164,22 @@ let rec replay_steps steps state =
       replay_steps rest next)
 
 type certified_state = { certified_initial_formula : named_formula;
+                         certified_constants : string list;
                          certified_current_state : named_state;
                          certified_reverse_certificate : certificate }
+
+(** val certified_start_with_constants :
+    string list -> named_formula -> certified_state named_result **)
+
+let certified_start_with_constants constants source =
+  named_bind (named_start_with_constants constants source) (fun state -> NOk
+    { certified_initial_formula = source; certified_constants = constants;
+    certified_current_state = state; certified_reverse_certificate = [] })
 
 (** val certified_start : named_formula -> certified_state named_result **)
 
 let certified_start source =
-  named_bind (named_start source) (fun state -> NOk
-    { certified_initial_formula = source; certified_current_state = state;
-    certified_reverse_certificate = [] })
+  certified_start_with_constants [] source
 
 (** val certified_goals : certified_state -> named_goal list named_result **)
 
@@ -1988,7 +2202,8 @@ let certified_certificate state =
 let certified_step step0 state =
   named_bind (run_certificate_step step0 state.certified_current_state)
     (fun next -> NOk { certified_initial_formula =
-    state.certified_initial_formula; certified_current_state = next;
+    state.certified_initial_formula; certified_constants =
+    state.certified_constants; certified_current_state = next;
     certified_reverse_certificate =
     (step0 :: state.certified_reverse_certificate) })
 
@@ -2002,18 +2217,26 @@ let rec certified_run steps state =
     named_bind (certified_step step0 state) (fun next ->
       certified_run rest next)
 
+(** val replay_certificate_with_constants :
+    string list -> named_formula -> certificate -> named_state named_result **)
+
+let replay_certificate_with_constants constants source steps =
+  named_bind (named_start_with_constants constants source) (fun state ->
+    replay_steps steps state)
+
 (** val replay_certificate :
     named_formula -> certificate -> named_state named_result **)
 
 let replay_certificate source steps =
-  named_bind (named_start source) (fun state -> replay_steps steps state)
+  replay_certificate_with_constants [] source steps
 
 (** val certified_finalize : certified_state -> certificate named_result **)
 
 let certified_finalize state =
   let steps = certified_certificate state in
-  named_bind (replay_certificate state.certified_initial_formula steps)
-    (fun replayed ->
+  named_bind
+    (replay_certificate_with_constants state.certified_constants
+      state.certified_initial_formula steps) (fun replayed ->
     if named_solved replayed then NOk steps else NError NWrongNamedShape)
 
 (** val one_step : named_axiom list -> named_rule -> certificate_step **)

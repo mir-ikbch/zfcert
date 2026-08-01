@@ -263,7 +263,7 @@ Section Completeness.
       exists (RExElim A :: first ++ second). simpl.
       apply solve_two; assumption.
     - exists [REqualRefl]. simpl.
-      rewrite Nat.eqb_refl. reflexivity.
+      rewrite (proj2 (term_eqb_true_iff _ _) eq_refl). reflexivity.
     - destruct IHHderiv1 as [first Hfirst].
       destruct IHHderiv2 as [second Hsecond].
       exists (REqualElim P s t :: first ++ second). simpl.

@@ -94,6 +94,9 @@ let outcome = function
 let start formula =
   Raw.certified_start formula |> outcome
 
+let start_with_constants constants formula =
+  Raw.certified_start_with_constants constants formula |> outcome
+
 let goals state =
   match Raw.certified_goals state with
   | Raw.NError failure -> Error (error failure)
