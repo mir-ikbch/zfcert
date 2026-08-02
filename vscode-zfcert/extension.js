@@ -330,7 +330,7 @@ function tacticCompletions() {
     ["split", "split.", "Split conjunction or equivalence"],
     ["assumption", "assumption.", "Use a matching assumption"],
     ["contradiction", "contradiction.", "Close a goal from contradictory assumptions"],
-    ["resolution", "resolution.", "Use propositional resolution on CNF assumptions"],
+    ["resolution", "resolution.", "Use propositional resolution on logical assumptions"],
     ["left", "left.", "Choose the left disjunct"],
     ["right", "right.", "Choose the right disjunct"],
     ["qed", "qed.", "Finish a solved proof"],

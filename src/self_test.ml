@@ -22,7 +22,13 @@ let valid_scripts =
     "theorem intros_auto : forall x, forall y, (x = y -> x = y)\nintros\nexact H\nqed";
     "theorem resolution_basic : forall p, forall q, ((p = p or q = q) -> (not (p = p) -> q = q))\nintros p q Hclause Hnot\nresolution\nqed";
     "theorem resolution_ignores_opaque : forall p, forall q, ((forall x, x = x) -> ((p = p or q = q) -> (not (p = p) -> q = q)))\nintros p q Hopaque Hclause Hnot\nresolution\nqed";
-    "theorem resolution_uses_opaque : forall p, forall q, (((p = p -> q = q)) -> (not (p = p -> q = q) -> q = q))\nintros p q Hopaque HnotOpaque\nresolution\nqed";
+    "theorem resolution_implication_contradiction : forall p, forall q, (((p = p -> q = q)) -> (not (p = p -> q = q) -> q = q))\nintros p q Himp HnotImp\nresolution\nqed";
+    "theorem resolution_implication : forall p, forall q, ((p = p -> q = q) -> (p = p -> q = q))\nintros p q Himp Hp\nresolution\nqed";
+    "theorem resolution_equivalence : forall p, forall q, ((p = p <-> q = q) -> (p = p -> q = q))\nintros p q Hiff Hp\nresolution\nqed";
+    "theorem resolution_equivalence_backward : forall p, forall q, ((p = p <-> q = q) -> (q = q -> p = p))\nintros p q Hiff Hq\nresolution\nqed";
+    "theorem resolution_compound_implication : forall p, forall q, forall r, (((p = p and q = q) -> r = r) -> ((p = p and q = q) -> r = r))\nintros p q r Himp Hpq\nresolution\nqed";
+    "theorem resolution_negated_implication : forall p, forall q, (not (p = p -> q = q) -> p = p)\nintros p q Hnot\nresolution\nqed";
+    "theorem resolution_negated_equivalence : forall p, forall q, ((not (p = p <-> q = q)) -> ((p = p) -> ((q = q) -> false)))\nintros p q Hnot Hleft Hright\nresolution\nqed";
     "theorem resolution_chain : forall p, forall q, forall r, ((p = p or q = q) -> ((not (p = p) or r = r) -> (not (q = q) -> r = r)))\nintros p q r H1 H2 H3\nresolution\nqed";
     "theorem resolution_conjunction : forall p, forall q, ((p = p and q = q) -> (not (p = p) -> q = q))\nintros p q H1 H2\nresolution\nqed";
     "theorem resolution_falsum : forall p, ((p = p and not (p = p)) -> false)\nintros p H\nresolution\nqed";

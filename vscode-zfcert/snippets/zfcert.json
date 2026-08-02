@@ -57,7 +57,7 @@
   "Propositional resolution": {
     "prefix": "resolution",
     "body": "resolution.",
-    "description": "Close a propositional CNF goal by resolution"
+    "description": "Close a propositional goal by resolution"
   },
   "Separation instance": {
     "prefix": "separation",

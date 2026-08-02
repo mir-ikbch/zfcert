@@ -5,8 +5,9 @@
    certificate is checked by the extracted kernel before it changes a proof
    state.
 
-   The planner decomposes conjunctions and disjunctions.  A hypothesis whose
-   outer connective is outside that fragment is deliberately kept opaque and
+   The planner decomposes propositional conjunctions, disjunctions,
+   implications, and equivalences.  A hypothesis whose outer
+   connective is outside that fragment is deliberately kept opaque and
    treated as one propositional atom.  This lets resolution ignore unrelated
    first-order hypotheses while still using them when they happen to match a
    literal in the refutation. *)
@@ -112,11 +113,7 @@ let rec cnf formula =
   match formula with
   | Bottom -> Ok [ [] ]
   | Eq _ | Mem _ | Named _ -> Ok [ [ (true, formula) ] ]
-  | Not inner ->
-      begin match inner with
-      | Bottom -> Ok []
-      | _ -> Ok [ [ (false, inner) ] ]
-      end
+  | Not inner -> cnf_neg inner
   | And (left, right) ->
       begin match cnf left, cnf right with
       | Ok left_clauses, Ok right_clauses ->
@@ -124,25 +121,56 @@ let rec cnf formula =
       | Error message, _ | _, Error message -> Error message
       end
   | Or (left, right) ->
-      begin match cnf left, cnf right with
-      | Ok [], _ | _, Ok [] -> Ok []
+      cnf_or (cnf left) (cnf right)
+  | Imp (left, right) ->
+      cnf_or (cnf_neg left) (cnf right)
+  | Iff (left, right) ->
+      cnf (And (Imp (left, right), Imp (right, left)))
+  (* Quantifiers and other non-propositional formulas remain opaque atoms. *)
+  | formula -> Ok [ [ (true, formula) ] ]
+
+and cnf_neg formula =
+  match formula with
+  | Bottom -> Ok []
+  | Eq _ | Mem _ | Named _ | Forall _ | Exists _ ->
+      Ok [ [ (false, formula) ] ]
+  | Not inner -> cnf inner
+  | And (left, right) ->
+      cnf_or (cnf_neg left) (cnf_neg right)
+  | Or (left, right) ->
+      begin match cnf_neg left, cnf_neg right with
       | Ok left_clauses, Ok right_clauses ->
-          let products =
-            List.concat_map
-              (fun left_clause ->
-                 List.filter_map
-                   (fun right_clause ->
-                      union_clause left_clause right_clause)
-                   right_clauses)
-              left_clauses
-          in
-          Ok products
+          Ok (left_clauses @ right_clauses)
       | Error message, _ | _, Error message -> Error message
       end
-  (* Quantifiers, implications, equivalences, and compound formulas under a
-     negation are not expanded.  At this level the complete formula is an
-     opaque propositional atom. *)
-  | formula -> Ok [ [ (true, formula) ] ]
+  | Imp (left, right) ->
+      begin match cnf left, cnf_neg right with
+      | Ok left_clauses, Ok right_clauses ->
+          Ok (left_clauses @ right_clauses)
+      | Error message, _ | _, Error message -> Error message
+      end
+  | Iff (left, right) ->
+      (* not (A <-> B) is the XOR, (A or B) and (not A or not B). *)
+      cnf
+        (And
+           (Or (left, right),
+            Or (Not left, Not right)))
+
+and cnf_or left_result right_result =
+  match left_result, right_result with
+  | Ok [], _ | _, Ok [] -> Ok []
+  | Ok left_clauses, Ok right_clauses ->
+      let products =
+        List.concat_map
+          (fun left_clause ->
+             List.filter_map
+               (fun right_clause ->
+                  union_clause left_clause right_clause)
+               right_clauses)
+          left_clauses
+      in
+      Ok products
+  | Error message, _ | _, Error message -> Error message
 
 let find_clause clauses wanted =
   List.find_opt (fun clause -> clause_equal clause wanted) clauses
@@ -228,12 +256,7 @@ let rec derive_clause_from_hyp builder source_name source_formula target =
       | _ -> Error "the source atom does not match the requested clause"
       end
   | Not inner ->
-      begin match inner, target with
-      | _, [literal] when literal = (false, inner) ->
-          emit builder (Kernel.NRHypothesis source_name);
-          Ok ()
-      | _ -> Error "the source negation does not match the requested clause"
-      end
+      derive_negated_formula builder source_name inner target
   | And (left, right) ->
       begin match cnf left, cnf right with
       | Ok left_clauses, Ok right_clauses ->
@@ -302,6 +325,63 @@ let rec derive_clause_from_hyp builder source_name source_formula target =
           end
       | Error message, _ | _, Error message -> Error message
       end
+  | Imp (left, right) ->
+      (* A -> B is classically equivalent to (not A or B).  Prove that
+         disjunction from the implication by a classical case split on A,
+         then derive the requested CNF clause from it. *)
+      let normalized = Or (Not left, right) in
+      let normalized_name = fresh builder "resolution_implication" in
+      emit builder
+        (Kernel.NRCut (normalized_name, kernel_formula normalized));
+      let excluded_middle_name = fresh builder "resolution_em" in
+      emit builder
+        (Kernel.NRCut
+           (excluded_middle_name,
+            kernel_formula (Or (left, Not left))));
+      emit ~axioms:[Kernel.classical_axiom (kernel_formula left)]
+        builder Kernel.NRAxiom;
+      let left_name = fresh builder "resolution_left" in
+      let negated_left_name = fresh builder "resolution_not_left" in
+      emit builder
+        (Kernel.NRDisjElim
+           (kernel_formula left,
+            kernel_formula (Not left),
+            left_name, negated_left_name));
+      emit builder (Kernel.NRHypothesis excluded_middle_name);
+      emit builder Kernel.NRDisjIntroR;
+      emit builder (Kernel.NRImplElim (kernel_formula left));
+      emit builder (Kernel.NRHypothesis source_name);
+      emit builder (Kernel.NRHypothesis left_name);
+      emit builder Kernel.NRDisjIntroL;
+      emit builder (Kernel.NRHypothesis negated_left_name);
+      derive_clause_from_hyp builder normalized_name normalized target
+  | Iff (left, right) ->
+      (* A <-> B is represented by the conjunction of both implications in
+         the extracted kernel.  Select the implication containing the target
+         clause and expose it with the corresponding conjunction elimination
+         rule. *)
+      let forward = Imp (left, right) in
+      let backward = Imp (right, left) in
+      begin match cnf forward, cnf backward with
+      | Ok forward_clauses, Ok backward_clauses ->
+          if Option.is_some (find_clause forward_clauses target) then begin
+            let part_name = fresh builder "resolution_forward" in
+            emit builder
+              (Kernel.NRCut (part_name, kernel_formula forward));
+            emit builder (Kernel.NRConjElimL (kernel_formula backward));
+            emit builder (Kernel.NRHypothesis source_name);
+            derive_clause_from_hyp builder part_name forward target
+          end else if Option.is_some (find_clause backward_clauses target) then begin
+            let part_name = fresh builder "resolution_backward" in
+            emit builder
+              (Kernel.NRCut (part_name, kernel_formula backward));
+            emit builder (Kernel.NRConjElimR (kernel_formula forward));
+            emit builder (Kernel.NRHypothesis source_name);
+            derive_clause_from_hyp builder part_name backward target
+          end else
+            Error "the source equivalence does not contain the requested clause"
+      | Error message, _ | _, Error message -> Error message
+      end
   (* An unsupported source formula is an opaque positive atom. *)
   | formula ->
       begin match target with
@@ -310,6 +390,274 @@ let rec derive_clause_from_hyp builder source_name source_formula target =
           Ok ()
       | _ -> Error "the opaque source formula does not match the requested clause"
       end
+
+and derive_negated_formula builder source_name inner target =
+  match inner with
+  | Bottom -> Error "the negated falsum does not contain a requested clause"
+  | Eq _ | Mem _ | Named _ | Forall _ | Exists _ ->
+      begin match target with
+      | [literal] when literal = (false, inner) ->
+          emit builder (Kernel.NRHypothesis source_name);
+          Ok ()
+      | _ -> Error "the source negation does not match the requested clause"
+      end
+  | Iff (left, right) ->
+      derive_negated_iff builder source_name left right target
+  | Not body ->
+      (* Double negation is eliminated by a classical case split on [body]. *)
+      begin match cnf body with
+      | Error message -> Error message
+      | Ok clauses when Option.is_some (find_clause clauses target) ->
+          let excluded_middle_name = fresh builder "resolution_em" in
+          emit builder
+            (Kernel.NRCut
+               (excluded_middle_name,
+                kernel_formula (Or (body, Not body))));
+          emit ~axioms:[Kernel.classical_axiom (kernel_formula body)]
+            builder Kernel.NRAxiom;
+          let body_name = fresh builder "resolution_body" in
+          let negated_body_name = fresh builder "resolution_not_body" in
+          emit builder
+            (Kernel.NRDisjElim
+               (kernel_formula body,
+                kernel_formula (Not body),
+                body_name, negated_body_name));
+          emit builder (Kernel.NRHypothesis excluded_middle_name);
+          begin match derive_clause_from_hyp builder body_name body target with
+          | Error message -> Error message
+          | Ok () ->
+              emit builder Kernel.NRFalsumElim;
+              emit builder (Kernel.NRImplElim (kernel_formula (Not body)));
+              emit builder (Kernel.NRHypothesis source_name);
+              emit builder (Kernel.NRHypothesis negated_body_name);
+              Ok ()
+          end
+      | Ok _ -> Error "the double negation does not contain the requested clause"
+      end
+  | And (left, right) ->
+      (* not (A and B) implies (not A or not B). *)
+      let normalized = Or (Not left, Not right) in
+      begin match cnf normalized with
+      | Error message -> Error message
+      | Ok clauses when Option.is_some (find_clause clauses target) ->
+          let normalized_name = fresh builder "resolution_not_and" in
+          emit builder
+            (Kernel.NRCut (normalized_name, kernel_formula normalized));
+          let excluded_middle_name = fresh builder "resolution_em" in
+          emit builder
+            (Kernel.NRCut
+               (excluded_middle_name,
+                kernel_formula (Or (left, Not left))));
+          emit ~axioms:[Kernel.classical_axiom (kernel_formula left)]
+            builder Kernel.NRAxiom;
+          let left_name = fresh builder "resolution_left" in
+          let negated_left_name = fresh builder "resolution_not_left" in
+          emit builder
+            (Kernel.NRDisjElim
+               (kernel_formula left,
+                kernel_formula (Not left),
+                left_name, negated_left_name));
+          emit builder (Kernel.NRHypothesis excluded_middle_name);
+          emit builder Kernel.NRDisjIntroR;
+          let right_name = fresh builder "resolution_right" in
+          emit builder (Kernel.NRImplIntro right_name);
+          emit builder
+            (Kernel.NRImplElim (kernel_formula (And (left, right))));
+          emit builder (Kernel.NRHypothesis source_name);
+          emit builder Kernel.NRConjIntro;
+          emit builder (Kernel.NRHypothesis left_name);
+          emit builder (Kernel.NRHypothesis right_name);
+          emit builder Kernel.NRDisjIntroL;
+          emit builder (Kernel.NRHypothesis negated_left_name);
+          derive_clause_from_hyp builder normalized_name normalized target
+      | Ok _ -> Error "the negated conjunction does not contain the requested clause"
+      end
+  | Or (left, right) ->
+      (* not (A or B) implies (not A and not B). *)
+      let normalized = And (Not left, Not right) in
+      begin match cnf normalized with
+      | Error message -> Error message
+      | Ok clauses when Option.is_some (find_clause clauses target) ->
+          let normalized_name = fresh builder "resolution_not_or" in
+          emit builder
+            (Kernel.NRCut (normalized_name, kernel_formula normalized));
+          emit builder Kernel.NRConjIntro;
+          let left_name = fresh builder "resolution_left" in
+          emit builder (Kernel.NRImplIntro left_name);
+          emit builder (Kernel.NRImplElim (kernel_formula (Or (left, right))));
+          emit builder (Kernel.NRHypothesis source_name);
+          emit builder Kernel.NRDisjIntroL;
+          emit builder (Kernel.NRHypothesis left_name);
+          let right_name = fresh builder "resolution_right" in
+          emit builder (Kernel.NRImplIntro right_name);
+          emit builder (Kernel.NRImplElim (kernel_formula (Or (left, right))));
+          emit builder (Kernel.NRHypothesis source_name);
+          emit builder Kernel.NRDisjIntroR;
+          emit builder (Kernel.NRHypothesis right_name);
+          derive_clause_from_hyp builder normalized_name normalized target
+      | Ok _ -> Error "the negated disjunction does not contain the requested clause"
+      end
+  | Imp (left, right) ->
+      (* not (A -> B) implies (A and not B).  The proof of A uses excluded
+         middle: the not-A branch contradicts the source negated implication. *)
+      let normalized = And (left, Not right) in
+      begin match cnf normalized with
+      | Error message -> Error message
+      | Ok clauses when Option.is_some (find_clause clauses target) ->
+          let normalized_name = fresh builder "resolution_not_imp" in
+          emit builder
+            (Kernel.NRCut (normalized_name, kernel_formula normalized));
+          let excluded_middle_name = fresh builder "resolution_em" in
+          emit builder
+            (Kernel.NRCut
+               (excluded_middle_name,
+                kernel_formula (Or (left, Not left))));
+          emit ~axioms:[Kernel.classical_axiom (kernel_formula left)]
+            builder Kernel.NRAxiom;
+          let left_name = fresh builder "resolution_left" in
+          let negated_left_name = fresh builder "resolution_not_left" in
+          emit builder
+            (Kernel.NRDisjElim
+               (kernel_formula left,
+                kernel_formula (Not left),
+                left_name, negated_left_name));
+          emit builder (Kernel.NRHypothesis excluded_middle_name);
+          let right_name = fresh builder "resolution_right" in
+          emit builder Kernel.NRConjIntro;
+          emit builder (Kernel.NRHypothesis left_name);
+          emit builder (Kernel.NRImplIntro right_name);
+          emit builder
+            (Kernel.NRImplElim (kernel_formula (Imp (left, right))));
+          emit builder (Kernel.NRHypothesis source_name);
+          let left_for_right = fresh builder "resolution_left" in
+          emit builder (Kernel.NRImplIntro left_for_right);
+          emit builder (Kernel.NRHypothesis right_name);
+          emit builder Kernel.NRFalsumElim;
+          emit builder
+            (Kernel.NRImplElim (kernel_formula (Imp (left, right))));
+          emit builder (Kernel.NRHypothesis source_name);
+          let left_again = fresh builder "resolution_left" in
+          emit builder (Kernel.NRImplIntro left_again);
+          emit builder Kernel.NRFalsumElim;
+          emit builder (Kernel.NRImplElim (kernel_formula left));
+          emit builder (Kernel.NRHypothesis negated_left_name);
+          emit builder (Kernel.NRHypothesis left_again);
+          derive_clause_from_hyp builder normalized_name normalized target
+      | Ok _ -> Error "the negated implication does not contain the requested clause"
+      end
+
+and derive_negated_iff builder source_name left right target =
+  let normalized =
+    And (Or (left, right), Or (Not left, Not right))
+  in
+  begin match cnf normalized with
+  | Error message -> Error message
+  | Ok clauses when Option.is_some (find_clause clauses target) ->
+      let normalized_name = fresh builder "resolution_not_iff" in
+      emit builder
+        (Kernel.NRCut (normalized_name, kernel_formula normalized));
+      emit builder Kernel.NRConjIntro;
+
+      (* First conjunct: A or B. *)
+      let first_em_name = fresh builder "resolution_em" in
+      emit builder
+        (Kernel.NRCut
+           (first_em_name, kernel_formula (Or (left, Not left))));
+      emit ~axioms:[Kernel.classical_axiom (kernel_formula left)]
+        builder Kernel.NRAxiom;
+      let first_left_name = fresh builder "resolution_left" in
+      let first_not_left_name = fresh builder "resolution_not_left" in
+      emit builder
+        (Kernel.NRDisjElim
+           (kernel_formula left,
+            kernel_formula (Not left),
+            first_left_name, first_not_left_name));
+      emit builder (Kernel.NRHypothesis first_em_name);
+      emit builder Kernel.NRDisjIntroL;
+      emit builder (Kernel.NRHypothesis first_left_name);
+
+      (* In the not-A branch, split on B. *)
+      let second_em_name = fresh builder "resolution_em" in
+      emit builder
+        (Kernel.NRCut
+           (second_em_name, kernel_formula (Or (right, Not right))));
+      emit ~axioms:[Kernel.classical_axiom (kernel_formula right)]
+        builder Kernel.NRAxiom;
+      let first_right_name = fresh builder "resolution_right" in
+      let first_not_right_name = fresh builder "resolution_not_right" in
+      emit builder
+        (Kernel.NRDisjElim
+           (kernel_formula right,
+            kernel_formula (Not right),
+            first_right_name, first_not_right_name));
+      emit builder (Kernel.NRHypothesis second_em_name);
+      emit builder Kernel.NRDisjIntroR;
+      emit builder (Kernel.NRHypothesis first_right_name);
+      emit builder Kernel.NRFalsumElim;
+      emit builder (Kernel.NRImplElim (kernel_formula (Iff (left, right))));
+      emit builder (Kernel.NRHypothesis source_name);
+      emit builder Kernel.NRConjIntro;
+      let first_forward = fresh builder "resolution_forward" in
+      emit builder (Kernel.NRImplIntro first_forward);
+      emit builder Kernel.NRFalsumElim;
+      emit builder (Kernel.NRImplElim (kernel_formula left));
+      emit builder (Kernel.NRHypothesis first_not_left_name);
+      emit builder (Kernel.NRHypothesis first_forward);
+      let first_backward = fresh builder "resolution_backward" in
+      emit builder (Kernel.NRImplIntro first_backward);
+      emit builder Kernel.NRFalsumElim;
+      emit builder (Kernel.NRImplElim (kernel_formula right));
+      emit builder (Kernel.NRHypothesis first_not_right_name);
+      emit builder (Kernel.NRHypothesis first_backward);
+
+      (* Second conjunct: not A or not B. *)
+      let third_em_name = fresh builder "resolution_em" in
+      emit builder
+        (Kernel.NRCut
+           (third_em_name, kernel_formula (Or (left, Not left))));
+      emit ~axioms:[Kernel.classical_axiom (kernel_formula left)]
+        builder Kernel.NRAxiom;
+      let second_left_name = fresh builder "resolution_left" in
+      let second_not_left_name = fresh builder "resolution_not_left" in
+      emit builder
+        (Kernel.NRDisjElim
+           (kernel_formula left,
+            kernel_formula (Not left),
+            second_left_name, second_not_left_name));
+      emit builder (Kernel.NRHypothesis third_em_name);
+
+      (* In the A branch, split on B. *)
+      let fourth_em_name = fresh builder "resolution_em" in
+      emit builder
+        (Kernel.NRCut
+           (fourth_em_name, kernel_formula (Or (right, Not right))));
+      emit ~axioms:[Kernel.classical_axiom (kernel_formula right)]
+        builder Kernel.NRAxiom;
+      let second_right_name = fresh builder "resolution_right" in
+      let second_not_right_name = fresh builder "resolution_not_right" in
+      emit builder
+        (Kernel.NRDisjElim
+           (kernel_formula right,
+            kernel_formula (Not right),
+            second_right_name, second_not_right_name));
+      emit builder (Kernel.NRHypothesis fourth_em_name);
+      emit builder Kernel.NRFalsumElim;
+      emit builder (Kernel.NRImplElim (kernel_formula (Iff (left, right))));
+      emit builder (Kernel.NRHypothesis source_name);
+      emit builder Kernel.NRConjIntro;
+      let second_forward = fresh builder "resolution_forward" in
+      emit builder (Kernel.NRImplIntro second_forward);
+      emit builder (Kernel.NRHypothesis second_right_name);
+      let second_backward = fresh builder "resolution_backward" in
+      emit builder (Kernel.NRImplIntro second_backward);
+      emit builder (Kernel.NRHypothesis second_left_name);
+      emit builder Kernel.NRDisjIntroR;
+      emit builder (Kernel.NRHypothesis second_not_right_name);
+      emit builder Kernel.NRDisjIntroL;
+      emit builder (Kernel.NRHypothesis second_not_left_name);
+      derive_clause_from_hyp builder normalized_name normalized target
+  | Ok _ -> Error "the negated equivalence does not contain the requested clause"
+  end
 
 let derive_contradiction builder first_literal first_name second_literal second_name =
   match first_literal, second_literal with
