@@ -308,6 +308,7 @@ alias is_empty x := forall y, not (y in x).
 Choose empty Hempty from empty_set.
 
 theorem chosen_empty_is_empty : is_empty empty.
+put Hempty.
 exact Hempty.
 qed.
 ```
@@ -315,7 +316,9 @@ qed.
 `Choose`は、指定した存在命題の証明証明書を抽出カーネルで再検査してから、
 新しいグローバル定数と、その定数で具体化した名前付き事実を環境へ追加します。
 したがって、上の`empty`は以後の定理の主張にも現せます。同名の定数または
-事実を再宣言することはできません。
+事実を再宣言することはできません。Chooseで追加された事実は、以前に証明した
+定理と同様に、後続の定理の証明状態や`resolution.`の探索対象には自動では入りません。
+必要な事実だけを`put`で現在の仮定へ明示的に追加します。
 
 `Choose`は、存在事実から0引数の定数または関数記号を導入できます。全称量化子の
 後に存在量化子が続く事実に引数を指定しない場合は、関数記号になります。
@@ -327,6 +330,7 @@ Choose pair Hpair from pairing.
 theorem pair_shape :
   forall a, forall b, forall x,
     (x in pair(a,b) <-> (x = a or x = b)).
+put Hpair.
 exact Hpair.
 qed.
 ```
@@ -334,10 +338,26 @@ qed.
 `Choose f H from fact.` は、`fact`の証明書を再検査し、`forall ... exists ...`
 の存在変数を`f`の適用で置き換えた名前付き事実をグローバル環境へ追加します。
 存在事実に具体化項を指定した場合は、従来どおりその存在事実から0引数の定数を
-選びます。導入された定数・関数記号は以後の定理・タクティクで利用できます。
+選びます。導入された定数・関数記号は以後の定理の主張や項で利用できます。
+生成された事実を証明中の仮定として使うには`put`を指定します。
 
 `qed.` の後に次の定理や宣言を続けることもできます。完了した定理は、後続の
 宣言から名前で参照できるグローバル事実として証明書付きで登録されます。
+ただし、後続の定理の証明状態や`resolution.`の探索対象には自動では入りません。
+必要な定理だけを`put`で現在の仮定へ明示的に追加します。
+
+```text
+theorem previous_result : forall x, x = x.
+intro x.
+refl.
+qed.
+
+theorem use_previous_result : forall a, a = a.
+intro a.
+put previous_result.
+resolution.
+qed.
+```
 
 ```text
 theorem and_commutes :
@@ -353,7 +373,7 @@ apply H.
 qed.
 ```
 
-タクティクは `intro`, `intros`, `assumption`, `exact`, `apply`, `specialize`, `obtain`, `rewrite`, `refl`, `split`, `cases`,
+タクティクは `intro`, `intros`, `assumption`, `exact`, `apply`, `specialize`, `obtain`, `put`, `rewrite`, `refl`, `split`, `cases`,
 `left`, `right`, `use`, `contradiction`, `resolution` を実装しています。`apply` は全称量化された
 事実をゴールに合わせて具体化します。たとえば `apply extensionality` で外延性公理を
 利用できます。仮定から新しい仮定を導く場合は、`apply H0 in H as H1` と書けます。
@@ -365,12 +385,28 @@ qed.
 
 `resolution.`は一階論理のCNF節に対するresolution refutationを探索し、見つかった
 導出を`cut`、選言除去、含意除去などのprimitive rule列へ変換してから抽出カーネルで
-検査します。`and`・`or`・`->`・`<->`は命題論理として節へ分解され、原子式または`false`
-のゴールが対象です。仮定の先頭にある`forall`は、項の単一化で必要な具体化を探索し、
-`all_elim`として証明列に反映します。それ以外の量化子など分解対象でない仮定は一つの
-原始命題としてそのまま保持されます。したがって、証明に不要な一階述語論理の仮定が
-混ざっていても、対応範囲の仮定だけを使って探索を続けられます。
+検査します。`and`・`or`・`->`・`<->`は命題論理として節へ分解され、複合式を含む
+ゴールにも古典的な場合分けで対応します。仮定の先頭にある`forall`は、項の単一化で
+必要な具体化を探索し、`all_elim`として証明列に反映します。先頭の`exists`仮定は
+freshな固有変数を導入する`ex_elim`で開き、証明全体をそのスコープ内で検査します。
+存在ゴールでは、仮定やゴール中に現れる項を候補として自動的に`ex_intro`を試します。
+例えば、存在仮定から取り出した`p`を明示的な`use p`なしで選べます。候補で解けない
+場合は、存在ゴールの否定を全称否定へ変換して扱います。したがって、対応する範囲では
+`obtain`や`use`を省略して`resolution.`だけで証明できます。Skolem化はまだ行わないため、量化子が
+命題結合子の内部に現れる場合など、対応範囲外の量化子は一つの原始命題として保持
+されます。したがって、証明に不要な一階述語論理の仮定が混ざっていても、対応範囲の
+仮定だけを使って探索を続けられます。
 単一化の具体化には、ゴールまたは仮定中に現れる項を使用します。
+
+探索器は新しい節を待ち行列から一つずつ処理する given-clause 方式で動作し、
+リテラルの種類ごとの索引を使って単一化候補を絞ります。探索の計測値を確認する
+場合は、例えば次のように環境変数を設定します。
+
+```sh
+ZFCERT_RESOLUTION_STATS=1 dune exec src/main.exe -- --self-test
+```
+
+生成節数、単一化試行数、重複節数、証明列の長さ、CPU時間が標準エラー出力に表示されます。
 
 ```text
 theorem resolution_example :

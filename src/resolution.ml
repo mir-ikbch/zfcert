@@ -7,11 +7,15 @@
 
    The planner decomposes propositional conjunctions, disjunctions,
    implications, and equivalences.  Leading universal quantifiers are
-   instantiated by first-order unification.  A hypothesis whose outer
+   instantiated by first-order unification.  Top-level existential
+   hypotheses are opened with eigenvariables and the generated certificate
+   keeps the corresponding elimination scopes.  A hypothesis whose outer
    connective is outside that fragment is deliberately kept opaque and
    treated as one propositional atom.  This lets resolution ignore unrelated
    first-order hypotheses while still using them when they happen to match a
-   literal in the refutation. *)
+   literal in the refutation.  Saturation uses a given-clause worklist and a
+   coarse literal index; optional counters are enabled by
+   [ZFCERT_RESOLUTION_STATS]. *)
 
 module Kernel = Zfcert_kernel
 
@@ -28,6 +32,22 @@ type input = {
   instantiation : term list;
   clause : clause;
   existing : bool;
+  normalized_from : (string * formula) option;
+}
+
+type existential_wrapper = {
+  source_name : string;
+  existential : formula;
+  witness : string;
+  hypothesis : string;
+}
+
+type normalized_source = {
+  origin_name : string;
+  origin_formula : formula;
+  source_formula : formula;
+  universal_binders : string list;
+  body_formula : formula;
 }
 
 type node_kind =
@@ -41,9 +61,30 @@ and node = {
   kind : node_kind;
 }
 
+type atom_index_key =
+  | IndexEquality
+  | IndexMembership
+  | IndexNamed of string
+  | IndexOther
+
+type literal_index_key = bool * atom_index_key
+
+type search_stats = {
+  started_at : float;
+  mutable given_clauses : int;
+  mutable indexed_candidates : int;
+  mutable unification_attempts : int;
+  mutable generated_resolvents : int;
+  mutable duplicate_clauses : int;
+  mutable max_clauses : int;
+  mutable proof_steps : int;
+  mutable reported : bool;
+}
+
 type builder = {
   mutable used_names : StringSet.t;
   mutable steps_reverse : Kernel.certificate_step list;
+  stats : search_stats;
 }
 
 let make_builder hypotheses target =
@@ -53,7 +94,19 @@ let make_builder hypotheses target =
          StringSet.add name (StringSet.union names (all_vars formula)))
       (all_vars target) hypotheses
   in
-  { used_names = names; steps_reverse = [] }
+  { used_names = names;
+    steps_reverse = [];
+    stats = {
+      started_at = Sys.time ();
+      given_clauses = 0;
+      indexed_candidates = 0;
+      unification_attempts = 0;
+      generated_resolvents = 0;
+      duplicate_clauses = 0;
+      max_clauses = 0;
+      proof_steps = 0;
+      reported = false;
+    } }
 
 let fresh builder base =
   let name = fresh_name base builder.used_names in
@@ -64,9 +117,160 @@ let emit ?(axioms = []) builder rule =
   builder.steps_reverse <-
     Kernel.certificate_step ~axioms rule :: builder.steps_reverse
 
-let finish builder = List.rev builder.steps_reverse
+let resolution_stats_enabled () =
+  match Sys.getenv_opt "ZFCERT_RESOLUTION_STATS" with
+  | Some value -> value <> "" && value <> "0"
+  | None -> false
+
+let report_search_stats builder =
+  let stats = builder.stats in
+  if resolution_stats_enabled () && not stats.reported then begin
+    stats.reported <- true;
+    Printf.eprintf
+      ("ZFCert resolution: given=%d candidates=%d unifications=%d "
+       ^^ "resolvents=%d duplicates=%d max-clauses=%d proof-steps=%d "
+       ^^ "cpu=%.3fs\n")
+      stats.given_clauses
+      stats.indexed_candidates
+      stats.unification_attempts
+      stats.generated_resolvents
+      stats.duplicate_clauses
+      stats.max_clauses
+      stats.proof_steps
+      (Sys.time () -. stats.started_at)
+  end
+
+let finish builder =
+  let steps = List.rev builder.steps_reverse in
+  builder.stats.proof_steps <- List.length steps;
+  report_search_stats builder;
+  steps
 
 let kernel_formula = Kernel_syntax.to_kernel
+
+(* Push a negation through one or more leading existential quantifiers.  The
+   returned binders are fresh eigenvariable names, and the final body is
+   quantifier-free at its outermost level. *)
+let normalize_negated_exists occupied = function
+  | Not existential ->
+      let rec peel occupied binders = function
+        | Exists (binder, body) ->
+            let witness = fresh_name binder occupied in
+            let body = rename_bound binder witness body in
+            peel (StringSet.add witness (StringSet.union occupied (all_vars body)))
+              (binders @ [witness]) body
+        | body -> (occupied, binders, body)
+      in
+      let occupied, binders, body = peel occupied [] existential in
+      if binders = [] then None
+      else
+        let source_formula =
+          List.fold_right
+            (fun binder body -> Forall (binder, body)) binders (Not body)
+        in
+        Some (occupied, source_formula, binders, Not body)
+  | _ -> None
+
+(* Open leading existential quantifiers in hypotheses.  The generated body
+   hypotheses are only available inside the corresponding [ex_elim] scopes;
+   the wrappers are emitted before the resolution proof so no eigenvariable
+   can escape into a cut outside its scope. *)
+let prepare_existential_hypotheses hypotheses target =
+  let occupied =
+    List.fold_left
+      (fun names (name, formula) ->
+         StringSet.add name (StringSet.union names (all_vars formula)))
+      (all_vars target) hypotheses
+  in
+  let rec peel occupied source_name formula wrappers =
+    match formula with
+    | Exists (binder, body) ->
+        let witness = fresh_name binder occupied in
+        let occupied = StringSet.add witness occupied in
+        let hypothesis = fresh_name (source_name ^ "_witness") occupied in
+        let body = rename_bound binder witness body in
+        let occupied =
+          StringSet.add hypothesis (StringSet.union occupied (all_vars body))
+        in
+        let wrapper =
+          { source_name; existential = formula; witness; hypothesis }
+        in
+        peel occupied hypothesis body (wrappers @ [wrapper])
+    | body -> (occupied, source_name, body, wrappers)
+  in
+  let rec loop occupied result wrappers normalized_sources = function
+    | [] -> (List.rev result, wrappers, normalized_sources)
+    | (source_name, formula) :: rest ->
+        let occupied, body_name, body, source_wrappers =
+          peel occupied source_name formula []
+        in
+        let occupied, source_normalization =
+          match normalize_negated_exists occupied body with
+          | Some (occupied, source_formula, universal_binders, body_formula) ->
+              (occupied,
+               Some
+                 { origin_name = body_name;
+                   origin_formula = body;
+                   source_formula;
+                   universal_binders;
+                   body_formula })
+          | None -> (occupied, None)
+        in
+        let normalized_sources =
+          match source_normalization with
+          | None -> normalized_sources
+          | Some source -> source :: normalized_sources
+        in
+        loop occupied ((body_name, body) :: result)
+          (wrappers @ source_wrappers) normalized_sources rest
+  in
+  loop occupied [] [] [] hypotheses
+
+let emit_existential_wrappers builder wrappers =
+  List.iter
+    (fun wrapper ->
+       emit builder
+         (Kernel.NRExElim
+            (wrapper.witness, wrapper.hypothesis,
+             kernel_formula wrapper.existential));
+       emit builder (Kernel.NRHypothesis wrapper.source_name))
+    wrappers
+
+(* Prove [forall w, not (body w)] from [not (exists x, body x)].  This is the
+   quantifier-duality step needed when the negated goal is existential. *)
+let prove_not_exists_to_forall builder source_name original normalized =
+  match original with
+  | Not existential ->
+      let rec match_chain existential normalized witnesses =
+        match existential, normalized with
+        | Exists (binder, body), Forall (witness, rest) ->
+            let body = rename_bound binder witness body in
+            match_chain body rest (witness :: witnesses)
+        | body, Not normalized_body when body = normalized_body ->
+            Some (List.rev witnesses, body)
+        | _ -> None
+      in
+      begin match match_chain existential normalized [] with
+      | None ->
+          Error "the normalized existential negation does not match its source"
+      | Some (witnesses, _) ->
+          let hypothesis = fresh builder "resolution_exists" in
+          List.iter
+            (fun witness -> emit builder (Kernel.NRAllIntro witness))
+            witnesses;
+          emit builder (Kernel.NRImplIntro hypothesis);
+          emit builder (Kernel.NRImplElim (kernel_formula existential));
+          emit builder (Kernel.NRHypothesis source_name);
+          List.iter
+            (fun witness ->
+               emit builder
+                 (Kernel.NRExIntro
+                    (Kernel_syntax.to_kernel_term (Name witness))))
+            witnesses;
+          emit builder (Kernel.NRHypothesis hypothesis);
+          Ok ()
+      end
+  | _ -> Error "the existential negation normalization has the wrong shape"
 
 let rec apply_term substitution = function
   | Name name ->
@@ -854,110 +1058,147 @@ let rec instantiate_node substitution node =
   in
   { node with clause; variables; kind }
 
-let all_pairs nodes =
-  let rec with_tail first = function
-    | [] -> []
-    | second :: rest -> (first, second) :: with_tail first rest
-  in
-  let rec loop = function
-    | [] -> []
-    | first :: rest -> with_tail first rest @ loop rest
-  in
-  loop nodes
+let atom_index_key = function
+  | Eq _ -> IndexEquality
+  | Mem _ -> IndexMembership
+  | Named (name, _) -> IndexNamed name
+  | _ -> IndexOther
 
-let resolvents first second =
-  let flexible = StringSet.union first.variables second.variables in
-  let rec for_first = function
-    | [] -> []
-    | first_literal :: rest ->
-        let rec for_second = function
-          | [] -> []
-          | second_literal :: remaining ->
-              let generated =
-                if fst first_literal <> fst second_literal then
-                  match
-                    unify_atoms flexible [] (snd first_literal)
-                      (snd second_literal)
-                  with
-                  | None -> []
-                  | Some substitution ->
-                      let first_instantiated =
-                        instantiate_node substitution first
-                      in
-                      let second_instantiated =
-                        instantiate_node substitution second
-                      in
-                      let first_pivot =
-                        apply_literal substitution first_literal
-                      in
-                      let second_pivot =
-                        apply_literal substitution second_literal
-                      in
-                      begin match
-                        normalize_clause
-                          (List.filter
-                             (fun item -> not (same_literal item first_pivot))
-                             first_instantiated.clause
-                           @ List.filter
-                               (fun item ->
-                                  not (same_literal item second_pivot))
-                               second_instantiated.clause)
-                      with
-                      | None -> []
-                      | Some clause ->
-                          [ (clause, first_instantiated,
-                             second_instantiated, first_pivot) ]
-                      end
-                else []
-              in
-              generated @ for_second remaining
-        in
-        for_second second.clause @ for_first rest
-  in
-  for_first first.clause
+let literal_index_key (positive, atom) =
+  (positive, atom_index_key atom)
+
+type literal_index = (literal_index_key, (node * literal) list) Hashtbl.t
+
+let add_to_literal_index index node =
+  List.iter
+    (fun literal ->
+       let key = literal_index_key literal in
+       let previous =
+         match Hashtbl.find_opt index key with
+         | Some candidates -> candidates
+         | None -> []
+       in
+       Hashtbl.replace index key ((node, literal) :: previous))
+    node.clause
+
+let indexed_candidates index literal =
+  let positive, atom = literal in
+  match Hashtbl.find_opt index (not positive, atom_index_key atom) with
+  | Some candidates -> candidates
+  | None -> []
+
+module ClauseTable = Hashtbl.Make (struct
+  type t = clause
+  let equal = clause_equal
+  let hash = Hashtbl.hash
+end)
+
+let indexed_resolvents builder index first =
+  let stats = builder.stats in
+  List.concat_map
+    (fun first_literal ->
+       let candidates = indexed_candidates index first_literal in
+       List.filter_map
+         (fun (second, second_literal) ->
+            stats.indexed_candidates <- stats.indexed_candidates + 1;
+            stats.unification_attempts <- stats.unification_attempts + 1;
+            let flexible = StringSet.union first.variables second.variables in
+            match
+              unify_atoms flexible [] (snd first_literal) (snd second_literal)
+            with
+            | None -> None
+            | Some substitution ->
+                let first_instantiated =
+                  instantiate_node substitution first
+                in
+                let second_instantiated =
+                  instantiate_node substitution second
+                in
+                let first_pivot =
+                  apply_literal substitution first_literal
+                in
+                let second_pivot =
+                  apply_literal substitution second_literal
+                in
+                begin match
+                  normalize_clause
+                    (List.filter
+                       (fun item -> not (same_literal item first_pivot))
+                       first_instantiated.clause
+                     @ List.filter
+                         (fun item ->
+                            not (same_literal item second_pivot))
+                         second_instantiated.clause)
+                with
+                | None -> None
+                | Some clause ->
+                    stats.generated_resolvents <-
+                      stats.generated_resolvents + 1;
+                    Some (clause, first_instantiated,
+                          second_instantiated, first_pivot)
+                end)
+         candidates)
+    first.clause
 
 let saturate builder initial_nodes =
-  let rec loop nodes =
-    match List.find_opt (fun node -> node.clause = []) nodes with
-    | Some empty -> Ok (nodes, empty)
-    | None ->
-        let additions =
-          all_pairs nodes
-          |> List.concat_map (fun (first, second) ->
-               resolvents first second
-               |> List.filter_map (fun (clause, first, second, pivot) ->
-                    if List.exists (fun node -> clause_equal node.clause clause) nodes
-                    then None
-                    else
-                      let name = fresh builder "resolution_clause" in
-                      let variables =
-                        StringSet.union first.variables second.variables
-                        |> StringSet.filter
-                             (fun variable ->
-                                StringSet.mem variable
-                                  (clause_variables clause))
-                      in
-                      Some
-                        { name; clause; variables;
-                          kind = Resolve (first, second, pivot) }))
-        in
-        let additions =
-          List.fold_left
-            (fun result node ->
-               if List.exists (fun old -> clause_equal old.clause node.clause)
-                    (nodes @ result)
-               then result
-               else result @ [node])
-            [] additions
-        in
-        if additions = [] then
-          Error "no resolution refutation was found"
-        else if List.length nodes + List.length additions > 512 then
+  let seen = ClauseTable.create (max 17 (List.length initial_nodes * 2)) in
+  let index : literal_index = Hashtbl.create 31 in
+  let pending = Queue.create () in
+  let all_nodes = ref [] in
+  let add_node node =
+    if ClauseTable.mem seen node.clause then false
+    else begin
+      ClauseTable.add seen node.clause node;
+      Queue.add node pending;
+      all_nodes := node :: !all_nodes;
+      builder.stats.max_clauses <-
+        max builder.stats.max_clauses (ClauseTable.length seen);
+      true
+    end
+  in
+  List.iter (fun node -> ignore (add_node node)) initial_nodes;
+  let rec loop () =
+    if Queue.is_empty pending then
+      Error "no resolution refutation was found"
+    else
+      let given = Queue.take pending in
+      builder.stats.given_clauses <- builder.stats.given_clauses + 1;
+      if given.clause = [] then
+        Ok (!all_nodes, given)
+      else begin
+        let additions = indexed_resolvents builder index given in
+        List.iter
+          (fun (clause, first, second, pivot) ->
+             if ClauseTable.mem seen clause then
+               builder.stats.duplicate_clauses <-
+                 builder.stats.duplicate_clauses + 1
+             else
+               let name = fresh builder "resolution_clause" in
+               let variables =
+                 StringSet.union first.variables second.variables
+                 |> StringSet.filter
+                      (fun variable ->
+                         StringSet.mem variable
+                           (clause_variables clause))
+               in
+               ignore
+                 (add_node
+                    { name; clause; variables;
+                      kind = Resolve (first, second, pivot) }))
+          additions;
+        add_to_literal_index index given;
+        if ClauseTable.length seen > 512 then
           Error "the resolution search exceeded its 512-clause limit"
         else
-          loop (nodes @ additions)
+          loop ()
+      end
   in
-  loop initial_nodes
+  let result = loop () in
+  begin match result with
+  | Ok _ -> ()
+  | Error _ -> report_search_stats builder
+  end;
+  result
 
 let prepare_universal_source used source_formula =
   let rec peel occupied binders formula =
@@ -1006,7 +1247,7 @@ let initial_inputs used_names hypotheses =
                  ({ source_name; source_formula; universal_binders;
                     instantiation = List.map (fun name -> Name name)
                       universal_binders;
-                    clause; existing = false }
+                    clause; existing = false; normalized_from = None }
                    : input)
                  :: result)
             result clauses
@@ -1048,6 +1289,28 @@ let unique_terms terms =
     [] terms
   |> List.rev
 
+(* Candidate witnesses for an existential goal.  Choosing a term already
+   present in the context keeps the subsequent resolution problem ground at
+   the witness position and avoids introducing an unnecessary existential
+   search variable.  Compound terms are tried after names because names are
+   the usual eigenvariables and constants introduced by [obtain]. *)
+let existential_witness_terms hypotheses target =
+  let terms =
+    unique_terms
+      (List.concat_map
+         (fun (_, formula) -> terms_in_formula StringSet.empty formula)
+         hypotheses
+       @ terms_in_formula StringSet.empty target)
+  in
+  let names, applications =
+    List.partition
+      (function
+       | Name _ -> true
+       | App _ -> false)
+      terms
+  in
+  names @ applications
+
 let rec node_variables node =
   match node.kind with
   | Input _ -> node.variables
@@ -1087,21 +1350,42 @@ let emit_input_proof builder input target =
             (Kernel_syntax.to_kernel_term term,
              kernel_formula formula)
         in
-        eliminate (subst name term body) binders terms (rule :: rules)
+        eliminate (subst name term body) binders terms (rules @ [rule])
     | _ -> Error "the universal source and its instantiation do not match"
   in
-  match
-    eliminate input.source_formula input.universal_binders input.instantiation []
-  with
+  let source_name =
+    match input.normalized_from with
+    | None -> Ok input.source_name
+    | Some (origin_name, origin_formula) ->
+        let normalized_name = fresh builder "resolution_normalized" in
+        emit builder
+          (Kernel.NRCut
+             (normalized_name, kernel_formula input.source_formula));
+        begin match
+          prove_not_exists_to_forall builder origin_name origin_formula
+            input.source_formula
+        with
+        | Error message -> Error message
+        | Ok () -> Ok normalized_name
+        end
+  in
+  match source_name with
   | Error message -> Error message
-  | Ok (body, []) -> derive_clause_from_hyp builder input.source_name body target
-  | Ok (body, rules) ->
-      let instance_name = fresh builder "resolution_instance" in
-      emit builder
-        (Kernel.NRCut (instance_name, kernel_formula body));
-      List.iter (emit builder) rules;
-      emit builder (Kernel.NRHypothesis input.source_name);
-      derive_clause_from_hyp builder instance_name body target
+  | Ok source_name ->
+      begin match
+        eliminate input.source_formula input.universal_binders
+          input.instantiation []
+      with
+      | Error message -> Error message
+      | Ok (body, []) -> derive_clause_from_hyp builder source_name body target
+      | Ok (body, rules) ->
+          let instance_name = fresh builder "resolution_instance" in
+          emit builder
+            (Kernel.NRCut (instance_name, kernel_formula body));
+          List.iter (emit builder) rules;
+          emit builder (Kernel.NRHypothesis source_name);
+          derive_clause_from_hyp builder instance_name body target
+      end
 
 let rec emit_node builder node =
   match node.kind with
@@ -1134,10 +1418,64 @@ let plan_non_forall hypotheses target =
     | Bottom -> Bottom
     | _ -> Not target
   in
+  let hypotheses, existential_wrappers, normalized_sources =
+    prepare_existential_hypotheses hypotheses target
+  in
   let builder = make_builder hypotheses target in
-  match initial_inputs builder.used_names hypotheses with
+  builder.used_names <-
+    List.fold_left
+      (fun names source ->
+         StringSet.union names (all_vars source.source_formula))
+      builder.used_names normalized_sources;
+  emit_existential_wrappers builder existential_wrappers;
+  let refutation_source, refutation_binders, refutation_body =
+    match normalize_negated_exists builder.used_names refutation_formula with
+    | Some (occupied, source_formula, binders, body_formula) ->
+        builder.used_names <- occupied;
+        (source_formula, binders, body_formula)
+    | None -> (refutation_formula, [], refutation_formula)
+  in
+  let resolution_hypotheses =
+    let normalized_names =
+      List.fold_left
+        (fun names source -> StringSet.add source.origin_name names)
+        StringSet.empty normalized_sources
+    in
+    List.filter
+      (fun (name, _) -> not (StringSet.mem name normalized_names))
+      hypotheses
+  in
+  match initial_inputs builder.used_names resolution_hypotheses with
     | Error message -> Error message
     | Ok inputs ->
+        let inputs =
+          List.fold_left
+            (fun inputs source ->
+               match cnf source.body_formula with
+               | Error _ -> inputs
+               | Ok clauses ->
+                   List.fold_left
+                     (fun result clause ->
+                        if List.exists
+                             (fun (input : input) ->
+                                clause_equal input.clause clause)
+                             result
+                        then result
+                        else
+                          ({ source_name = source.origin_name;
+                             source_formula = source.source_formula;
+                             universal_binders = source.universal_binders;
+                             instantiation =
+                               List.map (fun name -> Name name)
+                                 source.universal_binders;
+                             clause; existing = true;
+                             normalized_from =
+                               Some (source.origin_name, source.origin_formula) }
+                           : input)
+                          :: result)
+                     inputs clauses)
+            inputs normalized_sources
+        in
         let excluded_middle =
           if target = Bottom then None else Some (Or (target, Not target))
         in
@@ -1153,7 +1491,7 @@ let plan_non_forall hypotheses target =
         let inputs =
           match excluded_middle, negated_target_name with
           | Some _, Some source_name ->
-              begin match cnf refutation_formula with
+              begin match cnf refutation_body with
               | Error _ -> inputs
               | Ok clauses ->
                   List.fold_left
@@ -1163,9 +1501,17 @@ let plan_non_forall hypotheses target =
                             result
                        then result
                        else
-                         ({ source_name; source_formula = refutation_formula;
-                            universal_binders = []; instantiation = [];
-                            clause; existing = true } : input)
+                         ({ source_name;
+                            source_formula = refutation_source;
+                            universal_binders = refutation_binders;
+                            instantiation =
+                              List.map (fun name -> Name name)
+                                refutation_binders;
+                            clause; existing = true;
+                            normalized_from =
+                              (match target with
+                               | Exists _ -> Some (source_name, refutation_formula)
+                               | _ -> None) } : input)
                          :: result)
                     inputs clauses
               end
@@ -1244,7 +1590,74 @@ let rec plan hypotheses target =
       | Ok steps ->
           Ok
             (Kernel.certificate_step ~axioms:[]
-               (Kernel.NRAllIntro fresh)
+             (Kernel.NRAllIntro fresh)
              :: steps)
       end
+  | Exists (binder, body) ->
+      let occupied =
+        List.fold_left
+          (fun names (name, formula) ->
+             StringSet.add name (StringSet.union names (all_vars formula)))
+          (all_vars target) hypotheses
+      in
+      let existential_sources =
+        List.filter_map
+          (fun (source_name, source_formula) ->
+             match source_formula with
+             | Exists (source_binder, source_body) ->
+                 Some (source_name, source_formula, source_binder, source_body)
+             | _ -> None)
+          hypotheses
+      in
+      (* When an existential hypothesis is available, open it before
+         selecting the witness for the existential goal.  This is the
+         certificate-level equivalent of [obtain p Hp from H; use p], and
+         keeps the eigenvariable introduced by [ex_elim] in scope for the
+         subsequent [ex_intro]. *)
+      let rec try_existential_sources = function
+        | (source_name, source_formula, source_binder, source_body) :: rest ->
+            let witness = fresh_name source_binder occupied in
+            let opened_body = rename_bound source_binder witness source_body in
+            let hypothesis =
+              fresh_name (source_name ^ "_witness")
+                (StringSet.add witness occupied)
+            in
+            let remaining =
+              List.filter (fun (name, _) -> name <> source_name) hypotheses
+            in
+            let opened_hypotheses = (hypothesis, opened_body) :: remaining in
+            let instantiated_target = subst binder (Name witness) body in
+            begin match plan opened_hypotheses instantiated_target with
+            | Ok steps ->
+                Ok
+                  ([ Kernel.certificate_step ~axioms:[]
+                       (Kernel.NRExElim
+                          (witness, hypothesis,
+                           kernel_formula source_formula));
+                     Kernel.certificate_step ~axioms:[]
+                       (Kernel.NRHypothesis source_name);
+                     Kernel.certificate_step ~axioms:[]
+                       (Kernel.NRExIntro
+                          (Kernel_syntax.to_kernel_term (Name witness)))]
+                   @ steps)
+            | Error _ -> try_existential_sources rest
+            end
+        | [] ->
+            let rec try_witnesses = function
+              | witness :: rest ->
+                  let instantiated = subst binder witness body in
+                  begin match plan hypotheses instantiated with
+                  | Ok steps ->
+                      Ok
+                        (Kernel.certificate_step ~axioms:[]
+                           (Kernel.NRExIntro
+                              (Kernel_syntax.to_kernel_term witness))
+                         :: steps)
+                  | Error _ -> try_witnesses rest
+                  end
+              | [] -> plan_non_forall hypotheses target
+            in
+            try_witnesses (existential_witness_terms hypotheses target)
+      in
+      try_existential_sources existential_sources
   | _ -> plan_non_forall hypotheses target

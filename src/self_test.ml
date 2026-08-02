@@ -38,6 +38,12 @@ let valid_scripts =
     "theorem resolution_goal_implication : forall p, forall q, (not (p = p) -> (p = p -> q = q))\nintros p q Hnot\nresolution\nqed";
     "theorem resolution_goal_equivalence : forall p, forall q, ((p = p) -> ((q = q) -> (p = p <-> q = q)))\nintros p q Hp Hq\nresolution\nqed";
     "theorem resolution_goal_forall : ((forall x, x = x) -> forall y, y = y)\nintro Hall\nresolution\nqed";
+    "theorem resolution_exists_goal : forall a, (a = a -> exists x, x = a)\nintros a Ha\nresolution\nqed";
+    "theorem resolution_nested_exists_goal : forall a, (a = a -> exists x, exists y, x = a)\nintros a Ha\nresolution\nqed";
+    "theorem resolution_exists_hypothesis : forall a, ((exists x, x = a) -> ((forall x, not (x = a)) -> false))\nintros a H Hnot\nresolution\nqed";
+    "theorem resolution_not_exists_hypothesis : forall a, (not (exists x, x = a) -> forall y, not (y = a))\nintros a H\nresolution\nqed";
+    "theorem resolution_nested_not_exists_hypothesis : (not (exists x, exists y, x = y) -> forall x, forall y, not (x = y))\nintro H\nresolution\nqed";
+    "theorem resolution_nested_exists_hypothesis : ((exists x, exists y, x = y) -> ((forall x, forall y, not (x = y)) -> false))\nintros H Hnot\nresolution\nqed";
     "theorem resolution_chain : forall p, forall q, forall r, ((p = p or q = q) -> ((not (p = p) or r = r) -> (not (q = q) -> r = r)))\nintros p q r H1 H2 H3\nresolution\nqed";
     "theorem resolution_conjunction : forall p, forall q, ((p = p and q = q) -> (not (p = p) -> q = q))\nintros p q H1 H2\nresolution\nqed";
     "theorem resolution_falsum : forall p, ((p = p and not (p = p)) -> false)\nintros p H\nresolution\nqed";
@@ -68,11 +74,12 @@ let valid_scripts =
     "alias relates x y := x = y\ntheorem simultaneous_arguments : forall x, forall y, (relates y x -> y = x)\nintro x\nintro y\nintro H\nexact H\nqed";
     "theorem obtain_local : ((exists x, x = x) -> exists y, y = y)\nintro H\nobtain x Hx from H\nuse x\nexact Hx\nqed";
     "theorem obtain_specialized : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nobtain p Hp from pairing a b\nuse p\nexact Hp\nqed";
-    "alias is_empty x := forall y, not (y in x)\nChoose empty Hempty from empty_set\ntheorem choose_empty : is_empty empty\nexact Hempty\nqed";
-    "Choose empty Hempty from empty_set\nChoose pair_empty Hpair from pairing empty empty\ntheorem choose_pair : forall x, (x in pair_empty <-> (x = empty or x = empty))\nexact Hpair\nqed";
-    "Choose pair Hpair from pairing\ntheorem choose_function_pair : forall a, forall b, forall x, (x in pair(a, b) <-> (x = a or x = b))\nexact Hpair\nqed";
+    "alias is_empty x := forall y, not (y in x)\nChoose empty Hempty from empty_set\ntheorem choose_empty : is_empty empty\nput Hempty\nexact Hempty\nqed";
+    "alias is_empty x := forall y, not (y in x)\nChoose empty Hempty from empty_set\ntheorem choose_resolution : is_empty empty\nput Hempty\nresolution\nqed";
+    "Choose empty Hempty from empty_set\nChoose pair_empty Hpair from pairing empty empty\ntheorem choose_pair : forall x, (x in pair_empty <-> (x = empty or x = empty))\nput Hpair\nexact Hpair\nqed";
+    "Choose pair Hpair from pairing\ntheorem choose_function_pair : forall a, forall b, forall x, (x in pair(a, b) <-> (x = a or x = b))\nput Hpair\nexact Hpair\nqed";
     "Choose pair Hpair from pairing\ntheorem choose_function_use : forall a, exists p, p = pair(a, a)\nintro a\nuse pair(a, a)\nrefl\nqed";
-    "Choose pair Hpair from pairing\ntheorem choose_function_specialize : forall a, forall b, forall x, (x in pair(a,b) <-> (x = a or x = b))\nintro a\nintro b\nspecialize Hpair a b as Hab\nexact Hab\nqed";
+    "Choose pair Hpair from pairing\ntheorem choose_function_specialize : forall a, forall b, forall x, (x in pair(a,b) <-> (x = a or x = b))\nintro a\nintro b\nput Hpair\nspecialize Hpair a b as Hab\nexact Hab\nqed";
     "(* A nested (* comment. *) is ignored. *) theorem commented : forall x, x = x\nintro (* binder name *) x\nrefl # legacy line comment\nqed";
     "theorem rule_identity : forall x, x = x\nrule all_intro x\nrule equal_refl\nqed";
     "theorem rule_default_all_intro : forall x, x = x\nrule all_intro\nrule equal_refl\nqed";
@@ -88,8 +95,10 @@ let valid_scripts =
     "theorem rule_separation_axiom : forall a, exists b, forall x, (x in b <-> (x in a and not (x in x)))\nrule all_intro a\nrule axiom separation a x : not (x in x)\nqed";
     "theorem rule_replacement_axiom : forall a, ((forall x, exists y, (y = x and forall z, (z = x -> z = y))) -> exists b, forall y, (y in b <-> exists x, (x in a and y = x)))\nrule all_intro a\nrule axiom replacement a x y : y = x\nqed";
     "theorem first_after_qed : forall x, x = x\nintro x\nrefl\nqed\ntheorem second_after_qed : forall y, y = y\nintro y\nrefl\nqed";
-    "theorem proof_then_declaration : forall x, x = x\nintro x\nrefl\nqed\nChoose empty Hempty from empty_set\ntheorem declaration_after_qed : forall x, not (x in empty)\nexact Hempty\nqed";
-    "theorem proved_exists_pair : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nspecialize pairing a b as H\nobtain p Hp from H\nuse p\nexact Hp\nqed\nChoose pair_from_theorem Hpair from proved_exists_pair\ntheorem choose_function_from_theorem : forall a, forall b, forall x, (x in pair_from_theorem(a,b) <-> (x = a or x = b))\nexact Hpair\nqed";
+    "theorem proof_then_declaration : forall x, x = x\nintro x\nrefl\nqed\nChoose empty Hempty from empty_set\ntheorem declaration_after_qed : forall x, not (x in empty)\nput Hempty\nexact Hempty\nqed";
+    "theorem proved_exists_pair : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nspecialize pairing a b as H\nobtain p Hp from H\nuse p\nexact Hp\nqed\nChoose pair_from_theorem Hpair from proved_exists_pair\ntheorem choose_function_from_theorem : forall a, forall b, forall x, (x in pair_from_theorem(a,b) <-> (x = a or x = b))\nput Hpair\nexact Hpair\nqed";
+    "theorem put_source : forall x, x = x\nintro x\nrefl\nqed\ntheorem put_use : forall a, a = a\nintro a\nput put_source\nresolution\nqed";
+    "Choose empty empty_is_empty from empty_set\nChoose pair Hpair from pairing\ntheorem exists_ordpair : forall x, forall y, exists p, forall z, (z in p) <-> (z = x or z = pair(x, y))\nintros x y\nspecialize pairing x pair(x,y) as H\napply H\nqed\nChoose ordpair Hordpair from exists_ordpair\ntheorem exists_singleton : forall x, exists p, forall y, (y in p) <-> (y = x)\nintro x\nspecialize pairing x x as H\nput Hordpair\nresolution\nqed";
   ]
 
 let rejected script =
@@ -122,6 +131,112 @@ let run () =
        | None -> failwith "A completed proof was not finalized by replay"
        end)
     valid_scripts;
+  let hidden_source_state, _ =
+    Proof_session.analyze_script
+      (terminate_lines
+         "theorem hidden_source : forall x, x = x
+intro x
+refl
+qed
+theorem hidden_target : forall a, a = a
+intro a")
+  in
+  begin match Proof_session.goals hidden_source_state with
+  | [{ context = []; target = Syntax.Eq (Syntax.Name "a", Syntax.Name "a") }] -> ()
+  | _ -> failwith "A previous theorem was exposed in the proof context"
+  end;
+  let choose_hidden_state, _ =
+    Proof_session.analyze_script
+      (terminate_lines
+         "alias is_empty x := forall y, not (y in x)
+Choose empty Hempty from empty_set
+theorem choose_hidden : is_empty empty")
+  in
+  begin match Proof_session.goals choose_hidden_state with
+  | [{ context = []; _ }] -> ()
+  | _ -> failwith "A Choose fact was exposed in the proof context"
+  end;
+  if not
+       (rejected
+          (terminate_lines
+             "alias is_empty x := forall y, not (y in x)
+Choose empty Hempty from empty_set
+theorem choose_without_put : is_empty empty
+exact Hempty
+qed"))
+  then
+    failwith "A Choose fact was used without put";
+  if not
+       (rejected
+          (terminate_lines
+             "alias is_empty x := forall y, not (y in x)
+Choose empty Hempty from empty_set
+theorem choose_resolution_without_put : is_empty empty
+resolution
+qed"))
+  then
+    failwith "Resolution used a Choose fact without put";
+  let put_state, _ =
+    Proof_session.analyze_script
+      (terminate_lines
+         "theorem put_source : forall x, x = x
+intro x
+refl
+qed
+theorem put_target : forall a, a = a
+intro a
+put put_source")
+  in
+  begin match Proof_session.goals put_state with
+  | [{ context = [("put_source", Syntax.Forall (_, _))]; _ }] -> ()
+  | _ -> failwith "put did not expose the selected theorem in the context"
+  end;
+  if not
+       (rejected
+          (terminate_lines
+             "theorem hidden_source : forall x, x = x
+intro x
+refl
+qed
+theorem hidden_target : forall a, a = a
+intro a
+resolution
+qed"))
+  then
+    failwith "Resolution used a previous theorem without put";
+  if not
+       (rejected
+          (terminate_lines
+             "theorem hidden_source : forall x, x = x
+intro x
+refl
+qed
+theorem hidden_rule_target : forall x, x = x
+rule hypothesis hidden_source
+qed"))
+  then
+    failwith "A hidden theorem was accepted by rule hypothesis";
+  if not
+       (rejected
+          (terminate_lines
+             "theorem put_missing : forall x, x = x
+put unknown_theorem
+qed"))
+  then
+    failwith "put accepted an unknown theorem";
+  if not
+       (rejected
+          (terminate_lines
+             "theorem put_source : forall x, x = x
+intro x
+refl
+qed
+theorem put_duplicate : forall x, x = x
+put put_source
+put put_source
+qed"))
+  then
+    failwith "put accepted a duplicate theorem";
   let forall_certificate =
     Proof_session.check_script
       (terminate_lines
@@ -213,9 +328,10 @@ qed")
     failwith "The checked primitive rule certificate was not exposed by the API";
   let choose_state =
     Proof_session.check_script
-      "alias is_empty x := forall y, not (y in x).
+       "alias is_empty x := forall y, not (y in x).
        Choose empty Hempty from empty_set.
        theorem choose_certificate : is_empty empty.
+       put Hempty.
        exact Hempty.
        qed."
   in
@@ -432,5 +548,5 @@ theorem hidden : forall x, x = x")
     | _ -> failwith "The choice axiom did not parse"
   end;
   Printf.printf
-    "All %d kernel tests passed (plus 14 rejection tests).\n%!"
+    "All %d kernel tests passed (plus 20 rejection tests).\n%!"
     (List.length valid_scripts)
