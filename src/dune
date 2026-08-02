@@ -7,6 +7,7 @@
   http_server
   api_json
   proof_session
+  resolution
   rule_parser
   kernel_syntax
   parser

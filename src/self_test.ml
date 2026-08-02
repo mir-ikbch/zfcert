@@ -20,6 +20,13 @@ let valid_scripts =
     "theorem refl : forall x, x = x\nintro x\nrefl\nqed";
     "theorem intros_named : forall x, forall y, (x = y -> x = y)\nintros x y H\nexact H\nqed";
     "theorem intros_auto : forall x, forall y, (x = y -> x = y)\nintros\nexact H\nqed";
+    "theorem resolution_basic : forall p, forall q, ((p = p or q = q) -> (not (p = p) -> q = q))\nintros p q Hclause Hnot\nresolution\nqed";
+    "theorem resolution_ignores_opaque : forall p, forall q, ((forall x, x = x) -> ((p = p or q = q) -> (not (p = p) -> q = q)))\nintros p q Hopaque Hclause Hnot\nresolution\nqed";
+    "theorem resolution_uses_opaque : forall p, forall q, (((p = p -> q = q)) -> (not (p = p -> q = q) -> q = q))\nintros p q Hopaque HnotOpaque\nresolution\nqed";
+    "theorem resolution_chain : forall p, forall q, forall r, ((p = p or q = q) -> ((not (p = p) or r = r) -> (not (q = q) -> r = r)))\nintros p q r H1 H2 H3\nresolution\nqed";
+    "theorem resolution_conjunction : forall p, forall q, ((p = p and q = q) -> (not (p = p) -> q = q))\nintros p q H1 H2\nresolution\nqed";
+    "theorem resolution_falsum : forall p, ((p = p and not (p = p)) -> false)\nintros p H\nresolution\nqed";
+    "theorem resolution_distributed : forall p, forall q, forall r, (((p = p and q = q) or r = r) -> (not (p = p) -> r = r))\nintros p q r H1 H2\nresolution\nqed";
     "theorem intros_shadow : forall x, (x = x -> forall x, x = x)\nintros\nrefl\nqed";
     "theorem compact_quantifiers : forall x y z, (x = z -> x = z)\nintros x y z H\nexact H\nqed";
     "theorem empty : exists e, forall x, not (x in e)\nexact empty_set\nqed";

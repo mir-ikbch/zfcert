@@ -653,6 +653,7 @@ Inductive named_fixed_axiom : Type :=
 
 Inductive named_axiom : Type :=
 | NFixedAxiom (kind : named_fixed_axiom)
+| NClassicalAxiom (predicate : named_formula)
 | NSeparationAxiom
     (source element : string) (predicate : named_formula)
 | NSeparationTermAxiom
@@ -687,6 +688,11 @@ Definition compile_axiom
   : named_result formula :=
   match axiom with
   | NFixedAxiom kind => NOk (fixed_axiom_formula kind)
+  | NClassicalAxiom predicate =>
+      named_bind
+        (elaborate constants [] environment predicate)
+        (fun core_predicate =>
+      NOk (Disj core_predicate (Neg core_predicate)))
   | NSeparationAxiom source element predicate =>
       named_bind
         (elaborate_schema_predicate
@@ -1624,11 +1630,18 @@ Proof.
   intros constants environment axiom core_axiom Hcompile.
   destruct axiom as
     [kind
+    |predicate
     |source element predicate
     |source element predicate
     |input output predicate].
   - destruct kind; cbn in Hcompile; inversion Hcompile; subst;
       apply ZFC_set_axiom; constructor.
+  - cbn in Hcompile.
+    destruct (elaborate constants [] environment predicate)
+      as [core_predicate | error] eqn:Hpredicate;
+      try discriminate.
+    inversion Hcompile; subst.
+    apply ZFC_excluded_middle.
   - cbn in Hcompile.
     destruct
       (elaborate_schema_predicate

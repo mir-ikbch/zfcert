@@ -354,7 +354,7 @@ qed.
 ```
 
 タクティクは `intro`, `intros`, `assumption`, `exact`, `apply`, `specialize`, `obtain`, `rewrite`, `refl`, `split`, `cases`,
-`left`, `right`, `use`, `contradiction` を実装しています。`apply` は全称量化された
+`left`, `right`, `use`, `contradiction`, `resolution` を実装しています。`apply` は全称量化された
 事実をゴールに合わせて具体化します。たとえば `apply extensionality` で外延性公理を
 利用できます。仮定から新しい仮定を導く場合は、`apply H0 in H as H1` と書けます。
 これは `H0` の一つの含意前提に `H` を適用し、結論を `H1` として追加します。
@@ -362,6 +362,22 @@ qed.
 等号仮定によるゴールの書き換えには `rewrite H` を使います。例えば `H : a = b`
 のもとでゴールが `P a` なら、ゴールを `P b` に書き換えます。
 逆方向には `rewrite <- H` を使います。
+
+`resolution.`は命題論理のCNF節に対するresolution refutationを探索し、見つかった
+導出を`cut`、選言除去、含意除去などのprimitive rule列へ変換してから抽出カーネルで
+検査します。`and`・`or`は節へ分解され、原子式または`false`のゴールが対象です。
+量化子・含意・同値など、分解対象でない仮定は一つの原始命題としてそのまま保持されます。
+したがって、証明に不要な一階述語論理の仮定が混ざっていても、対応範囲の仮定だけを使って
+探索を続けられます（その仮定自身を解消に使える場合は、原始命題として利用されます）。
+
+```text
+theorem resolution_example :
+  forall p, forall q,
+    ((p = p or q = q) -> (not (p = p) -> q = q)).
+intros p q Hclause Hnot.
+resolution.
+qed.
+```
 
 ### プリミティブ推論規則
 

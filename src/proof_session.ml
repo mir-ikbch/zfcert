@@ -766,6 +766,16 @@ let execute_separation line_no state fact_name source element predicate =
   in
   add_step state ("separation " ^ fact_name) kernel_state
 
+let execute_resolution line_no state goal argument =
+  if trim argument <> "" then
+    raise (Proof_error (line_no, "resolution takes no arguments."));
+  let program =
+    match Resolution.plan goal.context goal.target with
+    | Ok program -> program
+    | Error message -> raise (Proof_error (line_no, message))
+  in
+  apply_certificate_program line_no state program "resolution"
+
 let fresh_intro_name base used =
   if StringSet.mem base used then fresh_name base used else base
 
@@ -842,6 +852,7 @@ let execute_tactic line_no state line =
       begin match command with
       | "rule" -> execute_rule line_no state argument
       | "obtain" -> execute_obtain line_no state "obtain" argument
+      | "resolution" -> execute_resolution line_no state goal argument
       | "separation" ->
           let fact_name, source, element, predicate =
             parse_separation_argument line_no state.aliases argument

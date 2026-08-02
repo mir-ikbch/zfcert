@@ -195,6 +195,8 @@ val current_certificate_rules : state -> rule list
 
 val fixed_axiom : fixed_axiom -> axiom
 
+val classical_axiom : formula -> axiom
+
 val separation_axiom :
   source:string ->
   element:string ->

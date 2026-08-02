@@ -221,6 +221,9 @@ let fixed_axiom = function
   | Infinity -> Raw.NFixedAxiom Raw.NInfinity
   | Choice -> Raw.NFixedAxiom Raw.NChoice
 
+let classical_axiom predicate =
+  Raw.NClassicalAxiom predicate
+
 let separation_axiom ~source ~element predicate =
   Raw.NSeparationAxiom (source, element, predicate)
 

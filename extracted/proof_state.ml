@@ -1589,6 +1589,7 @@ type named_fixed_axiom =
 
 type named_axiom =
 | NFixedAxiom of named_fixed_axiom
+| NClassicalAxiom of named_formula
 | NSeparationAxiom of string * string * named_formula
 | NSeparationTermAxiom of named_term * string * named_formula
 | NReplacementAxiom of string * string * named_formula
@@ -1621,6 +1622,9 @@ let elaborate_schema_predicate constants binders environment predicate =
 
 let compile_axiom constants environment = function
 | NFixedAxiom kind -> NOk (fixed_axiom_formula kind)
+| NClassicalAxiom predicate ->
+  named_bind (elaborate constants [] environment predicate)
+    (fun core_predicate -> NOk (Disj (core_predicate, (neg core_predicate))))
 | NSeparationAxiom (source, element, predicate) ->
   named_bind
     (elaborate_schema_predicate constants (element :: (source :: []))

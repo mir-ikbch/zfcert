@@ -72,7 +72,7 @@ a synchronous local HTTP request."
      . font-lock-keyword-face)
     (,(regexp-opt
        '("rule" "intro" "intros" "exact" "apply" "specialize" "obtain" "cases" "use"
-         "refl" "split" "constructor" "assumption" "contradiction"
+         "refl" "split" "constructor" "assumption" "contradiction" "resolution"
          "left" "right" "separation" "replacement")
        'symbols)
      . font-lock-builtin-face)

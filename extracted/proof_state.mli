@@ -375,6 +375,7 @@ type named_fixed_axiom =
 
 type named_axiom =
 | NFixedAxiom of named_fixed_axiom
+| NClassicalAxiom of named_formula
 | NSeparationAxiom of string * string * named_formula
 | NSeparationTermAxiom of named_term * string * named_formula
 | NReplacementAxiom of string * string * named_formula
