@@ -1127,25 +1127,15 @@ let rec emit_node builder node =
           end
       end
 
-let plan hypotheses target =
+let plan_non_forall hypotheses target =
   let target_kernel = kernel_formula target in
-  let target_is_literal =
+  let refutation_formula =
     match target with
-    | Bottom -> true
-    | Eq _ | Mem _ | Named _ -> true
-    | _ -> false
+    | Bottom -> Bottom
+    | _ -> Not target
   in
-  if not target_is_literal then
-    Error
-      "resolution currently requires a literal or falsum as its goal"
-  else
-    let refutation_formula =
-      match target with
-      | Bottom -> Bottom
-      | _ -> Not target
-    in
-    let builder = make_builder hypotheses target in
-    match initial_inputs builder.used_names hypotheses with
+  let builder = make_builder hypotheses target in
+  match initial_inputs builder.used_names hypotheses with
     | Error message -> Error message
     | Ok inputs ->
         let excluded_middle =
@@ -1237,3 +1227,24 @@ let plan hypotheses target =
             end
             end
         end
+
+let rec plan hypotheses target =
+  match target with
+  | Forall (binder, body) ->
+      let used =
+        List.fold_left
+          (fun names (_, formula) ->
+             StringSet.union names (all_vars formula))
+          (all_vars target) hypotheses
+      in
+      let fresh = fresh_name binder used in
+      let body = rename_bound binder fresh body in
+      begin match plan hypotheses body with
+      | Error message -> Error message
+      | Ok steps ->
+          Ok
+            (Kernel.certificate_step ~axioms:[]
+               (Kernel.NRAllIntro fresh)
+             :: steps)
+      end
+  | _ -> plan_non_forall hypotheses target

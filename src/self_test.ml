@@ -33,6 +33,11 @@ let valid_scripts =
     "theorem resolution_forall_two : forall a, ((forall x, x = a) -> ((forall y, not (y = a)) -> false))\nintros a Hleft Hright\nresolution\nqed";
     "theorem resolution_forall_implication : forall a, forall x, ((forall y, (y = a -> y = y)) -> (x = a -> x = x))\nintros a x Hall Hx\nresolution\nqed";
     "Choose pair Hpair from pairing\ntheorem resolution_forall_function : forall a, ((forall x, x = pair(a, a)) -> (not (pair(a, a) = pair(a, a)) -> pair(a, a) = pair(a, a)))\nintros a Hall Hnot\nresolution\nqed";
+    "theorem resolution_goal_conjunction : forall p, forall q, ((p = p) -> ((q = q) -> (p = p and q = q)))\nintros p q Hp Hq\nresolution\nqed";
+    "theorem resolution_goal_disjunction : forall p, forall q, ((p = p) -> (p = p or q = q))\nintros p q Hp\nresolution\nqed";
+    "theorem resolution_goal_implication : forall p, forall q, (not (p = p) -> (p = p -> q = q))\nintros p q Hnot\nresolution\nqed";
+    "theorem resolution_goal_equivalence : forall p, forall q, ((p = p) -> ((q = q) -> (p = p <-> q = q)))\nintros p q Hp Hq\nresolution\nqed";
+    "theorem resolution_goal_forall : ((forall x, x = x) -> forall y, y = y)\nintro Hall\nresolution\nqed";
     "theorem resolution_chain : forall p, forall q, forall r, ((p = p or q = q) -> ((not (p = p) or r = r) -> (not (q = q) -> r = r)))\nintros p q r H1 H2 H3\nresolution\nqed";
     "theorem resolution_conjunction : forall p, forall q, ((p = p and q = q) -> (not (p = p) -> q = q))\nintros p q H1 H2\nresolution\nqed";
     "theorem resolution_falsum : forall p, ((p = p and not (p = p)) -> false)\nintros p H\nresolution\nqed";
