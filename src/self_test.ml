@@ -29,6 +29,10 @@ let valid_scripts =
     "theorem resolution_compound_implication : forall p, forall q, forall r, (((p = p and q = q) -> r = r) -> ((p = p and q = q) -> r = r))\nintros p q r Himp Hpq\nresolution\nqed";
     "theorem resolution_negated_implication : forall p, forall q, (not (p = p -> q = q) -> p = p)\nintros p q Hnot\nresolution\nqed";
     "theorem resolution_negated_equivalence : forall p, forall q, ((not (p = p <-> q = q)) -> ((p = p) -> ((q = q) -> false)))\nintros p q Hnot Hleft Hright\nresolution\nqed";
+    "theorem resolution_forall : forall a, ((forall x, x = x) -> (not (a = a) -> a = a))\nintros a Hall Hnot\nresolution\nqed";
+    "theorem resolution_forall_two : forall a, ((forall x, x = a) -> ((forall y, not (y = a)) -> false))\nintros a Hleft Hright\nresolution\nqed";
+    "theorem resolution_forall_implication : forall a, forall x, ((forall y, (y = a -> y = y)) -> (x = a -> x = x))\nintros a x Hall Hx\nresolution\nqed";
+    "Choose pair Hpair from pairing\ntheorem resolution_forall_function : forall a, ((forall x, x = pair(a, a)) -> (not (pair(a, a) = pair(a, a)) -> pair(a, a) = pair(a, a)))\nintros a Hall Hnot\nresolution\nqed";
     "theorem resolution_chain : forall p, forall q, forall r, ((p = p or q = q) -> ((not (p = p) or r = r) -> (not (q = q) -> r = r)))\nintros p q r H1 H2 H3\nresolution\nqed";
     "theorem resolution_conjunction : forall p, forall q, ((p = p and q = q) -> (not (p = p) -> q = q))\nintros p q H1 H2\nresolution\nqed";
     "theorem resolution_falsum : forall p, ((p = p and not (p = p)) -> false)\nintros p H\nresolution\nqed";
@@ -113,6 +117,18 @@ let run () =
        | None -> failwith "A completed proof was not finalized by replay"
        end)
     valid_scripts;
+  let forall_certificate =
+    Proof_session.check_script
+      (terminate_lines
+         "theorem forall_certificate : forall a, ((forall x, x = x) -> (not (a = a) -> a = a))
+intros a Hall Hnot
+resolution
+qed")
+  in
+  begin match Proof_session.certificate_rules forall_certificate with
+  | Some rules when List.exists (fun rule -> contains rule "all_elim") rules -> ()
+  | _ -> failwith "Universal resolution did not emit an all_elim step"
+  end;
   let constant_state =
     match
       Zfcert_kernel.start_with_constants ["empty"]

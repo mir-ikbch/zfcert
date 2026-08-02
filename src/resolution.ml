@@ -6,7 +6,8 @@
    state.
 
    The planner decomposes propositional conjunctions, disjunctions,
-   implications, and equivalences.  A hypothesis whose outer
+   implications, and equivalences.  Leading universal quantifiers are
+   instantiated by first-order unification.  A hypothesis whose outer
    connective is outside that fragment is deliberately kept opaque and
    treated as one propositional atom.  This lets resolution ignore unrelated
    first-order hypotheses while still using them when they happen to match a
@@ -18,10 +19,13 @@ open Syntax
 
 type literal = bool * formula
 type clause = literal list
+type term_substitution = (string * term) list
 
 type input = {
   source_name : string;
   source_formula : formula;
+  universal_binders : string list;
+  instantiation : term list;
   clause : clause;
   existing : bool;
 }
@@ -33,6 +37,7 @@ type node_kind =
 and node = {
   name : string;
   clause : clause;
+  variables : StringSet.t;
   kind : node_kind;
 }
 
@@ -62,6 +67,95 @@ let emit ?(axioms = []) builder rule =
 let finish builder = List.rev builder.steps_reverse
 
 let kernel_formula = Kernel_syntax.to_kernel
+
+let rec apply_term substitution = function
+  | Name name ->
+      begin match List.assoc_opt name substitution with
+      | None -> Name name
+      | Some replacement when replacement = Name name -> Name name
+      | Some replacement -> apply_term substitution replacement
+      end
+  | App (name, arguments) ->
+      App (name, List.map (apply_term substitution) arguments)
+
+let rec apply_formula substitution = function
+  | Bottom -> Bottom
+  | Named (name, arguments) -> Named (name, arguments)
+  | Eq (left, right) ->
+      Eq (apply_term substitution left, apply_term substitution right)
+  | Mem (left, right) ->
+      Mem (apply_term substitution left, apply_term substitution right)
+  | Not formula -> Not (apply_formula substitution formula)
+  | And (left, right) ->
+      And (apply_formula substitution left, apply_formula substitution right)
+  | Or (left, right) ->
+      Or (apply_formula substitution left, apply_formula substitution right)
+  | Imp (left, right) ->
+      Imp (apply_formula substitution left, apply_formula substitution right)
+  | Iff (left, right) ->
+      Iff (apply_formula substitution left, apply_formula substitution right)
+  | Forall (name, body) ->
+      Forall (name,
+        apply_formula (List.remove_assoc name substitution) body)
+  | Exists (name, body) ->
+      Exists (name,
+        apply_formula (List.remove_assoc name substitution) body)
+
+let apply_literal substitution (positive, atom) =
+  (positive, apply_formula substitution atom)
+
+let apply_clause substitution clause =
+  List.map (apply_literal substitution) clause
+
+let rec occurs variable = function
+  | Name name -> name = variable
+  | App (_, arguments) -> List.exists (occurs variable) arguments
+
+let add_substitution variable replacement substitution =
+  let replacement = apply_term substitution replacement in
+  if replacement = Name variable || occurs variable replacement then
+    None
+  else
+    Some
+      ((variable, replacement)
+       :: List.map
+            (fun (name, term) -> (name, apply_term [variable, replacement] term))
+            substitution)
+
+let rec unify_terms flexible (substitution : term_substitution) left right =
+  let left = apply_term substitution left in
+  let right = apply_term substitution right in
+  if left = right then Some substitution
+  else
+    match left, right with
+    | Name left_name, _ when StringSet.mem left_name flexible ->
+        add_substitution left_name right substitution
+    | _, Name right_name when StringSet.mem right_name flexible ->
+        add_substitution right_name left substitution
+    | App (left_name, left_arguments), App (right_name, right_arguments)
+      when left_name = right_name
+           && List.length left_arguments = List.length right_arguments ->
+        List.fold_left2
+          (fun result left right ->
+             match result with
+             | None -> None
+             | Some substitution ->
+                 unify_terms flexible substitution left right)
+          (Some substitution) left_arguments right_arguments
+    | _ -> None
+
+let unify_atoms flexible substitution left right =
+  match left, right with
+  | Eq (left_first, left_second), Eq (right_first, right_second)
+  | Mem (left_first, left_second), Mem (right_first, right_second) ->
+      begin match unify_terms flexible substitution left_first right_first with
+      | None -> None
+      | Some substitution ->
+          unify_terms flexible substitution left_second right_second
+      end
+  | Named _, Named _ when left = right -> Some substitution
+  | _ when left = right -> Some substitution
+  | _ -> None
 
 let literal_formula (positive, atom) =
   if positive then atom else Not atom
@@ -731,6 +825,35 @@ let prove_resolution builder first_node second_node pivot target =
   in
   split_first_parent first_node.name first_node.clause
 
+let clause_variables clause =
+  List.fold_left
+    (fun variables (_, atom) -> StringSet.union variables (all_vars atom))
+    StringSet.empty clause
+
+let rec instantiate_node substitution node =
+  let clause = apply_clause substitution node.clause in
+  let kind =
+    match node.kind with
+    | Input input ->
+        Input
+          { input with
+            clause;
+            instantiation =
+              List.map (apply_term substitution) input.instantiation }
+    | Resolve (first, second, pivot) ->
+        Resolve
+          (instantiate_node substitution first,
+           instantiate_node substitution second,
+           apply_literal substitution pivot)
+  in
+  let variables =
+    match kind with
+    | Input input -> StringSet.of_list input.universal_binders
+    | Resolve (first, second, _) ->
+        StringSet.union first.variables second.variables
+  in
+  { node with clause; variables; kind }
+
 let all_pairs nodes =
   let rec with_tail first = function
     | [] -> []
@@ -743,25 +866,55 @@ let all_pairs nodes =
   loop nodes
 
 let resolvents first second =
-  let rec for_literals = function
+  let flexible = StringSet.union first.variables second.variables in
+  let rec for_first = function
     | [] -> []
-    | literal :: rest ->
-        let complement = (not (fst literal), snd literal) in
-        let generated =
-          if clause_contains complement second then
-            match
-              normalize_clause
-                (List.filter (fun item -> not (same_literal item literal)) first
-                 @ List.filter
-                     (fun item -> not (same_literal item complement)) second)
-            with
-            | Some clause -> [ (clause, literal) ]
-            | None -> []
-          else []
+    | first_literal :: rest ->
+        let rec for_second = function
+          | [] -> []
+          | second_literal :: remaining ->
+              let generated =
+                if fst first_literal <> fst second_literal then
+                  match
+                    unify_atoms flexible [] (snd first_literal)
+                      (snd second_literal)
+                  with
+                  | None -> []
+                  | Some substitution ->
+                      let first_instantiated =
+                        instantiate_node substitution first
+                      in
+                      let second_instantiated =
+                        instantiate_node substitution second
+                      in
+                      let first_pivot =
+                        apply_literal substitution first_literal
+                      in
+                      let second_pivot =
+                        apply_literal substitution second_literal
+                      in
+                      begin match
+                        normalize_clause
+                          (List.filter
+                             (fun item -> not (same_literal item first_pivot))
+                             first_instantiated.clause
+                           @ List.filter
+                               (fun item ->
+                                  not (same_literal item second_pivot))
+                               second_instantiated.clause)
+                      with
+                      | None -> []
+                      | Some clause ->
+                          [ (clause, first_instantiated,
+                             second_instantiated, first_pivot) ]
+                      end
+                else []
+              in
+              generated @ for_second remaining
         in
-        generated @ for_literals rest
+        for_second second.clause @ for_first rest
   in
-  for_literals first
+  for_first first.clause
 
 let saturate builder initial_nodes =
   let rec loop nodes =
@@ -771,13 +924,22 @@ let saturate builder initial_nodes =
         let additions =
           all_pairs nodes
           |> List.concat_map (fun (first, second) ->
-               resolvents first.clause second.clause
-               |> List.filter_map (fun (clause, pivot) ->
+               resolvents first second
+               |> List.filter_map (fun (clause, first, second, pivot) ->
                     if List.exists (fun node -> clause_equal node.clause clause) nodes
                     then None
                     else
                       let name = fresh builder "resolution_clause" in
-                      Some { name; clause; kind = Resolve (first, second, pivot) }))
+                      let variables =
+                        StringSet.union first.variables second.variables
+                        |> StringSet.filter
+                             (fun variable ->
+                                StringSet.mem variable
+                                  (clause_variables clause))
+                      in
+                      Some
+                        { name; clause; variables;
+                          kind = Resolve (first, second, pivot) }))
         in
         let additions =
           List.fold_left
@@ -789,23 +951,48 @@ let saturate builder initial_nodes =
             [] additions
         in
         if additions = [] then
-          Error "no propositional resolution refutation was found"
+          Error "no resolution refutation was found"
         else if List.length nodes + List.length additions > 512 then
-          Error "the propositional resolution search exceeded its 512-clause limit"
+          Error "the resolution search exceeded its 512-clause limit"
         else
           loop (nodes @ additions)
   in
   loop initial_nodes
 
-let initial_inputs hypotheses =
+let prepare_universal_source used source_formula =
+  let rec peel occupied binders formula =
+    match formula with
+    | Forall (name, body) ->
+        let fresh = fresh_name name occupied in
+        let body = rename_bound name fresh body in
+        peel
+          (StringSet.add fresh (StringSet.union occupied (all_vars body)))
+          (binders @ [fresh]) body
+    | body -> (binders, body)
+  in
+  let binders, body =
+    peel (StringSet.union used (all_vars source_formula)) [] source_formula
+  in
+  let source_formula =
+    List.fold_right (fun binder body -> Forall (binder, body)) binders body
+  in
+  (source_formula, binders, body)
+
+let initial_inputs used_names hypotheses =
   let sources = hypotheses in
-  let rec loop (result : input list) = function
+  let rec loop occupied (result : input list) = function
     | [] -> Ok (List.rev result)
     | (source_name, source_formula) :: rest ->
+        let source_formula, universal_binders, body_formula =
+          prepare_universal_source occupied source_formula
+        in
+        let occupied =
+          StringSet.union occupied (StringSet.of_list universal_binders)
+        in
         let clauses =
-          match cnf source_formula with
+          match cnf body_formula with
           | Ok clauses -> clauses
-          | Error _ -> [ [ (true, source_formula) ] ]
+          | Error _ -> [ [ (true, body_formula) ] ]
         in
         let result =
           List.fold_left
@@ -816,14 +1003,129 @@ let initial_inputs hypotheses =
                     result
                then result
                else
-                 ({ source_name; source_formula; clause; existing = false }
+                 ({ source_name; source_formula; universal_binders;
+                    instantiation = List.map (fun name -> Name name)
+                      universal_binders;
+                    clause; existing = false }
                    : input)
                  :: result)
             result clauses
         in
-        loop result rest
+        loop occupied result rest
   in
-  loop [] sources
+  loop used_names [] sources
+
+let rec terms_in_term bound = function
+  | Name name ->
+      if StringSet.mem name bound then [] else [Name name]
+  | App (_name, arguments) as term ->
+      if List.exists
+           (fun argument ->
+              not (StringSet.is_empty
+                     (StringSet.inter bound (term_free_vars argument))))
+           arguments
+      then []
+      else
+        term
+        :: List.concat_map (terms_in_term bound) arguments
+
+let rec terms_in_formula bound = function
+  | Bottom | Named _ -> []
+  | Eq (left, right) | Mem (left, right) ->
+      terms_in_term bound left @ terms_in_term bound right
+  | Not formula -> terms_in_formula bound formula
+  | And (left, right)
+  | Or (left, right)
+  | Imp (left, right)
+  | Iff (left, right) ->
+      terms_in_formula bound left @ terms_in_formula bound right
+  | Forall (name, formula) | Exists (name, formula) ->
+      terms_in_formula (StringSet.add name bound) formula
+
+let unique_terms terms =
+  List.fold_left
+    (fun result term -> if List.mem term result then result else term :: result)
+    [] terms
+  |> List.rev
+
+let rec node_variables node =
+  match node.kind with
+  | Input _ -> node.variables
+  | Resolve (first, second, _) ->
+      StringSet.union (node_variables first) (node_variables second)
+
+let ground_node substitution node = instantiate_node substitution node
+
+let ground_resolution_nodes hypotheses target empty_node =
+  let available_terms =
+    unique_terms
+      (List.concat_map (fun (_, formula) -> terms_in_formula StringSet.empty formula)
+         hypotheses
+       @ terms_in_formula StringSet.empty target)
+  in
+  let variables = node_variables empty_node in
+  if StringSet.is_empty variables then Ok empty_node
+  else
+    match available_terms with
+    | [] ->
+        Error
+          "resolution needs a ground term to instantiate a universal hypothesis"
+    | first_term :: _ ->
+        let substitution =
+          StringSet.elements variables
+          |> List.map (fun variable -> (variable, first_term))
+        in
+        Ok (ground_node substitution empty_node)
+
+let emit_input_proof builder input target =
+  let rec eliminate formula binders terms rules =
+    match binders, terms, formula with
+    | [], [], body -> Ok (body, List.rev rules)
+    | _binder :: binders, term :: terms, Forall (name, body) ->
+        let rule =
+          Kernel.NRAllElim
+            (Kernel_syntax.to_kernel_term term,
+             kernel_formula formula)
+        in
+        eliminate (subst name term body) binders terms (rule :: rules)
+    | _ -> Error "the universal source and its instantiation do not match"
+  in
+  match
+    eliminate input.source_formula input.universal_binders input.instantiation []
+  with
+  | Error message -> Error message
+  | Ok (body, []) -> derive_clause_from_hyp builder input.source_name body target
+  | Ok (body, rules) ->
+      let instance_name = fresh builder "resolution_instance" in
+      emit builder
+        (Kernel.NRCut (instance_name, kernel_formula body));
+      List.iter (emit builder) rules;
+      emit builder (Kernel.NRHypothesis input.source_name);
+      derive_clause_from_hyp builder instance_name body target
+
+let rec emit_node builder node =
+  match node.kind with
+  | Input input -> emit_input_proof builder input node.clause
+  | Resolve (first, second, pivot) ->
+      let first_name = fresh builder "resolution_parent" in
+      emit builder
+        (Kernel.NRCut
+           (first_name, kernel_formula (clause_formula first.clause)));
+      begin match emit_node builder first with
+      | Error message -> Error message
+      | Ok () ->
+          let second_name = fresh builder "resolution_parent" in
+          emit builder
+            (Kernel.NRCut
+               (second_name, kernel_formula (clause_formula second.clause)));
+          begin match emit_node builder second with
+          | Error message -> Error message
+          | Ok () ->
+              let first = { first with name = first_name } in
+              let second = { second with name = second_name } in
+              prove_resolution builder first second pivot node.clause
+          end
+      end
 
 let plan hypotheses target =
   let target_kernel = kernel_formula target in
@@ -842,10 +1144,10 @@ let plan hypotheses target =
       | Bottom -> Bottom
       | _ -> Not target
     in
-    match initial_inputs hypotheses with
+    let builder = make_builder hypotheses target in
+    match initial_inputs builder.used_names hypotheses with
     | Error message -> Error message
     | Ok inputs ->
-        let builder = make_builder hypotheses target in
         let excluded_middle =
           if target = Bottom then None else Some (Or (target, Not target))
         in
@@ -872,6 +1174,7 @@ let plan hypotheses target =
                        then result
                        else
                          ({ source_name; source_formula = refutation_formula;
+                            universal_binders = []; instantiation = [];
                             clause; existing = true } : input)
                          :: result)
                     inputs clauses
@@ -885,62 +1188,30 @@ let plan hypotheses target =
                    if input.existing then input.source_name
                    else fresh builder "resolution_clause";
                  clause = input.clause;
+                 variables = StringSet.of_list input.universal_binders;
                  kind = Input input })
             inputs
         in
         begin match saturate builder input_nodes with
         | Error message -> Error message
-        | Ok (nodes, empty_node) ->
-            let refutation_steps builder =
-              let rec emit_input = function
-                | [] -> Ok ()
-                | node :: rest ->
-                    begin match node.kind with
-                    | Input input when input.existing -> emit_input rest
-                    | Input input ->
-                        emit builder
-                          (Kernel.NRCut
-                             (node.name, kernel_formula (clause_formula node.clause)));
-                        begin match
-                          derive_clause_from_hyp builder input.source_name
-                            input.source_formula node.clause
-                        with
-                        | Error message -> Error message
-                        | Ok () -> emit_input rest
-                        end
-                    | Resolve _ -> emit_input rest
-                    end
-              in
-              let rec emit_derived = function
-                | [] -> Ok ()
-                | node :: rest ->
-                    begin match node.kind with
-                    | Input _ -> emit_derived rest
-                    | Resolve (first, second, pivot) ->
-                        emit builder
-                          (Kernel.NRCut
-                             (node.name, kernel_formula (clause_formula node.clause)));
-                        begin match
-                          prove_resolution builder first second pivot node.clause
-                        with
-                        | Error message -> Error message
-                        | Ok () -> emit_derived rest
-                        end
-                    end
-              in
-              match emit_input nodes with
-              | Error message -> Error message
-              | Ok () ->
-                  begin match emit_derived nodes with
+        | Ok (_nodes, empty_node) ->
+            begin match ground_resolution_nodes hypotheses target empty_node with
+            | Error message -> Error message
+            | Ok empty_node ->
+                let refutation_steps () =
+                  let empty_name = fresh builder "resolution_empty" in
+                  emit builder
+                    (Kernel.NRCut (empty_name, kernel_formula Bottom));
+                  begin match emit_node builder empty_node with
                   | Error message -> Error message
                   | Ok () ->
                       emit builder Kernel.NRFalsumElim;
-                      emit builder (Kernel.NRHypothesis empty_node.name);
+                      emit builder (Kernel.NRHypothesis empty_name);
                       Ok ()
                   end
-            in
+                in
             if target = Bottom then begin
-              match refutation_steps builder with
+              match refutation_steps () with
               | Error message -> Error message
               | Ok () -> Ok (finish builder)
             end else begin
@@ -959,9 +1230,10 @@ let plan hypotheses target =
                     goal_name, negated_name));
               emit builder (Kernel.NRHypothesis em_name);
               emit builder (Kernel.NRHypothesis goal_name);
-              begin match refutation_steps builder with
+              begin match refutation_steps () with
               | Error message -> Error message
               | Ok () -> Ok (finish builder)
               end
+            end
             end
         end
