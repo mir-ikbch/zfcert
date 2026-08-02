@@ -12,6 +12,58 @@ let rec app l m =
   | [] -> m
   | a :: l1 -> a :: (app l1 m)
 
+type uint =
+| Nil
+| D0 of uint
+| D1 of uint
+| D2 of uint
+| D3 of uint
+| D4 of uint
+| D5 of uint
+| D6 of uint
+| D7 of uint
+| D8 of uint
+| D9 of uint
+
+(** val revapp : uint -> uint -> uint **)
+
+let rec revapp d d' =
+  match d with
+  | Nil -> d'
+  | D0 d0 -> revapp d0 (D0 d')
+  | D1 d0 -> revapp d0 (D1 d')
+  | D2 d0 -> revapp d0 (D2 d')
+  | D3 d0 -> revapp d0 (D3 d')
+  | D4 d0 -> revapp d0 (D4 d')
+  | D5 d0 -> revapp d0 (D5 d')
+  | D6 d0 -> revapp d0 (D6 d')
+  | D7 d0 -> revapp d0 (D7 d')
+  | D8 d0 -> revapp d0 (D8 d')
+  | D9 d0 -> revapp d0 (D9 d')
+
+(** val rev : uint -> uint **)
+
+let rev d =
+  revapp d Nil
+
+module Little =
+ struct
+  (** val succ : uint -> uint **)
+
+  let rec succ = function
+  | Nil -> D1 Nil
+  | D0 d0 -> D1 d0
+  | D1 d0 -> D2 d0
+  | D2 d0 -> D3 d0
+  | D3 d0 -> D4 d0
+  | D4 d0 -> D5 d0
+  | D5 d0 -> D6 d0
+  | D6 d0 -> D7 d0
+  | D7 d0 -> D8 d0
+  | D8 d0 -> D9 d0
+  | D9 d0 -> D0 (succ d0)
+ end
+
 (** val add : int -> int -> int **)
 
 let rec add = (+)
@@ -26,6 +78,19 @@ module Nat =
 
   let ltb n m =
     (<=) (Stdlib.Int.succ n) m
+
+  (** val to_little_uint : int -> uint -> uint **)
+
+  let rec to_little_uint n acc =
+    (fun fO fS n -> if n=0 then fO () else fS (n-1))
+      (fun _ -> acc)
+      (fun n0 -> to_little_uint n0 (Little.succ acc))
+      n
+
+  (** val to_uint : int -> uint **)
+
+  let to_uint n =
+    rev (to_little_uint n (D0 Nil))
  end
 
 (** val nth_error : 'a1 list -> int -> 'a1 option **)
@@ -40,11 +105,11 @@ let rec nth_error l n =
                | _ :: l0 -> nth_error l0 n0)
     n
 
-(** val rev : 'a1 list -> 'a1 list **)
+(** val rev0 : 'a1 list -> 'a1 list **)
 
-let rec rev = function
+let rec rev0 = function
 | [] -> []
-| x :: l' -> app (rev l') (x :: [])
+| x :: l' -> app (rev0 l') (x :: [])
 
 (** val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list **)
 
@@ -658,6 +723,64 @@ let choice_axiom =
     (Member ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ
     0)))))))), (Equal ((Var 0), (Var (Stdlib.Int.succ 0))))))))))))))))
 
+module NilEmpty =
+ struct
+  (** val string_of_uint : uint -> string **)
+
+  let rec string_of_uint = function
+  | Nil -> ""
+  | D0 d0 ->
+    (* If this appears, you're using String internals. Please don't *)
+  (fun (c, s) -> String.make 1 c ^ s)
+
+      ('0', (string_of_uint d0))
+  | D1 d0 ->
+    (* If this appears, you're using String internals. Please don't *)
+  (fun (c, s) -> String.make 1 c ^ s)
+
+      ('1', (string_of_uint d0))
+  | D2 d0 ->
+    (* If this appears, you're using String internals. Please don't *)
+  (fun (c, s) -> String.make 1 c ^ s)
+
+      ('2', (string_of_uint d0))
+  | D3 d0 ->
+    (* If this appears, you're using String internals. Please don't *)
+  (fun (c, s) -> String.make 1 c ^ s)
+
+      ('3', (string_of_uint d0))
+  | D4 d0 ->
+    (* If this appears, you're using String internals. Please don't *)
+  (fun (c, s) -> String.make 1 c ^ s)
+
+      ('4', (string_of_uint d0))
+  | D5 d0 ->
+    (* If this appears, you're using String internals. Please don't *)
+  (fun (c, s) -> String.make 1 c ^ s)
+
+      ('5', (string_of_uint d0))
+  | D6 d0 ->
+    (* If this appears, you're using String internals. Please don't *)
+  (fun (c, s) -> String.make 1 c ^ s)
+
+      ('6', (string_of_uint d0))
+  | D7 d0 ->
+    (* If this appears, you're using String internals. Please don't *)
+  (fun (c, s) -> String.make 1 c ^ s)
+
+      ('7', (string_of_uint d0))
+  | D8 d0 ->
+    (* If this appears, you're using String internals. Please don't *)
+  (fun (c, s) -> String.make 1 c ^ s)
+
+      ('8', (string_of_uint d0))
+  | D9 d0 ->
+    (* If this appears, you're using String internals. Please don't *)
+  (fun (c, s) -> String.make 1 c ^ s)
+
+      ('9', (string_of_uint d0))
+ end
+
 type named_term =
 | NName of string
 | NApp of string * named_arguments
@@ -994,21 +1117,32 @@ and reify_arguments bound environment = function
     named_bind (reify_arguments bound environment rest) (fun named_rest ->
       NOk (NNCons (named_source, named_rest))))
 
-(** val fresh_string_with_fuel : int -> string -> string list -> string **)
+(** val nat_to_decimal_string : int -> string **)
 
-let rec fresh_string_with_fuel fuel candidate used =
+let nat_to_decimal_string = string_of_int
+
+(** val fresh_string_candidate : string -> int -> string **)
+
+let fresh_string_candidate base index =
+  (^) base (nat_to_decimal_string index)
+
+(** val fresh_string_with_fuel :
+    int -> string -> int -> string list -> string **)
+
+let rec fresh_string_with_fuel fuel base index used =
   (fun fO fS n -> if n=0 then fO () else fS (n-1))
-    (fun _ -> candidate)
+    (fun _ -> fresh_string_candidate base index)
     (fun remaining ->
+    let candidate = fresh_string_candidate base index in
     if string_mem candidate used
-    then fresh_string_with_fuel remaining ((^) candidate "'") used
+    then fresh_string_with_fuel remaining base (Stdlib.Int.succ index) used
     else candidate)
     fuel
 
 (** val fresh_string : string -> string list -> string **)
 
 let fresh_string base used =
-  fresh_string_with_fuel (Stdlib.Int.succ (length used)) base used
+  fresh_string_with_fuel (Stdlib.Int.succ (length used)) base 0 used
 
 (** val named_separation_source_name :
     named_term -> string -> named_formula -> string **)
@@ -2442,7 +2576,7 @@ let certified_solved state =
 (** val certified_certificate : certified_state -> certificate **)
 
 let certified_certificate state =
-  rev state.certified_reverse_certificate
+  rev0 state.certified_reverse_certificate
 
 (** val certified_step :
     certificate_step -> certified_state -> certified_state named_result **)

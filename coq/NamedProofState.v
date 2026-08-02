@@ -6,7 +6,7 @@
     intended to be abstract on the OCaml side.
  *)
 
-From Coq Require Import List Bool PeanoNat String.
+From Coq Require Import List Bool PeanoNat String DecimalString.
 From ZFCert Require Import FOL ProofState TacticCompleteness ZFC.
 Import ListNotations.
 Open Scope string_scope.
@@ -361,18 +361,33 @@ with reify_arguments
         (fun named_rest => NOk (NNCons named_source named_rest)))
   end.
 
+Definition nat_to_decimal_string (index : nat) : string :=
+  NilEmpty.string_of_uint (Nat.to_uint index).
+
+Definition fresh_string_candidate (base : string) (index : nat) : string :=
+  base ++ nat_to_decimal_string index.
+
 Fixpoint fresh_string_with_fuel
-  (fuel : nat) (candidate : string) (used : list string) : string :=
+  (fuel : nat) (base : string) (index : nat) (used : list string) : string :=
   match fuel with
-  | 0 => candidate
+  | 0 => fresh_string_candidate base index
   | S remaining =>
+      let candidate := fresh_string_candidate base index in
       if string_mem candidate used
-      then fresh_string_with_fuel remaining (candidate ++ "'") used
+      then fresh_string_with_fuel remaining base (S index) used
       else candidate
   end.
 
 Definition fresh_string (base : string) (used : list string) : string :=
-  fresh_string_with_fuel (S (List.length used)) base used.
+  fresh_string_with_fuel (S (List.length used)) base 0 used.
+
+Example fresh_string_starts_at_zero :
+  fresh_string "x" [] = "x0".
+Proof. reflexivity. Qed.
+
+Example fresh_string_uses_next_numeric_suffix :
+  fresh_string "x" ["x0"; "x1"] = "x2".
+Proof. reflexivity. Qed.
 
 Definition named_separation_source_name
   (source : named_term) (element : string) (predicate : named_formula)

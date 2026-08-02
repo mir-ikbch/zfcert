@@ -102,10 +102,7 @@ let rec all_vars = function
 
 let fresh_name base used =
   let rec try_index index =
-    let candidate =
-      if index = 0 then base ^ "'"
-      else base ^ "'" ^ string_of_int index
-    in
+    let candidate = base ^ string_of_int index in
     if StringSet.mem candidate used then try_index (index + 1)
     else candidate
   in

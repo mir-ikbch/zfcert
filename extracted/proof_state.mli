@@ -3,6 +3,28 @@ val length : 'a1 list -> int
 
 val app : 'a1 list -> 'a1 list -> 'a1 list
 
+type uint =
+| Nil
+| D0 of uint
+| D1 of uint
+| D2 of uint
+| D3 of uint
+| D4 of uint
+| D5 of uint
+| D6 of uint
+| D7 of uint
+| D8 of uint
+| D9 of uint
+
+val revapp : uint -> uint -> uint
+
+val rev : uint -> uint
+
+module Little :
+ sig
+  val succ : uint -> uint
+ end
+
 val add : int -> int -> int
 
 val sub : int -> int -> int
@@ -10,11 +32,15 @@ val sub : int -> int -> int
 module Nat :
  sig
   val ltb : int -> int -> bool
+
+  val to_little_uint : int -> uint -> uint
+
+  val to_uint : int -> uint
  end
 
 val nth_error : 'a1 list -> int -> 'a1 option
 
-val rev : 'a1 list -> 'a1 list
+val rev0 : 'a1 list -> 'a1 list
 
 val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list
 
@@ -174,6 +200,11 @@ val replacement_instance : formula -> formula
 
 val choice_axiom : formula
 
+module NilEmpty :
+ sig
+  val string_of_uint : uint -> string
+ end
+
 type named_term =
 | NName of string
 | NApp of string * named_arguments
@@ -274,7 +305,11 @@ val reify_term : string list -> string list -> term -> named_term named_result
 val reify_arguments :
   string list -> string list -> term_arguments -> named_arguments named_result
 
-val fresh_string_with_fuel : int -> string -> string list -> string
+val nat_to_decimal_string : int -> string
+
+val fresh_string_candidate : string -> int -> string
+
+val fresh_string_with_fuel : int -> string -> int -> string list -> string
 
 val fresh_string : string -> string list -> string
 

@@ -273,6 +273,7 @@ qed.
 
 連続した導入は`intros`でまとめて書けます。`intros x y H.`は3回の`intro`と同じで、
 `intros.`は導入できる量化子・含意をすべて導入し、変数名と仮定名を自動で選びます。
+自動生成名が衝突する場合は、`x0`, `x1`, `x2`, ... のように数字を付けて区別します。
 
 ```text
 theorem implication_identity : forall x, forall y, (x = y -> x = y).

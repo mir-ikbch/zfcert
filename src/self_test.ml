@@ -77,6 +77,11 @@ let rejected script =
   with Proof_session.Proof_error _ -> true
 
 let run () =
+  if Syntax.fresh_name "x" Syntax.StringSet.empty <> "x0"
+     || Syntax.fresh_name "x"
+          (Syntax.StringSet.of_list ["x0"; "x1"]) <> "x2"
+  then
+    failwith "Fresh names did not use numeric suffixes";
   List.iter
     (fun script ->
        let state =

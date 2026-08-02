@@ -12,6 +12,7 @@ From ZFCert Require Import
 
 Extraction Language OCaml.
 Set Extraction Output Directory "extracted".
+Extract Constant ZFCert.NamedProofState.nat_to_decimal_string => "string_of_int".
 Extraction "proof_state.ml"
   start_with_assumptions start state_goals
   step run rule_step rule_run
