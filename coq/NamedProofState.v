@@ -119,6 +119,19 @@ with named_arguments_names (source : named_arguments) : list string :=
       merge_names (named_term_names argument) (named_arguments_names rest)
   end.
 
+Fixpoint named_formula_names (source : named_formula) : list string :=
+  match source with
+  | NFalsum => []
+  | NEqual first second | NMember first second =>
+      merge_names (named_term_names first) (named_term_names second)
+  | NConj first second | NDisj first second
+  | NImpl first second | NIff first second =>
+      merge_names (named_formula_names first) (named_formula_names second)
+  | NNeg body => named_formula_names body
+  | NAll binder body | NEx binder body =>
+      add_name (named_formula_names body) binder
+  end.
+
 Fixpoint named_term_subst
   (variable replacement : string) (source : named_term) : named_term :=
   match source with
@@ -360,6 +373,14 @@ Fixpoint fresh_string_with_fuel
 
 Definition fresh_string (base : string) (used : list string) : string :=
   fresh_string_with_fuel (S (List.length used)) base used.
+
+Definition named_separation_source_name
+  (source : named_term) (element : string) (predicate : named_formula)
+  : string :=
+  fresh_string "__separation_source"
+    (merge_names
+      (named_formula_names predicate)
+      (add_name (named_term_names source) element)).
 
 Definition choose_binder
   (constants bound environment preferred : list string)
@@ -619,6 +640,8 @@ Inductive named_axiom : Type :=
 | NFixedAxiom (kind : named_fixed_axiom)
 | NSeparationAxiom
     (source element : string) (predicate : named_formula)
+| NSeparationTermAxiom
+    (source : named_term) (element : string) (predicate : named_formula)
 | NReplacementAxiom
     (input output : string) (predicate : named_formula).
 
@@ -653,6 +676,13 @@ Definition compile_axiom
       named_bind
         (elaborate_schema_predicate
           constants [element; source] environment predicate)
+        (fun core_predicate =>
+      NOk (separation_instance core_predicate))
+  | NSeparationTermAxiom source element predicate =>
+      let dummy := named_separation_source_name source element predicate in
+      named_bind
+        (elaborate_schema_predicate
+          constants [element; dummy] environment predicate)
         (fun core_predicate =>
       NOk (separation_instance core_predicate))
   | NReplacementAxiom input output predicate =>
@@ -1580,6 +1610,7 @@ Proof.
   destruct axiom as
     [kind
     |source element predicate
+    |source element predicate
     |input output predicate].
   - destruct kind; cbn in Hcompile; inversion Hcompile; subst;
       apply ZFC_set_axiom; constructor.
@@ -1591,6 +1622,24 @@ Proof.
       try discriminate.
     inversion Hcompile; subst.
     apply ZFC_set_axiom. apply ZFC_separation.
+  - cbn in Hcompile.
+    change
+      (named_bind
+        (elaborate_schema_predicate
+          constants [element;
+            named_separation_source_name source element predicate]
+          environment predicate)
+        (fun core_predicate => NOk (separation_instance core_predicate))
+        = NOk core_axiom) in Hcompile.
+    destruct
+      (elaborate_schema_predicate
+        constants [element;
+          named_separation_source_name source element predicate]
+        environment predicate)
+      as [core_predicate | error] eqn:Hpredicate.
+    + inversion Hcompile; subst.
+      apply ZFC_set_axiom. apply ZFC_separation.
+    + discriminate.
   - cbn in Hcompile.
     destruct
       (elaborate_schema_predicate

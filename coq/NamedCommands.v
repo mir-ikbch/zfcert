@@ -85,6 +85,21 @@ Definition named_separation_instance
         (NMember element subset)
         (NConj (NMember element source) predicate))).
 
+Definition named_separation_term_instance
+  (source : named_term) (element : string) (predicate : named_formula)
+  : named_formula :=
+  let used :=
+    merge_names
+      (named_all_variables predicate)
+      (merge_names (named_term_names source) [element])
+  in
+  let subset := fresh_string "b" used in
+  NEx subset
+    (NAll element
+      (NIff
+        (NMember (NName element) (NName subset))
+        (NConj (NMember (NName element) source) predicate))).
+
 Record named_replacement_parts : Type := NamedReplacementParts {
   named_replacement_functional : named_formula;
   named_replacement_image : named_formula;
@@ -199,6 +214,21 @@ Definition named_separation_tactic_step
     [NSeparationAxiom source element predicate]
     [ NRCut fact instance;
       NRAllElim source (NAll source instance);
+      NRAxiom
+    ]
+    state.
+
+Definition named_separation_term_tactic_step
+  (fact : string) (source : named_term) (element : string)
+  (predicate : named_formula) (state : named_state)
+  : named_result named_state :=
+  let dummy := named_separation_source_name source element predicate in
+  let instance := named_separation_term_instance source element predicate in
+  let schema := NAll dummy (named_separation_instance dummy element predicate) in
+  named_rule_run
+    [NSeparationTermAxiom source element predicate]
+    [ NRCut fact instance;
+      NRAllElim source schema;
       NRAxiom
     ]
     state.

@@ -26,6 +26,7 @@ let valid_scripts =
     "theorem ext : forall a, forall b, ((forall z, (z in a <-> z in b)) -> a = b)\nintro a\nintro b\nintro H\napply extensionality\nexact H\nqed";
     "theorem ext_specialized : forall a, forall b, ((forall z, (z in a <-> z in b)) -> a = b)\nintro a\nintro b\nintro H\nspecialize extensionality a b as E\napply E\nexact H\nqed";
     "theorem sep : forall a, exists b, forall x, (x in b <-> (x in a and not (x in x)))\nintro a\nseparation S a x : not (x in x)\nexact S\nqed";
+    "Choose pair Hpair from pairing\ntheorem sep_term : forall a, forall b, exists c, forall x, (x in c <-> (x in pair(a, b) and not (x in x)))\nintro a\nintro b\nseparation S pair(a, b) x : not (x in x)\nexact S\nqed";
     "theorem rep : forall a, ((forall x, exists y, (y = x and forall z, (z = x -> z = y))) -> exists b, forall y, (y in b <-> exists x, (x in a and y = x)))\nintro a\nreplacement R a x y : y = x\nexact R\nqed";
     "theorem universal_contradiction : forall a, forall b, ((forall x, not (x in b)) -> (a in b -> b in a))\nintro a\nintro b\nintro H\nintro Ha\nspecialize H a as Hna\ncontradiction\nqed";
     "theorem surface_split : forall a, (a = a and a = a)\nintro a\nsplit\nrefl\nrefl\nqed";

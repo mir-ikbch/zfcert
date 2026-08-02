@@ -231,6 +231,8 @@ val named_term_names : named_term -> string list
 
 val named_arguments_names : named_arguments -> string list
 
+val named_formula_names : named_formula -> string list
+
 val named_term_subst : string -> string -> named_term -> named_term
 
 val named_arguments_subst :
@@ -275,6 +277,9 @@ val reify_arguments :
 val fresh_string_with_fuel : int -> string -> string list -> string
 
 val fresh_string : string -> string list -> string
+
+val named_separation_source_name :
+  named_term -> string -> named_formula -> string
 
 val choose_binder :
   string list -> string list -> string list -> string list -> string * string
@@ -336,6 +341,7 @@ type named_fixed_axiom =
 type named_axiom =
 | NFixedAxiom of named_fixed_axiom
 | NSeparationAxiom of string * string * named_formula
+| NSeparationTermAxiom of named_term * string * named_formula
 | NReplacementAxiom of string * string * named_formula
 
 val fixed_axiom_formula : named_fixed_axiom -> formula
@@ -449,6 +455,9 @@ val named_substitute_variable :
 val named_separation_instance :
   string -> string -> named_formula -> named_formula
 
+val named_separation_term_instance :
+  named_term -> string -> named_formula -> named_formula
+
 type named_replacement_parts = { named_replacement_functional : named_formula;
                                  named_replacement_image : named_formula;
                                  named_replacement_instance : named_formula }
@@ -477,6 +486,10 @@ val named_replacement_axiom_rule_step :
 val named_separation_tactic_step :
   string -> string -> string -> named_formula -> named_state -> named_state
   named_result
+
+val named_separation_term_tactic_step :
+  string -> named_term -> string -> named_formula -> named_state ->
+  named_state named_result
 
 val named_replacement_tactic_step :
   string -> string -> string -> string -> named_formula -> named_state ->
@@ -557,6 +570,13 @@ val separation_tactic_program :
 
 val certified_separation_tactic :
   string -> string -> string -> named_formula -> certified_state ->
+  certified_state named_result
+
+val separation_term_tactic_program :
+  string -> named_term -> string -> named_formula -> certificate
+
+val certified_separation_term_tactic :
+  string -> named_term -> string -> named_formula -> certified_state ->
   certified_state named_result
 
 val replacement_tactic_program :

@@ -759,6 +759,26 @@ and named_arguments_names = function
 | NNCons (argument, rest) ->
   merge_names (named_term_names argument) (named_arguments_names rest)
 
+(** val named_formula_names : named_formula -> string list **)
+
+let rec named_formula_names = function
+| NFalsum -> []
+| NEqual (first, second) ->
+  merge_names (named_term_names first) (named_term_names second)
+| NMember (first, second) ->
+  merge_names (named_term_names first) (named_term_names second)
+| NConj (first, second) ->
+  merge_names (named_formula_names first) (named_formula_names second)
+| NDisj (first, second) ->
+  merge_names (named_formula_names first) (named_formula_names second)
+| NImpl (first, second) ->
+  merge_names (named_formula_names first) (named_formula_names second)
+| NNeg body -> named_formula_names body
+| NIff (first, second) ->
+  merge_names (named_formula_names first) (named_formula_names second)
+| NAll (binder, body) -> add_name (named_formula_names body) binder
+| NEx (binder, body) -> add_name (named_formula_names body) binder
+
 (** val named_term_subst : string -> string -> named_term -> named_term **)
 
 let rec named_term_subst variable replacement = function
@@ -989,6 +1009,14 @@ let rec fresh_string_with_fuel fuel candidate used =
 
 let fresh_string base used =
   fresh_string_with_fuel (Stdlib.Int.succ (length used)) base used
+
+(** val named_separation_source_name :
+    named_term -> string -> named_formula -> string **)
+
+let named_separation_source_name source element predicate =
+  fresh_string "__separation_source"
+    (merge_names (named_formula_names predicate)
+      (add_name (named_term_names source) element))
 
 (** val choose_binder :
     string list -> string list -> string list -> string list ->
@@ -1428,6 +1456,7 @@ type named_fixed_axiom =
 type named_axiom =
 | NFixedAxiom of named_fixed_axiom
 | NSeparationAxiom of string * string * named_formula
+| NSeparationTermAxiom of named_term * string * named_formula
 | NReplacementAxiom of string * string * named_formula
 
 (** val fixed_axiom_formula : named_fixed_axiom -> formula **)
@@ -1461,6 +1490,12 @@ let compile_axiom constants environment = function
 | NSeparationAxiom (source, element, predicate) ->
   named_bind
     (elaborate_schema_predicate constants (element :: (source :: []))
+      environment predicate) (fun core_predicate -> NOk
+    (separation_instance core_predicate))
+| NSeparationTermAxiom (source, element, predicate) ->
+  let dummy = named_separation_source_name source element predicate in
+  named_bind
+    (elaborate_schema_predicate constants (element :: (dummy :: []))
       environment predicate) (fun core_predicate -> NOk
     (separation_instance core_predicate))
 | NReplacementAxiom (input, output, predicate) ->
@@ -2174,6 +2209,18 @@ let named_separation_instance source element predicate =
   subset))), (NConj ((NMember ((NName element), (NName source))),
   predicate)))))))
 
+(** val named_separation_term_instance :
+    named_term -> string -> named_formula -> named_formula **)
+
+let named_separation_term_instance source element predicate =
+  let used =
+    merge_names (named_all_variables predicate)
+      (merge_names (named_term_names source) (element :: []))
+  in
+  let subset = fresh_string "b" used in
+  NEx (subset, (NAll (element, (NIff ((NMember ((NName element), (NName
+  subset))), (NConj ((NMember ((NName element), source)), predicate)))))))
+
 type named_replacement_parts = { named_replacement_functional : named_formula;
                                  named_replacement_image : named_formula;
                                  named_replacement_instance : named_formula }
@@ -2276,6 +2323,20 @@ let named_separation_tactic_step fact source element predicate state =
   named_rule_run ((NSeparationAxiom (source, element, predicate)) :: [])
     ((NRCut (fact, instance)) :: ((NRAllElim ((NName source), (NAll (source,
     instance)))) :: (NRAxiom :: []))) state
+
+(** val named_separation_term_tactic_step :
+    string -> named_term -> string -> named_formula -> named_state ->
+    named_state named_result **)
+
+let named_separation_term_tactic_step fact source element predicate state =
+  let dummy = named_separation_source_name source element predicate in
+  let instance = named_separation_term_instance source element predicate in
+  let schema = NAll (dummy,
+    (named_separation_instance dummy element predicate))
+  in
+  named_rule_run ((NSeparationTermAxiom (source, element, predicate)) :: [])
+    ((NRCut (fact, instance)) :: ((NRAllElim (source,
+    schema)) :: (NRAxiom :: []))) state
 
 (** val named_replacement_tactic_step :
     string -> string -> string -> string -> named_formula -> named_state ->
@@ -2514,6 +2575,27 @@ let separation_tactic_program fact source element predicate =
 let certified_separation_tactic fact source element predicate state =
   certified_run (separation_tactic_program fact source element predicate)
     state
+
+(** val separation_term_tactic_program :
+    string -> named_term -> string -> named_formula -> certificate **)
+
+let separation_term_tactic_program fact source element predicate =
+  let dummy = named_separation_source_name source element predicate in
+  let instance = named_separation_term_instance source element predicate in
+  let capability = NSeparationTermAxiom (source, element, predicate) in
+  (one_step [] (NRCut (fact, instance))) :: ((one_step [] (NRAllElim (source,
+                                               (NAll (dummy,
+                                               (named_separation_instance
+                                                 dummy element predicate)))))) :: (
+  (one_step (capability :: []) NRAxiom) :: []))
+
+(** val certified_separation_term_tactic :
+    string -> named_term -> string -> named_formula -> certified_state ->
+    certified_state named_result **)
+
+let certified_separation_term_tactic fact source element predicate state =
+  certified_run
+    (separation_term_tactic_program fact source element predicate) state
 
 (** val replacement_tactic_program :
     string -> string -> string -> string -> named_formula -> named_state ->

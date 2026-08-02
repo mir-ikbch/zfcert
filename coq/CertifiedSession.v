@@ -227,6 +227,26 @@ Definition certified_separation_tactic
     (separation_tactic_program fact source element predicate)
     state.
 
+Definition separation_term_tactic_program
+  (fact : string) (source : named_term) (element : string)
+  (predicate : named_formula) : certificate :=
+  let dummy := named_separation_source_name source element predicate in
+  let instance := named_separation_term_instance source element predicate in
+  let capability := NSeparationTermAxiom source element predicate in
+  [ one_step [] (NRCut fact instance);
+    one_step [] (NRAllElim source
+      (NAll dummy (named_separation_instance dummy element predicate)));
+    one_step [capability] NRAxiom
+  ].
+
+Definition certified_separation_term_tactic
+  (fact : string) (source : named_term) (element : string)
+  (predicate : named_formula) (state : certified_state)
+  : named_result certified_state :=
+  certified_run
+    (separation_term_tactic_program fact source element predicate)
+    state.
+
 Definition replacement_tactic_program
   (fact source input output : string) (predicate : named_formula)
   (state : named_state) : certificate :=

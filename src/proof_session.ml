@@ -479,6 +479,55 @@ let parse_surface_term line_no text =
     | _ -> raise (Proof_error (line_no, "Expected a term."))
   with Parse_error (_, message) -> raise (Proof_error (line_no, message))
 
+let valid_term_name name =
+  name <> "" && String.for_all is_ascii_ident_char name
+
+let last_space_index text =
+  let rec find index =
+    if index < 0 then None
+    else
+      match text.[index] with
+      | ' ' | '\t' -> Some index
+      | _ -> find (index - 1)
+  in
+  find (String.length text - 1)
+
+let parse_separation_argument line_no aliases argument =
+  match String.index_opt argument ':' with
+  | None ->
+      raise (Proof_error (line_no,
+        "A separation instance requires : followed by a formula."))
+  | Some i ->
+      let head = trim (String.sub argument 0 i) in
+      let statement = trim (String.sub argument (i + 1) (String.length argument - i - 1)) in
+      if statement = "" then
+        raise (Proof_error (line_no, "Expected a formula after :."));
+      let fact_name, rest = split_first_word head in
+      if fact_name = "" || rest = "" then
+        raise (Proof_error (line_no,
+          "Use: separation S source_term x : P."));
+      let source_text, element =
+        match last_space_index rest with
+        | None ->
+            raise (Proof_error (line_no,
+              "Use: separation S source_term x : P."))
+        | Some split ->
+            (trim (String.sub rest 0 split),
+             trim (String.sub rest (split + 1) (String.length rest - split - 1)))
+      in
+      if source_text = "" || not (valid_term_name element) then
+        raise (Proof_error (line_no,
+          "Use: separation S source_term x : P."));
+      let source = parse_surface_term line_no source_text in
+      if StringSet.mem element (term_free_vars source) then
+        raise (Proof_error (line_no,
+          "The element variable must not occur in the source term."));
+      let predicate =
+        try parse_formula statement |> unfold line_no aliases
+        with Parse_error (_, message) -> raise (Proof_error (line_no, message))
+      in
+      (fact_name, source, element, predicate)
+
 let fixed_axiom_kind = function
   | "empty_set" -> Some Extracted.EmptySet
   | "extensionality" -> Some Extracted.Extensionality
@@ -705,6 +754,18 @@ let intro_name_set state goal =
           (all_vars goal.target)
           (environment_names state)))
 
+let execute_separation line_no state fact_name source element predicate =
+  let kernel_state =
+    Extracted.separation_term_tactic_step
+      ~fact:fact_name
+      ~source:(Kernel_syntax.to_kernel_term source)
+      ~element
+      (kernel_formula predicate)
+      state.kernel_state
+    |> accept_kernel_result line_no "separation tactic"
+  in
+  add_step state ("separation " ^ fact_name) kernel_state
+
 let fresh_intro_name base used =
   if StringSet.mem base used then fresh_name base used else base
 
@@ -782,25 +843,11 @@ let execute_tactic line_no state line =
       | "rule" -> execute_rule line_no state argument
       | "obtain" -> execute_obtain line_no state "obtain" argument
       | "separation" ->
-          let names, predicate =
-            split_schema_argument line_no state.aliases argument
+          let fact_name, source, element, predicate =
+            parse_separation_argument line_no state.aliases argument
           in
-          begin match names with
-          | [fact_name; source; element] ->
-              if source = element then
-                raise (Proof_error (line_no,
-                  "The source set and element variable must have different names."));
-              let kernel_state =
-                Extracted.separation_tactic_step
-                  ~fact:fact_name ~source ~element
-                  (kernel_formula predicate) state.kernel_state
-                |> accept_kernel_result line_no "separation tactic"
-              in
-              add_step state ("separation " ^ fact_name) kernel_state
-          | _ ->
-              raise (Proof_error (line_no,
-                "Use: separation S source x : P."))
-          end
+          execute_separation line_no state
+            fact_name source element predicate
       | "replacement" ->
           let names, predicate =
             split_schema_argument line_no state.aliases argument

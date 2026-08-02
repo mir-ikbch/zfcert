@@ -23,6 +23,7 @@ Extraction "proof_state.ml"
   named_separation_axiom_rule_step
   named_replacement_axiom_rule_step
   named_separation_tactic_step
+  named_separation_term_tactic_step
   named_replacement_tactic_step
   named_execute_rule
   certified_start_with_environment
@@ -33,6 +34,7 @@ Extraction "proof_state.ml"
   replay_certificate_with_constants replay_certificate certified_finalize
   certified_execute_rule
   certified_separation_tactic
+  certified_separation_term_tactic
   certified_replacement_tactic
   empty_global_environment global_fact_names global_start global_replay
   global_declare_choice global_declare_fact global_declare_skolem

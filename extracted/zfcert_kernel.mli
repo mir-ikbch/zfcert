@@ -164,6 +164,14 @@ val separation_tactic_step :
   state ->
   (state, error) result
 
+val separation_term_tactic_step :
+  fact:string ->
+  source:named_term ->
+  element:string ->
+  formula ->
+  state ->
+  (state, error) result
+
 val replacement_tactic_step :
   fact:string ->
   source:string ->

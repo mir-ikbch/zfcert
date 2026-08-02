@@ -56,8 +56,8 @@
   },
   "Separation instance": {
     "prefix": "separation",
-    "body": "separation ${1:S} ${2:a} ${3:x} : ${4:not (x in x)}.",
-    "description": "Create a separation schema instance"
+    "body": "separation ${1:S} ${2:source_term} ${3:x} : ${4:not (x in x)}.",
+    "description": "Create a separation instance from a variable or general term"
   },
   "Replacement instance": {
     "prefix": "replacement",

@@ -428,8 +428,11 @@ qed.
 
 ```text
 separation S a x : not (x in x).
+separation T pair(a, b) x : x = a.
 replacement R a x y : y = x.
 ```
+
+分出のソース集合には変数だけでなく、`pair(a, b)` のような一般の項を指定できます。
 
 ## 信頼境界
 

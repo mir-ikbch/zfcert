@@ -186,6 +186,11 @@ let separation_tactic_step ~fact ~source ~element predicate state =
     fact source element predicate state
   |> outcome
 
+let separation_term_tactic_step ~fact ~source ~element predicate state =
+  Raw.certified_separation_term_tactic
+    fact source element predicate state
+  |> outcome
+
 let replacement_tactic_step
     ~fact ~source ~input ~output predicate state =
   Raw.certified_replacement_tactic
