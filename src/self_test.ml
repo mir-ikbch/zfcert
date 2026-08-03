@@ -98,6 +98,9 @@ let valid_scripts =
     "theorem proof_then_declaration : forall x, x = x\nintro x\nrefl\nqed\nChoose empty Hempty from empty_set\ntheorem declaration_after_qed : forall x, not (x in empty)\nput Hempty\nexact Hempty\nqed";
     "theorem proved_exists_pair : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nspecialize pairing a b as H\nobtain p Hp from H\nuse p\nexact Hp\nqed\nChoose pair_from_theorem Hpair from proved_exists_pair\ntheorem choose_function_from_theorem : forall a, forall b, forall x, (x in pair_from_theorem(a,b) <-> (x = a or x = b))\nput Hpair\nexact Hpair\nqed";
     "theorem put_source : forall x, x = x\nintro x\nrefl\nqed\ntheorem put_use : forall a, a = a\nintro a\nput put_source\nresolution\nqed";
+    "theorem hidden_specialize_source : forall x, x = x\nintro x\nrefl\nqed\ntheorem hidden_specialize_target : forall a, a = a\nintro a\nspecialize hidden_specialize_source a as H\nexact H\nqed";
+    "theorem hidden_apply_source : forall x, (x = x -> x = x)\nintro x\nintro H\nexact H\nqed\ntheorem hidden_apply_target : forall a, a = a\nintro a\napply hidden_apply_source\nrefl\nqed";
+    "theorem hidden_apply_in_source : forall x, (x = x -> x = x)\nintro x\nintro H\nexact H\nqed\ntheorem hidden_apply_in_target : forall a, (a = a -> a = a)\nintro a\nintro H\napply hidden_apply_in_source in H as H1\nexact H1\nqed";
     "Choose empty empty_is_empty from empty_set\nChoose pair Hpair from pairing\ntheorem exists_ordpair : forall x, forall y, exists p, forall z, (z in p) <-> (z = x or z = pair(x, y))\nintros x y\nspecialize pairing x pair(x,y) as H\napply H\nqed\nChoose ordpair Hordpair from exists_ordpair\ntheorem exists_singleton : forall x, exists p, forall y, (y in p) <-> (y = x)\nintro x\nspecialize pairing x x as H\nput Hordpair\nresolution\nqed";
   ]
 

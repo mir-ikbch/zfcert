@@ -109,6 +109,8 @@ type session = {
   theorem : formula;
   aliases : proposition_alias list;
   global_environment : Extracted.environment;
+  hidden_global_facts : StringSet.t;
+  put_facts : StringSet.t;
   kernel_state : Extracted.state;
   final_certificate : Extracted.certificate option;
   steps : string list;
@@ -301,6 +303,10 @@ let materialize_goals line state =
                (fun (name, formula) ->
                   (name, Kernel_syntax.of_kernel formula))
                kernel_goal.assumptions
+             |> List.filter
+                 (fun (name, _) ->
+                     not (StringSet.mem name state.hidden_global_facts)
+                     || StringSet.mem name state.put_facts)
            in
            let target =
              Kernel_syntax.of_kernel kernel_goal.conclusion
@@ -353,6 +359,31 @@ let lookup_fact name context =
       | Some { parsed = Some f; _ } -> Some f
       | _ -> None
       end
+
+(* Global facts are present in the extracted proof state, but facts declared
+   by an earlier theorem (and facts introduced by [Choose]) are deliberately
+   hidden from the surface context and from automatic resolution.  Explicit
+   name-based tactics may still refer to them. *)
+let global_fact_context state =
+  Extracted.environment_facts state.global_environment
+  |> List.map (fun (name, formula) -> (name, Kernel_syntax.of_kernel formula))
+
+let lookup_assumption state context name =
+  match List.assoc_opt name context with
+  | Some formula -> Some formula
+  | None -> List.assoc_opt name (global_fact_context state)
+
+let lookup_fact_in_state state context name =
+  match lookup_assumption state context name with
+  | Some formula -> Some formula
+  | None ->
+      begin match find_axiom name with
+      | Some { parsed = Some formula; _ } -> Some formula
+      | _ -> None
+      end
+
+let all_fact_context state context =
+  context @ global_fact_context state
 
 let rec instantiate_formula substitutions = function
   | Bottom -> Bottom
@@ -548,6 +579,16 @@ let execute_rule line_no state argument =
     | Rule_parser.Error message ->
         raise (Proof_error (line_no, message))
   in
+  begin match request with
+  | Extracted.NPrimitiveRule (Extracted.NRHypothesis name) ->
+      begin match materialize_goals line_no state with
+      | goal :: _ when Option.is_some (lookup_assumption state goal.context name) -> ()
+      | _ ->
+          raise (Proof_error (line_no,
+            "Hypothesis not found in the current context: " ^ name))
+      end
+  | _ -> ()
+  end;
   let kernel_state =
     Extracted.execute_rule request state.kernel_state
     |> accept_kernel_result line_no "rule"
@@ -611,7 +652,7 @@ let execute_obtain line_no state command argument =
         raise (Proof_error (line_no,
           "A hypothesis with this name already exists."));
       let fact =
-        match lookup_fact source goal.context with
+        match lookup_fact_in_state state goal.context source with
         | Some fact -> fact
         | None ->
             raise (Proof_error (line_no,
@@ -623,7 +664,7 @@ let execute_obtain line_no state command argument =
       begin match instantiated with
       | Exists _ ->
           let close_rule, axioms =
-            close_fact line_no source goal.context
+            close_fact line_no source (all_fact_context state goal.context)
           in
           let program =
             checked_step
@@ -776,6 +817,29 @@ let execute_resolution line_no state goal argument =
   in
   apply_certificate_program line_no state program "resolution"
 
+let execute_put line_no state argument =
+  let name = trim argument in
+  if name = "" || String.contains name ' ' || String.contains name '\t' then
+    raise (Proof_error (line_no, "Use: put theorem_name."));
+  if StringSet.mem name state.put_facts then
+    raise (Proof_error (line_no,
+      "Global fact " ^ name ^ " is already in the current context."));
+  if
+    not
+      (List.exists
+         (fun (fact_name, _) -> fact_name = name)
+         (Extracted.environment_facts state.global_environment))
+  then
+    raise (Proof_error (line_no, "Global fact not found: " ^ name));
+  if not (StringSet.mem name state.hidden_global_facts) then
+    raise (Proof_error (line_no,
+      "Global fact " ^ name ^ " is already in the current context."));
+  { state with
+    put_facts = StringSet.add name state.put_facts;
+    final_certificate = None;
+    steps = state.steps @ ["put " ^ name];
+  }
+
 let fresh_intro_name base used =
   if StringSet.mem base used then fresh_name base used else base
 
@@ -851,6 +915,7 @@ let execute_tactic line_no state line =
       let command = String.lowercase_ascii command in
       begin match command with
       | "rule" -> execute_rule line_no state argument
+      | "put" -> execute_put line_no state argument
       | "obtain" -> execute_obtain line_no state "obtain" argument
       | "resolution" -> execute_resolution line_no state goal argument
       | "separation" ->
@@ -896,22 +961,14 @@ let execute_tactic line_no state line =
                 "No hypothesis matches the current goal."))
           end
       | "exact" ->
-          begin match lookup_fact argument goal.context with
+          begin match lookup_fact_in_state state goal.context argument with
           | None ->
               raise (Proof_error (line_no,
                 "Fact not found: " ^ argument))
           | Some fact when alpha_equal fact goal.target ->
-              let axioms, rule =
-                if List.mem_assoc argument goal.context then
-                  ([], Extracted.NRHypothesis argument)
-                else
-                  let axiom =
-                    match fixed_axiom_kind
-                      (String.lowercase_ascii argument) with
-                    | Some kind -> Extracted.fixed_axiom kind
-                    | None -> verified_error line_no
-                  in
-                  ([axiom], Extracted.NRAxiom)
+              let rule, axioms =
+                close_fact line_no argument
+                  (all_fact_context state goal.context)
               in
               apply_certificate_program line_no state
                 [checked_step ~axioms rule]
@@ -933,13 +990,13 @@ let execute_tactic line_no state line =
                 raise (Proof_error (line_no,
                   "A hypothesis with this name already exists."));
               let source_formula =
-                match List.assoc_opt source_name goal.context with
+                match lookup_assumption state goal.context source_name with
                 | Some formula -> formula
                 | None ->
                     raise (Proof_error (line_no,
                       "Hypothesis not found: " ^ source_name))
               in
-              begin match lookup_fact fact_name goal.context with
+              begin match lookup_fact_in_state state goal.context fact_name with
               | None ->
                   raise (Proof_error (line_no,
                     "Theorem, hypothesis, or axiom not found: " ^ fact_name))
@@ -978,7 +1035,8 @@ let execute_tactic line_no state line =
                             specialize_rules line_no fact terms
                           in
                           let close_command, axioms =
-                            close_fact line_no fact_name goal.context
+                            close_fact line_no fact_name
+                              (all_fact_context state goal.context)
                           in
                           let program =
                             [checked_step
@@ -1004,7 +1062,7 @@ let execute_tactic line_no state line =
                   end
               end
           | [fact_name] ->
-              begin match lookup_fact fact_name goal.context with
+              begin match lookup_fact_in_state state goal.context fact_name with
               | None ->
                   raise (Proof_error (line_no,
                     "Theorem, hypothesis, or axiom not found: " ^ fact_name))
@@ -1035,7 +1093,8 @@ let execute_tactic line_no state line =
                              Extracted.NRImplElim (kernel_formula premise))
                       in
                       let close_command, axioms =
-                        close_fact line_no fact_name goal.context
+                        close_fact line_no fact_name
+                          (all_fact_context state goal.context)
                       in
                       let program =
                         List.map checked_step
@@ -1063,7 +1122,7 @@ let execute_tactic line_no state line =
           begin match direction with
           | (`Forward | `Backward) ->
               let left_name, right_name =
-                match List.assoc_opt equality_name goal.context with
+                match lookup_assumption state goal.context equality_name with
                 | Some (Eq (Name left, Name right)) -> (left, right)
                 | Some (Eq _) ->
                     raise (Proof_error (line_no,
@@ -1141,7 +1200,7 @@ let execute_tactic line_no state line =
                 raise (Proof_error (line_no,
                   "A hypothesis with this name already exists."));
               let fact =
-                match lookup_fact source goal.context with
+                match lookup_fact_in_state state goal.context source with
                 | Some fact -> fact
                 | None ->
                     raise (Proof_error (line_no,
@@ -1151,7 +1210,7 @@ let execute_tactic line_no state line =
                 specialize_rules line_no fact terms
               in
               let close_command, axioms =
-                close_fact line_no source goal.context
+                close_fact line_no source (all_fact_context state goal.context)
               in
               let prefix =
                 Extracted.NRCut
@@ -1176,7 +1235,7 @@ let execute_tactic line_no state line =
           in
           begin match words with
           | fact_name :: names ->
-              begin match List.assoc_opt fact_name goal.context with
+              begin match lookup_assumption state goal.context fact_name with
               | None ->
                   raise (Proof_error (line_no,
                     "Hypothesis not found: " ^ fact_name))
@@ -1537,12 +1596,25 @@ let analyze_script script =
              (environment, steps @ [description]))
       (environment, steps) declarations
   in
-  let rec process aliases environment steps statements =
+  let rec process hidden_facts aliases environment steps statements =
     let aliases, declarations, proof =
       read_declarations aliases [] statements
     in
     let global_environment, declaration_steps =
       apply_declarations environment steps declarations
+    in
+    (* A [Choose] declaration is a global declaration, not an automatic
+       hypothesis of the theorem that follows it.  Keep its certified fact in
+       the extracted environment so that it can still be used as a source by
+       later declarations, but hide it from the surface proof context and
+       resolution search until the user explicitly writes [put]. *)
+    let hidden_facts =
+      List.fold_left
+        (fun hidden declaration ->
+           match declaration with
+           | ChooseDeclaration declaration ->
+               StringSet.add declaration.choose_fact hidden)
+        hidden_facts declarations
     in
     match proof with
     | [] when aliases <> [] || declarations <> [] ->
@@ -1555,6 +1627,8 @@ let analyze_script script =
           theorem = Bottom;
           aliases;
           global_environment;
+          hidden_global_facts = hidden_facts;
+          put_facts = StringSet.empty;
           kernel_state;
           final_certificate = None;
           steps = declaration_steps;
@@ -1590,6 +1664,8 @@ let analyze_script script =
           theorem;
           aliases;
           global_environment;
+          hidden_global_facts = hidden_facts;
+          put_facts = StringSet.empty;
           kernel_state;
           final_certificate = None;
           steps = declaration_steps;
@@ -1616,13 +1692,15 @@ let analyze_script script =
                     state.global_environment
                   |> accept_kernel_result line_no "global theorem declaration"
                 in
-                process aliases next_environment state.steps rest
+                process
+                  (StringSet.add state.theorem_name hidden_facts)
+                  aliases next_environment state.steps rest
           | (line_no, line) :: rest ->
               run (execute_tactic line_no state line) rest
         in
         run initial tactics
   in
-  process [] Extracted.empty_environment [] meaningful
+  process StringSet.empty [] Extracted.empty_environment [] meaningful
 
 let check_script script =
   let state, _ = analyze_script script in
