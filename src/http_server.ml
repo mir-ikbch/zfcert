@@ -17,6 +17,7 @@ let mime_type path =
   else if Filename.check_suffix path ".css" then "text/css; charset=utf-8"
   else if Filename.check_suffix path ".js" then
     "application/javascript; charset=utf-8"
+  else if Filename.check_suffix path ".wasm" then "application/wasm"
   else "application/octet-stream"
 
 let send_response channel status content_type body =
@@ -69,6 +70,10 @@ let serve_static channel web_root resource =
     send_response channel "404 Not Found" "text/plain; charset=utf-8"
       ("Resource not found: " ^ relative)
 
+let safe_static_path path =
+  let segments = String.split_on_char '/' path in
+  not (List.exists (fun segment -> segment = "..") segments)
+
 let handle_client web_root socket =
   let input = Unix.in_channel_of_descr socket in
   let output = Unix.out_channel_of_descr socket in
@@ -119,7 +124,11 @@ let handle_client web_root socket =
                in
                send_response output "200 OK"
                  "application/json; charset=utf-8" response
-           | "GET", ("/" | "/index.html" | "/style.css" | "/app.js") ->
+           | "GET", path
+             when safe_static_path path
+                  && (path = "/" || path = "/index.html"
+                      || path = "/style.css" || path = "/app.js"
+                      || starts_with path "/wasm/") ->
                serve_static output web_root path
            | _ ->
                send_response output "404 Not Found"

@@ -1,5 +1,6 @@
 .DS_Store
 _build/
+web/wasm/
 coq/*.vo
 coq/*.vos
 coq/*.vok

@@ -1,15 +1,18 @@
-(executable
- (name main)
+(library
+ (name zfcert_core)
+ (wrapped false)
  (modules
-  main
-  cli
-  self_test
-  http_server
   api_json
+  web_api
   proof_session
   resolution
   rule_parser
   kernel_syntax
   parser
   syntax)
- (libraries unix zfcert_kernel))
+ (libraries zfcert_kernel))
+
+(executable
+ (name main)
+ (modules main cli self_test http_server)
+ (libraries unix zfcert_core))

@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ZFCert — Set Theory Proof Studio</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <div class="shell">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="ZFCert home">
+      <a class="brand" href="./" aria-label="ZFCert home">
         <span class="brand-mark">∈</span>
         <span><strong>ZFCert</strong><small>first-order proof studio</small></span>
       </a>
@@ -148,6 +148,13 @@ qed.</textarea>
       <span>Coq → OCaml · verified transitions</span>
     </footer>
   </div>
-  <script src="/app.js"></script>
+  <script>
+    window.addEventListener("unhandledrejection", event => {
+      console.error("WebAssembly initialization failed", event.reason);
+    });
+  </script>
+  <script src="./wasm/main.bc.wasm.js"></script>
+  <script src="./wasm/main_js.bc.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>

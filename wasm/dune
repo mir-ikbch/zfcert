@@ -1,0 +1,13 @@
+(executable
+ (name main)
+ (modules main)
+ (modes wasm)
+ (libraries zfcert_core js_of_ocaml)
+ (preprocess (pps js_of_ocaml-ppx)))
+
+(executable
+ (name main_js)
+ (modules main_js)
+ (modes js)
+ (libraries zfcert_core js_of_ocaml)
+ (preprocess (pps js_of_ocaml-ppx)))

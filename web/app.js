@@ -87,6 +87,35 @@ const goalCount = document.querySelector("#goal-count");
 const tacticInput = document.querySelector("#tactic-input");
 const stepButton = document.querySelector("#step-button");
 let interactiveActive = false;
+let wasmApiPromise;
+
+function wasmApi() {
+  if (wasmApiPromise) return wasmApiPromise;
+
+  wasmApiPromise = new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const fallbackAfterMs = 1500;
+    const timeoutMs = 10000;
+    const poll = () => {
+      if (window.ZfcertWasm) {
+        resolve(window.ZfcertWasm);
+        return;
+      }
+      if (window.ZfcertJs && Date.now() - startedAt >= fallbackAfterMs) {
+        resolve(window.ZfcertJs);
+        return;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        reject(new Error("The browser kernel did not finish loading."));
+        return;
+      }
+      window.setTimeout(poll, 20);
+    };
+    poll();
+  });
+
+  return wasmApiPromise;
+}
 
 function updateLineNumbers() {
   const count = editor.value.split("\n").length;
@@ -144,12 +173,8 @@ async function verify() {
   verifyButton.disabled = true;
   verifyButton.querySelector("span").textContent = "Checking…";
   try {
-    const response = await fetch("/api/check", {
-      method: "POST",
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-      body: editor.value
-    });
-    const data = await response.json();
+    const api = await wasmApi();
+    const data = JSON.parse(api.check(editor.value));
     if (data.ok && data.aliasesOnly) {
       result.className = "result success";
       result.innerHTML = `
@@ -249,12 +274,8 @@ function renderInteractive(data) {
 }
 
 async function inspectInteractive() {
-  const response = await fetch("/api/step", {
-    method: "POST",
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
-    body: editor.value
-  });
-  return response.json();
+  const api = await wasmApi();
+  return JSON.parse(api.step(editor.value));
 }
 
 function prefixThroughTheorem(text) {
@@ -363,8 +384,8 @@ async function runStep(tactic = tacticInput.value.trim()) {
 async function loadAxioms() {
   const list = document.querySelector("#axiom-list");
   try {
-    const response = await fetch("/api/axioms");
-    const axioms = await response.json();
+    const api = await wasmApi();
+    const axioms = JSON.parse(api.axioms);
     list.innerHTML = axioms.map((axiom, index) => `
       <article class="axiom">
         <span class="axiom-index">${String(index + 1).padStart(2, "0")}</span>

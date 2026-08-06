@@ -208,7 +208,7 @@ APIの成功・エラー・進捗メッセージとWeb UIは英語に統一し�
 
 ## 起動
 
-OCaml 5.x と Dune 3.x が必要です。
+OCaml 5.x と Dune 3.17以上が必要です。
 
 ```sh
 dune build
@@ -217,6 +217,36 @@ dune exec src/main.exe -- --port 8080
 ```
 
 ブラウザで <http://127.0.0.1:8080> を開きます。
+
+## ブラウザ用WebAssembly版
+
+Web UIは`wasm_of_ocaml`でビルドしたWasmカーネルをブラウザ内で実行できます。
+このモードではOCaml HTTPサーバーは使わず、GitHub Pagesなどの静的ホスティングだけで
+証明を検査できます。`web/wasm/`は生成物なので、公開前に`make wasm`を実行してください。
+WasmGCに対応していないブラウザでは、同じOCamlコアから生成したJavaScript版へ自動的に
+フォールバックします。
+
+必要なものは次の通りです。
+
+- OCaml 4.13–5.5（このプロジェクトでは5.2を推奨）
+- Dune 3.17以上（手元のWasm用switchでは3.23.1を使用）
+- `wasm_of_ocaml-compiler`
+- `js_of_ocaml`と`js_of_ocaml-ppx`
+- Binaryen 119以上
+
+macOSでの例です。
+
+```sh
+brew install binaryen
+opam switch create zfprover-wasm 5.2.0
+opam install --switch=zfprover-wasm dune.3.23.1 wasm_of_ocaml-compiler js_of_ocaml js_of_ocaml-ppx
+eval $(opam env --switch=zfprover-wasm)
+make wasm
+```
+
+生成された`web/wasm/main.bc.wasm.js`と`web/wasm/main.bc.wasm.assets/`を、`web/`の他の
+ファイルと一緒に静的ホスティングへ配置します。DuneのWasmターゲットはOCaml bytecodeを
+Wasmへ変換し、JavaScriptブリッジから`check`、`step`、`axioms`を呼び出します。
 
 ## 対話モード
 
