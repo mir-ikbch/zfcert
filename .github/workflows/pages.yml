@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up OCaml
         uses: ocaml/setup-ocaml@v3
@@ -28,14 +28,18 @@ jobs:
           ocaml-compiler: 5.2
           dune-cache: true
 
+      - name: Set up Binaryen
+        uses: Aandreba/setup-binaryen@v1.0.0
+        with:
+          token: ${{ github.token }}
+
       - name: Install the WebAssembly toolchain
         run: |
           opam install -y \
             dune.3.23.1 \
             js_of_ocaml.6.4.1 \
             js_of_ocaml-ppx.6.4.1 \
-            wasm_of_ocaml-compiler.6.4.1 \
-            binaryen-bin.119
+            wasm_of_ocaml-compiler.6.4.1
 
       - name: Run kernel self-tests
         run: opam exec -- dune exec src/main.exe -- --self-test
