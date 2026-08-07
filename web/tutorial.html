@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZFCert — Proof Tutorial</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="ZFCert home">
+        <span class="brand-logo-frame">
+          <img class="brand-logo" src="./logo.png" alt="ZFCert logo">
+        </span>
+      </a>
+      <nav class="topbar-nav" aria-label="Page navigation">
+        <a class="topbar-link" href="./">Proof studio <span>→</span></a>
+        <a class="topbar-link" href="./tutorial-ja.html">日本語</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="tutorial-section tutorial-page" aria-labelledby="tutorial-title">
+        <div class="section-heading tutorial-heading">
+          <div>
+            <p class="eyebrow">Guided proof</p>
+            <h1 id="tutorial-title">Proof tutorial</h1>
+          </div>
+          <div class="tutorial-lesson-select">
+            <label for="tutorial-example-select">Choose a lesson</label>
+            <select id="tutorial-example-select" aria-label="Choose a lesson">
+              <option value="identity">Equality reflexivity</option>
+              <option value="implication">Implication identity</option>
+              <option value="conjunction">Conjunction commutativity</option>
+              <option value="extensionality">Using extensionality</option>
+              <option value="existence">Existential witness</option>
+              <option value="obtain">Obtain from existence</option>
+              <option value="empty">Empty-set axiom</option>
+              <option value="separation">Separation schema</option>
+              <option value="alias">Proposition alias</option>
+              <option value="choose">Choose a named witness</option>
+              <option value="choose_function">Choose a function</option>
+              <option value="rules">Primitive rules only</option>
+            </select>
+          </div>
+          <p>Enter one tactic at a time. The kernel checks each line, and every proof state stays visible below.</p>
+        </div>
+
+        <div class="tutorial-shell">
+          <aside class="tutorial-explanation-panel" aria-labelledby="tutorial-explanation-title">
+            <p class="syntax-title">Lesson note</p>
+            <h2 id="tutorial-explanation-title">Loading lesson…</h2>
+            <div id="tutorial-explanation" class="tutorial-explanation">
+              <p>Choose a lesson to see its explanation.</p>
+            </div>
+          </aside>
+
+          <div class="tutorial-entry-panel">
+            <div class="tutorial-card-head">
+              <div>
+                <p class="syntax-title">Current theorem</p>
+                <h2 id="tutorial-theorem">Loading theorem…</h2>
+              </div>
+              <span id="tutorial-step-count" class="tutorial-step-count">0 tactics</span>
+            </div>
+
+            <div id="tutorial-script" class="tutorial-script" aria-label="Tutorial proof script"></div>
+
+            <div class="tutorial-input-head">
+              <label for="tutorial-input">Next tactic</label>
+              <span>Press Enter to apply</span>
+            </div>
+            <div class="tutorial-input-row">
+              <input id="tutorial-input" type="text" spellcheck="false" autocomplete="off" placeholder="intro x.">
+              <button id="tutorial-apply-button" type="button">
+                <span>Apply</span>
+                <span class="button-arrow">↓</span>
+              </button>
+            </div>
+            <div id="tutorial-message" class="tutorial-message" role="status" aria-live="polite"></div>
+            <button id="tutorial-reset-button" class="tutorial-reset-button" type="button">Reset tutorial</button>
+          </div>
+
+          <div class="tutorial-history-panel">
+            <div class="tutorial-history-head">
+              <p class="syntax-title">Proof state history</p>
+              <span id="tutorial-history-count" class="tutorial-step-count">Starting state</span>
+            </div>
+            <div id="tutorial-history" class="tutorial-history" aria-live="polite">
+              <div class="loading">Preparing the first proof state…</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>ZFCert / guided proof tutorial</span>
+    </footer>
+  </div>
+  <script>
+    window.addEventListener("unhandledrejection", event => {
+      console.error("WebAssembly initialization failed", event.reason);
+    });
+  </script>
+  <script src="./wasm/main.bc.wasm.js"></script>
+  <script src="./wasm/main_js.bc.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

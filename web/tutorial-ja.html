@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZFCert — 証明チュートリアル</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="./index-ja.html" aria-label="ZFCert ホーム">
+        <span class="brand-logo-frame">
+          <img class="brand-logo" src="./logo.png" alt="ZFCert ロゴ">
+        </span>
+      </a>
+      <nav class="topbar-nav" aria-label="ページナビゲーション">
+        <a class="topbar-link" href="./index-ja.html">証明スタジオ <span>→</span></a>
+        <a class="topbar-link" href="./tutorial.html">English</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="tutorial-section tutorial-page" aria-labelledby="tutorial-title">
+        <div class="section-heading tutorial-heading">
+          <div>
+            <p class="eyebrow">ガイド付き証明</p>
+            <h1 id="tutorial-title">証明チュートリアル</h1>
+          </div>
+          <div class="tutorial-lesson-select">
+            <label for="tutorial-example-select">レッスンを選択</label>
+            <select id="tutorial-example-select" aria-label="レッスンを選択">
+              <option value="identity">等号の反射律</option>
+              <option value="implication">含意の恒等性</option>
+              <option value="conjunction">連言の交換</option>
+              <option value="extensionality">外延性の利用</option>
+              <option value="existence">存在の証人</option>
+              <option value="obtain">存在からの取り出し</option>
+              <option value="empty">空集合公理</option>
+              <option value="separation">分出公理図式</option>
+              <option value="alias">命題エイリアス</option>
+              <option value="choose">名前付き証人の選択</option>
+              <option value="choose_function">関数の選択</option>
+              <option value="rules">基本規則だけを使う</option>
+            </select>
+          </div>
+          <p>タクティクを1行ずつ入力してください。各行をカーネルが確認し、それまでのすべての証明状態を表示します。</p>
+        </div>
+
+        <div class="tutorial-shell">
+          <aside class="tutorial-explanation-panel" aria-labelledby="tutorial-explanation-title">
+            <p class="syntax-title">レッスンの説明</p>
+            <h2 id="tutorial-explanation-title">レッスンを読み込んでいます…</h2>
+            <div id="tutorial-explanation" class="tutorial-explanation">
+              <p>レッスンを選択すると、ここに説明が表示されます。</p>
+            </div>
+          </aside>
+
+          <div class="tutorial-entry-panel">
+            <div class="tutorial-card-head">
+              <div>
+                <p class="syntax-title">現在の定理</p>
+                <h2 id="tutorial-theorem">定理を読み込んでいます…</h2>
+              </div>
+              <span id="tutorial-step-count" class="tutorial-step-count">0 タクティク</span>
+            </div>
+
+            <div id="tutorial-script" class="tutorial-script" aria-label="チュートリアルの証明スクリプト"></div>
+
+            <div class="tutorial-input-head">
+              <label for="tutorial-input">次のタクティク</label>
+              <span>Enterで適用</span>
+            </div>
+            <div class="tutorial-input-row">
+              <input id="tutorial-input" type="text" spellcheck="false" autocomplete="off" placeholder="intro x.">
+              <button id="tutorial-apply-button" type="button">
+                <span>適用</span>
+                <span class="button-arrow">↓</span>
+              </button>
+            </div>
+            <div id="tutorial-message" class="tutorial-message" role="status" aria-live="polite"></div>
+            <button id="tutorial-reset-button" class="tutorial-reset-button" type="button">チュートリアルをリセット</button>
+          </div>
+
+          <div class="tutorial-history-panel">
+            <div class="tutorial-history-head">
+              <p class="syntax-title">証明状態の履歴</p>
+              <span id="tutorial-history-count" class="tutorial-step-count">開始状態</span>
+            </div>
+            <div id="tutorial-history" class="tutorial-history" aria-live="polite">
+              <div class="loading">最初の証明状態を準備しています…</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>ZFCert / ガイド付き証明チュートリアル</span>
+    </footer>
+  </div>
+  <script>
+    window.addEventListener("unhandledrejection", event => {
+      console.error("WebAssembly initialization failed", event.reason);
+    });
+  </script>
+  <script src="./wasm/main.bc.wasm.js"></script>
+  <script src="./wasm/main_js.bc.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
