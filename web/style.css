@@ -163,9 +163,11 @@ select {
   display: grid;
   grid-template-columns: 54px 1fr;
   background: #1b211e;
+  position: relative;
 }
 
 .line-numbers {
+  grid-column: 1;
   padding: 23px 13px;
   color: #69736e;
   border-right: 1px solid #303a35;
@@ -175,7 +177,35 @@ select {
   white-space: pre;
 }
 
+.line-numbers span {
+  display: block;
+  height: 1.75em;
+  transition: color .16s, background .16s;
+}
+
+.line-numbers span.active {
+  color: #f0a47e;
+  background: rgba(240,164,126,.12);
+}
+
+.editor-marker {
+  position: absolute;
+  z-index: 0;
+  top: 23px;
+  left: 54px;
+  right: 0;
+  height: 24.5px;
+  border-left: 2px solid rgba(240,164,126,.75);
+  background: rgba(240,164,126,.08);
+  pointer-events: none;
+  opacity: 0;
+  transition: top .16s, height .16s, opacity .16s;
+}
+
 textarea {
+  grid-column: 2;
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: 420px;
   resize: vertical;
@@ -352,55 +382,64 @@ textarea {
 
 .goal-context strong { color: var(--rust); font-weight: 500; }
 
-.tactic-row {
-  height: 45px;
+.step-navigation {
+  min-height: 51px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
   border: 1px solid var(--ink);
 }
 
-.tactic-row input {
+.step-navigation-button {
   min-width: 0;
   border: 0;
-  outline: 0;
-  background: white;
-  padding: 0 12px;
-  color: var(--ink);
-  font: 12px var(--mono);
-}
-
-.tactic-row button {
-  border: 0;
-  border-left: 1px solid var(--ink);
   background: var(--green);
   color: white;
-  padding: 0 13px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
   font: 600 11px var(--sans);
   cursor: pointer;
+  transition: background .16s, opacity .16s;
 }
 
-.tactic-row button:disabled { opacity: .55; cursor: wait; }
-
-.quick-tactics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 11px;
+.step-navigation-button:first-child {
+  border-right: 1px solid var(--ink);
 }
 
-.quick-tactics button {
-  border: 1px solid var(--line);
-  background: transparent;
-  color: #58605a;
-  padding: 5px 7px;
-  font: 10px var(--mono);
-  cursor: pointer;
+.step-navigation-button:last-child {
+  border-left: 1px solid var(--ink);
 }
 
-.quick-tactics button:hover {
-  color: var(--green);
-  border-color: var(--green);
-  background: rgba(22,77,58,.06);
+.step-navigation-button:hover { background: #235f48; }
+.step-navigation-button:disabled { opacity: .35; cursor: default; }
+
+.navigation-arrow {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.step-indicator {
+  min-width: 108px;
+  padding: 0 10px;
+  display: grid;
+  place-items: center;
+  color: var(--rust);
+  background: #f7f5ee;
+  font: 9px/1.4 var(--mono);
+  letter-spacing: .06em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.step-command {
+  display: block;
+  margin-top: 6px;
+  color: #69706a;
+  font: 10px/1.5 var(--mono);
+  overflow-wrap: anywhere;
 }
 
 .syntax-card { padding: 24px 30px 30px; }
@@ -495,6 +534,7 @@ footer {
   .panel-head { padding: 0 15px; }
   select { max-width: 145px; }
   .editor-wrap { grid-template-columns: 39px 1fr; }
+  .editor-marker { left: 39px; top: 20px; }
   textarea { padding: 20px 14px; font-size: 12px; }
   .line-numbers { padding: 20px 8px; font-size: 12px; }
   .editor-footer > span { display: none; }
@@ -502,6 +542,7 @@ footer {
   .footer-actions { width: 100%; }
   .editor-footer button { min-width: 0; width: 50%; }
   .interactive-card { padding: 22px 18px; }
+  .step-navigation-button { padding: 0 9px; }
   .section-heading { display: block; }
   .axiom-list { grid-template-columns: 1fr; }
   .axiom:nth-child(odd) { border-right: 0; }

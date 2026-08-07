@@ -50,6 +50,7 @@
           </div>
           <div class="editor-wrap">
             <div id="line-numbers" class="line-numbers" aria-hidden="true"></div>
+            <div id="editor-marker" class="editor-marker" aria-hidden="true"></div>
             <textarea id="proof-editor" spellcheck="false" aria-label="Proof script">theorem equality_reflexive :
   forall x, x = x.
 intro x.
@@ -57,11 +58,8 @@ refl.
 qed.</textarea>
           </div>
           <div class="editor-footer">
-            <span>Run one step at a time or verify the complete proof</span>
+            <span>Use ↑/↓ to move through the proof or verify the complete script</span>
             <div class="footer-actions">
-              <button id="interactive-button" class="secondary-button" type="button">
-                <span>Start interactive</span>
-              </button>
               <button id="verify-button" type="button">
                 <span>Verify proof</span>
                 <span class="button-arrow">→</span>
@@ -89,22 +87,18 @@ qed.</textarea>
               <span id="goal-count" class="goal-count">Not started</span>
             </div>
             <div id="goal-view" class="goal-view">
-              <p>Select “Start interactive” to begin at the theorem declaration.</p>
+              <p>Press ↓ to begin at the theorem declaration.</p>
             </div>
-            <div class="tactic-row">
-              <input id="tactic-input" type="text" autocomplete="off"
-                aria-label="Next tactic" placeholder="Example: intros.">
-              <button id="step-button" type="button">Run step →</button>
-            </div>
-            <div class="quick-tactics" aria-label="Common tactics">
-              <button type="button" data-tactic="intro x.">intro x.</button>
-              <button type="button" data-tactic="intros.">intros.</button>
-              <button type="button" data-tactic="intro H.">intro H.</button>
-              <button type="button" data-tactic="assumption.">assumption.</button>
-              <button type="button" data-tactic="resolution.">resolution.</button>
-              <button type="button" data-tactic="refl.">refl.</button>
-              <button type="button" data-tactic="split.">split.</button>
-              <button type="button" data-tactic="qed.">qed.</button>
+            <div class="step-navigation" aria-label="Proof navigation">
+              <button id="previous-step-button" class="step-navigation-button" type="button">
+                <span class="navigation-arrow">↑</span>
+                <span>Previous</span>
+              </button>
+              <span id="step-indicator" class="step-indicator">Not started</span>
+              <button id="next-step-button" class="step-navigation-button" type="button">
+                <span>Next</span>
+                <span class="navigation-arrow">↓</span>
+              </button>
             </div>
           </div>
           <div class="syntax-card">
@@ -116,6 +110,7 @@ qed.</textarea>
               <code>apply H.</code><span>Backward reasoning</span>
               <code>specialize H a as Ha.</code><span>Universal elimination</span>
               <code>obtain x Hx from H.</code><span>Existential elimination</span>
+              <code>put theorem_name.</code><span>Add a previous theorem as an assumption</span>
               <code>refl.</code><span>Equality reflexivity</span>
               <code>split.</code><span>Conjunction or equivalence</span>
               <code>cases H.</code><span>Eliminate a hypothesis</span>

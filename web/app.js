@@ -61,13 +61,15 @@ qed.`,
   choose: `alias is_empty x := forall y, not (y in x).
 Choose empty Hempty from empty_set.
 theorem chosen_empty_is_empty : is_empty empty.
+put Hempty.
 exact Hempty.
 qed.`,
   choose_function: `Choose pair Hpair from pairing.
 theorem pair_shape :
   forall a, forall b, forall x,
     (x in pair(a,b) <-> (x = a or x = b)).
-    exact Hpair.
+put Hpair.
+exact Hpair.
 qed.`,
   rules: `theorem equality_by_rules :
   forall x, x = x.
@@ -80,13 +82,17 @@ const editor = document.querySelector("#proof-editor");
 const numbers = document.querySelector("#line-numbers");
 const result = document.querySelector("#result");
 const verifyButton = document.querySelector("#verify-button");
-const interactiveButton = document.querySelector("#interactive-button");
 const exampleSelect = document.querySelector("#example-select");
 const goalView = document.querySelector("#goal-view");
 const goalCount = document.querySelector("#goal-count");
-const tacticInput = document.querySelector("#tactic-input");
-const stepButton = document.querySelector("#step-button");
-let interactiveActive = false;
+const editorMarker = document.querySelector("#editor-marker");
+const previousStepButton = document.querySelector("#previous-step-button");
+const nextStepButton = document.querySelector("#next-step-button");
+const stepIndicator = document.querySelector("#step-indicator");
+let interactiveCursor = -1;
+let interactiveCheckpoints = [];
+let interactiveRange;
+let interactiveBusy = false;
 let wasmApiPromise;
 
 function wasmApi() {
@@ -117,18 +123,58 @@ function wasmApi() {
   return wasmApiPromise;
 }
 
+function currentLineRange(text, start, end) {
+  const segment = text.slice(start, end);
+  const firstContent = segment.search(/\S/);
+  const firstOffset = firstContent < 0 ? start : start + firstContent;
+  const lastOffset = Math.max(firstOffset, end - 1);
+  return {
+    start: text.slice(0, firstOffset).split("\n").length,
+    end: text.slice(0, lastOffset).split("\n").length
+  };
+}
+
+function updateEditorMarker() {
+  if (!interactiveRange) {
+    editorMarker.style.opacity = "0";
+    return;
+  }
+  const computed = window.getComputedStyle(editor);
+  const lineHeight = parseFloat(computed.lineHeight);
+  const paddingTop = parseFloat(computed.paddingTop);
+  const top = paddingTop + (interactiveRange.start - 1) * lineHeight - editor.scrollTop;
+  const height = Math.max(1, interactiveRange.end - interactiveRange.start + 1) * lineHeight;
+  editorMarker.style.top = `${top}px`;
+  editorMarker.style.height = `${height}px`;
+  editorMarker.style.opacity = "1";
+}
+
 function updateLineNumbers() {
   const count = editor.value.split("\n").length;
-  numbers.textContent = Array.from({ length: count }, (_, i) => i + 1).join("\n");
+  numbers.innerHTML = Array.from({ length: count }, (_, i) => {
+    const line = i + 1;
+    const active = interactiveRange &&
+      line >= interactiveRange.start && line <= interactiveRange.end;
+    return `<span class="${active ? "active" : ""}">${line}</span>`;
+  }).join("");
   numbers.scrollTop = editor.scrollTop;
+  updateEditorMarker();
+}
+
+function resetInteractive() {
+  interactiveCursor = -1;
+  interactiveCheckpoints = proofCheckpoints(editor.value);
+  interactiveRange = undefined;
+  goalCount.textContent = "Not started";
+  stepIndicator.textContent = "Not started";
+  goalView.innerHTML = `<p>Press ↓ to begin at the theorem declaration.</p>`;
+  updateLineNumbers();
+  updateNavigationControls();
 }
 
 function setExample(name) {
   editor.value = examples[name];
-  updateLineNumbers();
-  interactiveActive = false;
-  goalCount.textContent = "Not started";
-  goalView.innerHTML = `<p>Select “Start interactive” to begin at the theorem declaration.</p>`;
+  resetInteractive();
 }
 
 function escapeHtml(value) {
@@ -167,6 +213,12 @@ function declarationsHtml(data) {
 
 function declarationSummary(data) {
   return `${(data.aliases || []).length} aliases · ${(data.constants || []).length} constants`;
+}
+
+function currentCommandHtml() {
+  const checkpoint = interactiveCheckpoints[interactiveCursor];
+  if (!checkpoint) return "";
+  return `<span class="step-command">Current: ${escapeHtml(checkpoint.label)}</span>`;
 }
 
 async function verify() {
@@ -213,6 +265,8 @@ async function verify() {
 
 function renderInteractive(data) {
   if (!data.ok) {
+    goalCount.textContent = "Step rejected";
+    goalView.innerHTML = `<p>${escapeHtml(data.message)}</p>`;
     result.className = "result error";
     result.innerHTML = `
       <div class="result-icon">!</div>
@@ -224,7 +278,7 @@ function renderInteractive(data) {
 
   if (data.aliasesOnly) {
     goalCount.textContent = declarationSummary(data);
-    goalView.innerHTML = declarationsHtml(data);
+    goalView.innerHTML = `${declarationsHtml(data)}${currentCommandHtml()}`;
     result.className = "result success";
     result.innerHTML = `
       <div class="result-icon">✓</div>
@@ -235,7 +289,9 @@ function renderInteractive(data) {
 
   if (data.qed) {
     goalCount.textContent = "Proof complete";
-    goalView.innerHTML = `<span class="goal-target">✓ ${escapeHtml(data.statement)}</span>`;
+    goalView.innerHTML = `
+      <span class="goal-target">✓ ${escapeHtml(data.statement)}</span>
+      ${currentCommandHtml()}`;
     result.className = "result success";
     result.innerHTML = `
       <div class="result-icon">✓</div>
@@ -257,7 +313,8 @@ function renderInteractive(data) {
     goalCount.textContent = "0 goals";
     goalView.innerHTML = `
       <span class="goal-target">All goals solved</span>
-      <p>Run <code>qed.</code> to finish the proof.</p>`;
+      <p>Run <code>qed.</code> to finish the proof.</p>
+      ${currentCommandHtml()}`;
     return;
   }
 
@@ -270,15 +327,16 @@ function renderInteractive(data) {
     : `<p class="goal-context">No assumptions</p>`;
   goalView.innerHTML = `
     ${context}
-    <span class="goal-target">⊢ ${escapeHtml(goal.target)}</span>`;
+    <span class="goal-target">⊢ ${escapeHtml(goal.target)}</span>
+    ${currentCommandHtml()}`;
 }
 
-async function inspectInteractive() {
+async function inspectInteractive(script) {
   const api = await wasmApi();
-  return JSON.parse(api.step(editor.value));
+  return JSON.parse(api.step(script));
 }
 
-function prefixThroughTheorem(text) {
+function theoremPrefixEnd(text) {
   let statement = "";
   let lineComment = false;
   let blockDepth = 0;
@@ -311,7 +369,7 @@ function prefixThroughTheorem(text) {
       lineComment = true;
     } else if (character === ".") {
       if (statement.trim().toLowerCase().startsWith("theorem ")) {
-        return text.slice(0, index + 1);
+        return index + 1;
       }
       statement = "";
     } else {
@@ -321,63 +379,127 @@ function prefixThroughTheorem(text) {
   return undefined;
 }
 
-async function startInteractive() {
-  const prefix = prefixThroughTheorem(editor.value);
-  if (!prefix) {
+function proofCheckpoints(text) {
+  const theoremEnd = theoremPrefixEnd(text);
+  if (theoremEnd === undefined) return [];
+
+  const checkpoints = [{
+    start: 0,
+    end: theoremEnd,
+    range: currentLineRange(text, 0, theoremEnd),
+    label: "theorem declaration"
+  }];
+  let statementStart = theoremEnd;
+  let lineComment = false;
+  let blockDepth = 0;
+
+  for (let index = theoremEnd; index < text.length; index += 1) {
+    const character = text[index];
+    if (blockDepth > 0) {
+      if (text.startsWith("(*", index)) {
+        blockDepth += 1;
+        index += 1;
+      } else if (text.startsWith("*)", index)) {
+        blockDepth -= 1;
+        index += 1;
+      }
+      continue;
+    }
+    if (lineComment) {
+      if (character === "\n") lineComment = false;
+      continue;
+    }
+    if (text.startsWith("(*", index)) {
+      blockDepth = 1;
+      index += 1;
+    } else if (character === "#") {
+      lineComment = true;
+    } else if (character === ".") {
+      const end = index + 1;
+      const command = text.slice(statementStart, end);
+      checkpoints.push({
+        start: statementStart,
+        end,
+        range: currentLineRange(text, statementStart, end),
+        label: commandLabel(command)
+      });
+      statementStart = end;
+      if (isQedCommand(command)) break;
+    }
+  }
+  return checkpoints;
+}
+
+function commandLabel(command) {
+  return command
+    .replace(/#[^\n]*/g, "")
+    .replace(/\(\*[\s\S]*?\*\)/g, "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function isQedCommand(command) {
+  return commandLabel(command).toLowerCase() === "qed.";
+}
+
+function stepIndicatorText(index, checkpoint) {
+  const total = interactiveCheckpoints.length;
+  const lines = checkpoint.range.start === checkpoint.range.end
+    ? `line ${checkpoint.range.start}`
+    : `lines ${checkpoint.range.start}–${checkpoint.range.end}`;
+  return `Step ${index + 1}/${total} · ${lines}`;
+}
+
+function updateNavigationControls() {
+  previousStepButton.disabled = interactiveBusy || interactiveCursor <= 0;
+  nextStepButton.disabled = interactiveBusy || interactiveCheckpoints.length === 0 ||
+    interactiveCursor >= interactiveCheckpoints.length - 1;
+}
+
+function showInteractiveCursor(index) {
+  const checkpoint = interactiveCheckpoints[index];
+  interactiveRange = checkpoint.range;
+  stepIndicator.textContent = stepIndicatorText(index, checkpoint);
+  stepIndicator.title = checkpoint.label;
+  updateLineNumbers();
+}
+
+async function moveInteractive(direction) {
+  if (interactiveBusy) return;
+
+  interactiveCheckpoints = proofCheckpoints(editor.value);
+  if (interactiveCheckpoints.length === 0) {
+    interactiveCursor = -1;
+    interactiveRange = undefined;
+    stepIndicator.textContent = "No theorem";
+    updateLineNumbers();
+    updateNavigationControls();
     renderInteractive({
       ok: false,
       line: 1,
       message: "No complete theorem declaration was found."
     });
-    return false;
+    return;
   }
 
-  editor.value = prefix;
-  updateLineNumbers();
-  interactiveActive = true;
-  interactiveButton.disabled = true;
-  interactiveButton.querySelector("span").textContent = "Starting…";
+  const target = interactiveCursor < 0
+    ? (direction > 0 ? 0 : -1)
+    : interactiveCursor + direction;
+  if (target < 0 || target >= interactiveCheckpoints.length) return;
+
+  interactiveCursor = target;
+  const checkpoint = interactiveCheckpoints[target];
+  showInteractiveCursor(target);
+  interactiveBusy = true;
+  updateNavigationControls();
   try {
-    const data = await inspectInteractive();
-    renderInteractive(data);
-    tacticInput.focus();
-    return data.ok;
-  } catch (error) {
-    renderInteractive({ ok: false, line: 1, message: error.message });
-    return false;
-  } finally {
-    interactiveButton.disabled = false;
-    interactiveButton.querySelector("span").textContent = "Restart interactive";
-  }
-}
-
-async function runStep(tactic = tacticInput.value.trim()) {
-  if (!tactic) return;
-  if (!interactiveActive) {
-    const started = await startInteractive();
-    if (!started) return;
-  }
-
-  const before = editor.value;
-  editor.value = `${before}\n${tactic}`;
-  updateLineNumbers();
-  stepButton.disabled = true;
-  try {
-    const data = await inspectInteractive();
-    if (!data.ok) {
-      editor.value = before;
-      updateLineNumbers();
-    } else {
-      tacticInput.value = "";
-    }
+    const data = await inspectInteractive(editor.value.slice(0, checkpoint.end));
     renderInteractive(data);
   } catch (error) {
-    editor.value = before;
-    updateLineNumbers();
-    renderInteractive({ ok: false, line: 1, message: error.message });
+    renderInteractive({ ok: false, line: checkpoint.range.end, message: error.message });
   } finally {
-    stepButton.disabled = false;
-    tacticInput.focus();
+    interactiveBusy = false;
+    updateNavigationControls();
   }
 }
 
@@ -399,8 +521,11 @@ async function loadAxioms() {
   }
 }
 
-editor.addEventListener("input", updateLineNumbers);
-editor.addEventListener("scroll", () => { numbers.scrollTop = editor.scrollTop; });
+editor.addEventListener("input", resetInteractive);
+editor.addEventListener("scroll", () => {
+  numbers.scrollTop = editor.scrollTop;
+  updateEditorMarker();
+});
 editor.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
@@ -414,17 +539,8 @@ editor.addEventListener("keydown", (event) => {
   }
 });
 verifyButton.addEventListener("click", verify);
-interactiveButton.addEventListener("click", startInteractive);
-stepButton.addEventListener("click", () => runStep());
-tacticInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    runStep();
-  }
-});
-document.querySelectorAll("[data-tactic]").forEach((button) => {
-  button.addEventListener("click", () => runStep(button.dataset.tactic));
-});
+previousStepButton.addEventListener("click", () => moveInteractive(-1));
+nextStepButton.addEventListener("click", () => moveInteractive(1));
 exampleSelect.addEventListener("change", (event) => setExample(event.target.value));
 
 setExample("identity");
