@@ -92,7 +92,7 @@
       "patterns": [
         {
           "name": "support.function.tactic.zfcert",
-          "match": "\\b(rule|intro|intros|exact|apply|specialize|obtain|cases|use|refl|split|constructor|assumption|contradiction|resolution|left|right|separation|replacement)\\b"
+          "match": "\\b(rule|intro|intros|exact|apply|specialize|obtain|put|cases|use|refl|split|constructor|assumption|contradiction|resolution|left|right|separation|replacement)\\b"
         },
         {
           "name": "support.function.rule.zfcert",

@@ -4,5 +4,6 @@ Choose pair Hpair from pairing.
 theorem pair_shape :
   forall a, forall b, forall x,
     (x in pair(a, b) <-> (x = a or x = b)).
+put Hpair.
 exact Hpair.
 qed.

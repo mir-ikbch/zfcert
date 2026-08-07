@@ -58,20 +58,23 @@ a synchronous local HTTP request."
   :type 'number
   :group 'zfcert)
 
-(defcustom zfcert-request-timeout 3
-  "HTTP timeout in seconds for kernel requests."
-  :type 'number
+(defcustom zfcert-request-timeout 60
+  "HTTP timeout in seconds for kernel requests.
+Set this to nil to wait without a timeout.  Proof checking, especially
+resolution, may legitimately take longer than a short interactive request."
+  :type '(choice (const :tag "No timeout" nil) number)
   :group 'zfcert)
 
 (defvar zfcert--kernel-process nil)
 (defvar zfcert--refresh-timer nil)
+(defvar zfcert--request-in-flight nil)
 (defvar-local zfcert--error-overlay nil)
 
 (defconst zfcert--font-lock-keywords
   `((,(regexp-opt '("alias" "Choose" "theorem" "qed") 'symbols)
      . font-lock-keyword-face)
     (,(regexp-opt
-       '("rule" "intro" "intros" "exact" "apply" "specialize" "obtain" "cases" "use"
+       '("rule" "intro" "intros" "exact" "apply" "specialize" "obtain" "put" "cases" "use"
          "refl" "split" "constructor" "assumption" "contradiction" "resolution"
          "left" "right" "separation" "replacement")
        'symbols)
@@ -135,8 +138,32 @@ a synchronous local HTTP request."
      text)
    'utf-8-unix))
 
+(defun zfcert--http-buffer-name ()
+  "Return the URL library's temporary buffer name for the kernel host."
+  (let* ((parsed (url-generic-parse-url zfcert-server-url))
+         (host (or (url-host parsed) "localhost"))
+         (scheme (url-type parsed))
+         (port (or (url-port parsed)
+                   (if (equal scheme "https") 443 80))))
+    (format "*http %s:%s*" host port)))
+
+(defun zfcert--abort-http-request ()
+  "Abort and remove a stale URL buffer for the configured kernel host.
+
+`url-retrieve-synchronously' can leave its process buffer behind when its
+timeout expires.  Removing that process before the next request avoids the
+URL library's prompt asking whether the old HTTP buffer should be killed."
+  (let ((buffer (get-buffer (zfcert--http-buffer-name))))
+    (when (buffer-live-p buffer)
+      (let ((process (get-buffer-process buffer)))
+        (when (process-live-p process)
+          (delete-process process)))
+      (kill-buffer buffer))))
+
 (defun zfcert--request (method endpoint &optional body timeout)
   "Send METHOD request to ENDPOINT with BODY and decode its JSON response."
+  (when zfcert--request-in-flight
+    (user-error "A ZFCert request is already in progress"))
   (let* ((url-request-method method)
          (url-request-data
           (and body (encode-coding-string body 'utf-8)))
@@ -144,34 +171,43 @@ a synchronous local HTTP request."
           '(("Content-Type" . "text/plain; charset=utf-8")))
          (url-show-status nil)
          (target (concat (zfcert--base-url) "/" endpoint))
-         (response
-          (url-retrieve-synchronously
-           target t t (or timeout zfcert-request-timeout))))
-    (unless response
-      (error "ZFCert kernel request timed out"))
-    (unwind-protect
-        (with-current-buffer response
-          (unless (and (boundp 'url-http-response-status)
-                       (numberp url-http-response-status)
-                       (<= 200 url-http-response-status)
-                       (< url-http-response-status 300))
-            (error "ZFCert kernel returned HTTP %s"
-                   (or (and (boundp 'url-http-response-status)
-                            url-http-response-status)
-                       "?")))
-          (goto-char (or (and (boundp 'url-http-end-of-headers)
-                              url-http-end-of-headers)
-                         (point-min)))
-          (let* ((raw
-                  (buffer-substring-no-properties
-                   (point) (point-max)))
-                 (decoded (zfcert--decode-utf8-response raw))
-                 (json-object-type 'alist)
-                 (json-array-type 'list)
-                 (json-key-type 'symbol)
-                 (json-false nil))
-            (json-read-from-string decoded)))
-      (kill-buffer response))))
+         ;; This dynamically scoped flag also protects against an idle timer
+         ;; firing while `url-retrieve-synchronously' is waiting for a slow
+         ;; resolution request.
+         (zfcert--request-in-flight target))
+    (let ((response
+           (url-retrieve-synchronously
+            target t t (or timeout zfcert-request-timeout))))
+      (unless response
+        (zfcert--abort-http-request)
+        (error
+         (if (or timeout zfcert-request-timeout)
+             "ZFCert kernel request timed out; the kernel may still be processing"
+           "ZFCert kernel request returned no response")))
+      (unwind-protect
+          (with-current-buffer response
+            (unless (and (boundp 'url-http-response-status)
+                         (numberp url-http-response-status)
+                         (<= 200 url-http-response-status)
+                         (< url-http-response-status 300))
+              (error "ZFCert kernel returned HTTP %s"
+                     (or (and (boundp 'url-http-response-status)
+                              url-http-response-status)
+                         "?")))
+            (goto-char (or (and (boundp 'url-http-end-of-headers)
+                                url-http-end-of-headers)
+                           (point-min)))
+            (let* ((raw
+                    (buffer-substring-no-properties
+                     (point) (point-max)))
+                   (decoded (zfcert--decode-utf8-response raw))
+                   (json-object-type 'alist)
+                   (json-array-type 'list)
+                   (json-key-type 'symbol)
+                   (json-false nil))
+              (json-read-from-string decoded)))
+        (when (buffer-live-p response)
+          (kill-buffer response))))))
 
 (defun zfcert--healthy-p ()
   (condition-case nil
@@ -238,7 +274,15 @@ a synchronous local HTTP request."
         (error "The ZFCert kernel did not become ready")))))
 
 (defun zfcert--ensure-kernel ()
-  (unless (zfcert--healthy-p)
+  (when zfcert--request-in-flight
+    (user-error "A ZFCert request is already in progress"))
+  ;; The extracted server handles requests sequentially.  While a long
+  ;; resolution is running, a health request would block and could make the
+  ;; old code restart a perfectly healthy but busy kernel.  A live process
+  ;; started by this mode is sufficient here; startup itself waits for health.
+  (unless (or (and (zfcert--local-server-p)
+                   (process-live-p zfcert--kernel-process))
+              (zfcert--healthy-p))
     (if zfcert-auto-start-kernel
         (zfcert--start-kernel)
       (user-error

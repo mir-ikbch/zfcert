@@ -54,6 +54,10 @@ alias is_empty x := forall y, not (y in x).
 存在事実は`obtain x Hx from H.`で除去でき、定理より前では
 `Choose empty Hempty from empty_set.`としてグローバル定数`empty`と
 その事実`Hempty`を宣言できます。以後は定理の主張にも`empty`を書けます。
+Chooseで生成された事実は証明状態へ自動では入らないため、証明中に使う場合は
+`put Hempty.`で明示的に仮定へ追加します。
+以前に証明した定理は証明状態へ自動では入らないため、必要なら
+`put theorem_name.`で明示的に仮定へ追加します。
 
 プリミティブな自然演繹規則は`rule`で直接適用できます。
 

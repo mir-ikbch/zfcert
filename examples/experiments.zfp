@@ -13,24 +13,8 @@ Choose ordpair Hordpair from exists_ordpair.
 theorem exists_singleton : forall x, exists p, forall y, (y in p) <-> (y = x).
 intro x.
 specialize pairing x x as H.
-obtain p Hp from H.
-use p.
-intro y.
-split.
-  intro Hyinp.
-  specialize Hp y as Hp'.
-  cases Hp'.
-  apply Hp'_forward in Hyinp as Hax.
-  cases Hax HL HR.
-  exact HL.
-  exact HR.
-
-  intro Heq.
-  specialize Hp y as Hpy.
-  cases Hpy.
-  apply Hpy_backward.
-  left.
-  apply Heq.
+put Hordpair.
+resolution.
 qed.
 
 Choose singleton Hsingleton from exists_singleton.
@@ -98,7 +82,6 @@ Choose succ Hsucc from exists_succ.
 alias is_emp_or_succ n := n = empty() or exists k, n = succ(k).
 alias is_natural n := is_emp_or_succ n and forall m, m in n -> is_emp_or_succ m.
 
-
 Choose inf Hinf from infinity.
 
 theorem separation_nat : forall a, exists b, forall x, x in b <-> x in a and is_natural x.
@@ -107,11 +90,52 @@ separation S a x : is_natural x.
 exact S.
 qed.
 
-theorem separation_infnat : exists b, forall x, x in b <-> x in inf() and is_natural x.
-apply separation_nat.
+theorem separation_infnat : exists b, forall x, x in b <-> x in inf and is_natural x.
+specialize separation_nat inf as H.
+apply H.
 qed.
 
 Choose nat Hnat from separation_infnat.
+
+Choose pow Hpow from power_set.
+
+theorem exists_prod :
+forall x y, exists pr, forall w,
+       w in pr <->
+       exists u v, w = ordpair(u,v) and (u in x and v in y).
+intros.
+separation S pow(pow(cup(x,y))) w : exists u v, w = ordpair(u,v) and (u in x and v in y).
+obtain pr Hpr from S.
+use pr.
+intro w.
+specialize Hpr w as Hw.
+cases Hw.
+split.
+  intro Hwin.
+  apply Hw_forward in Hwin as Hw'.
+  cases Hw'.
+  resolution.
+  
+  intro H.
+  obtain u Hu from H.
+  obtain v Hv from Hu.
+  apply Hw_backward.
+  split.
+    cases Hv.
+    specialize Hpow pow(cup(x,y)) w as Hpow1.
+    cases Hpow1.
+    apply Hpow1_backward.
+    intros.
+    specialize Hpow cup(x,y) z as Hpow2.
+    cases Hpow2.
+    apply Hpow2_backward.
+    intros.
+    specialize Hcup x y x'' as Hc.
+    cases Hc.
+    apply Hc_backward.
+    
+    
+  
 
 
 

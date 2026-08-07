@@ -54,6 +54,11 @@
     "body": "obtain ${1:x} ${2:Hx} from ${3:H}.",
     "description": "Specialize and eliminate an existential fact"
   },
+  "Put a previous theorem": {
+    "prefix": "put",
+    "body": "put ${1:theorem_name}.",
+    "description": "Add a previous theorem to the current proof context"
+  },
   "Propositional resolution": {
     "prefix": "resolution",
     "body": "resolution.",

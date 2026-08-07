@@ -65,6 +65,30 @@
   (let ((raw (apply #'string '(226 136 128 120 44 32 194 172))))
     (should (equal (zfcert--decode-utf8-response raw) "∀x, ¬"))))
 
+(ert-deftest zfcert-request-buffer-name-matches-url-library ()
+  (let ((zfcert-server-url "http://127.0.0.1:8099"))
+    (should (equal (zfcert--http-buffer-name)
+                   "*http 127.0.0.1:8099*"))))
+
+(ert-deftest zfcert-request-cleans-stale-http-buffer-on-timeout ()
+  (let ((buffer (get-buffer-create "*http 127.0.0.1:8099*")))
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'url-retrieve-synchronously)
+                     (lambda (&rest _arguments) nil)))
+            (should-error
+             (zfcert--request "POST" "api/step" "" 0.01)
+             :type 'error))
+          (should-not (buffer-live-p buffer)))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest zfcert-request-rejects-overlapping-requests ()
+  (let ((zfcert--request-in-flight "http://127.0.0.1:8099/api/step"))
+    (should-error
+     (zfcert--request "POST" "api/step" "")
+     :type 'user-error)))
+
 (ert-deftest zfcert-mode-recognizes-nested-block-comments ()
   (with-temp-buffer
     (zfcert-mode)

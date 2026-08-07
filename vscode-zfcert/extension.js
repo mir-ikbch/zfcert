@@ -324,6 +324,7 @@ function tacticCompletions() {
     ["apply", "apply ${1:H}.", "Apply a fact backwards"],
     ["specialize", "specialize ${1:H} ${2:a} as ${3:H_a}.", "Instantiate a universal fact"],
     ["obtain", "obtain ${1:x} ${2:Hx} from ${3:H}.", "Specialize and eliminate an existential fact"],
+    ["put", "put ${1:theorem_name}.", "Add a previous theorem to the current context"],
     ["cases", "cases ${1:H} ${2:H1} ${3:H2}.", "Eliminate conjunction, equivalence, or existence"],
     ["use", "use ${1:x}.", "Provide an existential witness"],
     ["refl", "refl.", "Prove reflexive equality"],
