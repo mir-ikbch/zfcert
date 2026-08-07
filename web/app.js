@@ -511,10 +511,9 @@ async function loadAxioms() {
     list.innerHTML = axioms.map((axiom, index) => `
       <article class="axiom">
         <span class="axiom-index">${String(index + 1).padStart(2, "0")}</span>
-        <h3>${escapeHtml(axiom.title)}</h3>
+        <h3>${escapeHtml(axiom.key)}${axiom.key === "separation" || axiom.key === "replacement" ? ' <span class="axiom-kind">(scheme)</span>' : ""}</h3>
         <div class="axiom-formula">${escapeHtml(axiom.statement)}</div>
         <p>${escapeHtml(axiom.note)}</p>
-        <span class="axiom-badge">${axiom.kernel ? "KERNEL AXIOM" : "SCHEMA"}</span>
       </article>`).join("");
   } catch {
     list.innerHTML = `<div class="loading">Could not load the axiom library.</div>`;
