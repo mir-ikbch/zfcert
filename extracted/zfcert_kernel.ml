@@ -66,6 +66,7 @@ type certificate_step = Raw.certificate_step
 type certificate = Raw.certificate
 
 type goal_view = {
+  variables : string list;
   assumptions : (string * formula) list;
   conclusion : formula;
 }
@@ -138,6 +139,7 @@ let goals state =
         (List.map
            (fun goal ->
               {
+                variables = goal.Raw.named_variables;
                 assumptions =
                   List.map
                     (fun hypothesis ->

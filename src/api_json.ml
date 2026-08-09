@@ -95,12 +95,18 @@ let context_entry (name, formula) =
     (quote (Syntax.formula_to_string formula))
 
 let goal goal =
+  let variables =
+    goal.variables
+    |> List.map quote
+    |> String.concat ","
+  in
   let context =
     List.rev goal.context
     |> List.map context_entry
     |> String.concat ","
   in
-  Printf.sprintf {|{"target":%s,"context":[%s]}|}
+  Printf.sprintf {|{"variables":[%s],"target":%s,"context":[%s]}|}
+    variables
     (quote (Syntax.formula_to_string goal.target))
     context
 

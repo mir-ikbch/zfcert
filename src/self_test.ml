@@ -145,7 +145,8 @@ theorem hidden_target : forall a, a = a
 intro a")
   in
   begin match Proof_session.goals hidden_source_state with
-  | [{ context = []; target = Syntax.Eq (Syntax.Name "a", Syntax.Name "a") }] -> ()
+  | [{ variables = ["a"]; context = [];
+       target = Syntax.Eq (Syntax.Name "a", Syntax.Name "a") }] -> ()
   | _ -> failwith "A previous theorem was exposed in the proof context"
   end;
   let choose_hidden_state, _ =
@@ -297,6 +298,31 @@ qed")
           (Parser.parse_formula "exists x, exists y, exists z, x = z"))
   then
     failwith "Multiple existentially quantified variables were parsed incorrectly";
+  let check_formula_printing source expected =
+    let formula = Parser.parse_formula source in
+    let printed = Syntax.formula_to_string formula in
+    if printed <> expected then
+      failwith
+        ("Unexpected formula rendering: " ^ printed ^
+         " (expected " ^ expected ^ ")");
+    if not (Syntax.alpha_equal formula (Parser.parse_formula printed)) then
+      failwith "Rendered formula did not preserve its parse tree"
+  in
+  check_formula_printing
+    "(forall x, P) -> Q"
+    "(∀x, P) → Q";
+  check_formula_printing
+    "P and Q and R"
+    "(P ∧ Q) ∧ R";
+  check_formula_printing
+    "P and (Q and R)"
+    "P ∧ (Q ∧ R)";
+  check_formula_printing
+    "P -> Q -> R"
+    "P → Q → R";
+  check_formula_printing
+    "P <-> Q <-> R"
+    "P ↔ Q ↔ R";
   ignore
     (Proof_session.check_script
        "(* A multiline comment may contain periods.
@@ -383,11 +409,15 @@ qed")
   in
   begin
     match has_qed, Proof_session.goals interactive with
-    | false, [{ context = []; target = Syntax.Eq (Syntax.Name "x", Syntax.Name "x") }] -> ()
+    | false, [{ variables = ["x"]; context = [];
+                target = Syntax.Eq (Syntax.Name "x", Syntax.Name "x") }] -> ()
     | _ ->
         failwith
           "Interactive analysis did not preserve the named current goal"
   end;
+  let interactive_json = Api_json.step interactive ~has_qed:false in
+  if not (contains interactive_json {|"variables":["x"]|}) then
+    failwith "The proof-state JSON did not expose introduced variables";
   let union_specialized, _ =
     Proof_session.analyze_script
       (terminate_lines
@@ -414,7 +444,8 @@ intro H")
   in
   begin
     match Proof_session.goals named_context with
-    | [{ context = [("H", Syntax.Eq (Syntax.Name "a", Syntax.Name "a"))];
+    | [{ variables = ["a"];
+         context = [("H", Syntax.Eq (Syntax.Name "a", Syntax.Name "a"))];
          target = Syntax.Eq (Syntax.Name "a", Syntax.Name "a") }] -> ()
     | _ ->
         failwith

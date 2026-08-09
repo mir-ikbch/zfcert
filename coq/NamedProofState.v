@@ -40,6 +40,7 @@ Record named_hypothesis : Type := NamedHypothesis {
 }.
 
 Record named_goal : Type := NamedGoal {
+  named_variables : list string;
   named_assumptions : list named_hypothesis;
   named_conclusion : named_formula
 }.
@@ -610,7 +611,9 @@ Definition reify_goal
       (metadata_conclusion_binders metadata)
       (conclusion source))
     (fun named_target =>
-  NOk (NamedGoal named_context named_target))).
+  NOk (NamedGoal
+    (metadata_environment metadata)
+    named_context named_target))).
 
 Fixpoint reify_goals
   (metadata : list goal_metadata)

@@ -803,7 +803,8 @@ type named_formula =
 type named_hypothesis = { named_hypothesis_name : string;
                           named_hypothesis_formula : named_formula }
 
-type named_goal = { named_assumptions : named_hypothesis list;
+type named_goal = { named_variables : string list;
+                    named_assumptions : named_hypothesis list;
                     named_conclusion : named_formula }
 
 type named_error =
@@ -1545,7 +1546,8 @@ let reify_goal metadata source =
     named_bind
       (reify metadata.metadata_constants metadata.metadata_environment
         metadata.metadata_conclusion_binders source.conclusion)
-      (fun named_target -> NOk { named_assumptions = named_context;
+      (fun named_target -> NOk { named_variables =
+      metadata.metadata_environment; named_assumptions = named_context;
       named_conclusion = named_target }))
 
 (** val reify_goals :

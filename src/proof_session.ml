@@ -80,6 +80,7 @@ let find_axiom name =
   List.find_opt (fun ax -> ax.key = String.lowercase_ascii name) axioms
 
 type goal = {
+  variables : string list;
   context : (string * formula) list;
   target : formula;
 }
@@ -312,6 +313,7 @@ let materialize_goals line state =
              Kernel_syntax.of_kernel kernel_goal.conclusion
            in
            {
+             variables = List.rev kernel_goal.variables;
              context;
              target;
            })
@@ -1731,6 +1733,7 @@ let global_facts state =
        (name, Kernel_syntax.of_kernel formula))
 
 type display_goal = {
+  variables : string list;
   context : (string * formula) list;
   target : formula;
 }
@@ -1742,6 +1745,7 @@ let goals state =
     |> List.map
          (fun (goal : goal) ->
             ({
+              variables = goal.variables;
               context = goal.context;
               target = goal.target;
             } : display_goal))

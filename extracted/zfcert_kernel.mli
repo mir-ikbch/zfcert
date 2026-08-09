@@ -62,6 +62,7 @@ type certificate_step
 type certificate
 
 type goal_view = {
+  variables : string list;
   assumptions : (string * formula) list;
   conclusion : formula;
 }

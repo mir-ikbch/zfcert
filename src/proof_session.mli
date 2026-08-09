@@ -7,6 +7,7 @@ type axiom = {
 }
 
 type display_goal = {
+  variables : string list;
   context : (string * Syntax.formula) list;
   target : Syntax.formula;
 }

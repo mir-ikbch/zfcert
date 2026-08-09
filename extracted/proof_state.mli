@@ -227,7 +227,8 @@ type named_formula =
 type named_hypothesis = { named_hypothesis_name : string;
                           named_hypothesis_formula : named_formula }
 
-type named_goal = { named_assumptions : named_hypothesis list;
+type named_goal = { named_variables : string list;
+                    named_assumptions : named_hypothesis list;
                     named_conclusion : named_formula }
 
 type named_error =

@@ -98,6 +98,10 @@ class GoalViewProvider {
         <div class="success">All goals solved. Add <code>qed</code> to finish.</div>`;
     } else {
       const goals = data.goals.map((goal, index) => {
+        const variables = Array.isArray(goal.variables) && goal.variables.length
+          ? `<div class="context-row"><span class="name">Variables</span>
+              : ${goal.variables.map((name) => escapeHtml(name)).join(", ")}</div>`
+          : "";
         const context = goal.context.length === 0
           ? `<div class="muted">No assumptions</div>`
           : goal.context.map((entry) => `
@@ -106,6 +110,7 @@ class GoalViewProvider {
         return `
           <section class="goal">
             <div class="goal-number">GOAL ${index + 1} / ${data.goals.length}</div>
+            ${variables}
             <div class="context">${context}</div>
             <div class="target">⊢ ${escapeHtml(goal.target)}</div>
           </section>`;

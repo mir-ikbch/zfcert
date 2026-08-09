@@ -384,6 +384,11 @@ URL library's prompt asking whether the old HTTP buffer should be killed."
              (insert (propertize
                       (format "GOAL %d / %d\n" index (length goals))
                       'face 'font-lock-keyword-face))
+             (let ((variables (alist-get 'variables goal)))
+               (when variables
+                 (insert (propertize "Variables: "
+                                     'face 'font-lock-constant-face)
+                         (mapconcat #'identity variables ", ") "\n")))
              (let ((context (alist-get 'context goal)))
                (if context
                    (dolist (entry context)

@@ -41,13 +41,16 @@ let rec formula_to_string ?(outer = 0) formula =
     | Not inner ->
         "¬" ^ formula_to_string ~outer:precedence inner
     | And (left, right) ->
-        formula_to_string ~outer:precedence left
+        (* [and] is left associative in the parser.  Requiring a strictly
+           tighter outer context for both children makes either nested tree
+           explicit instead of printing an ambiguous-looking chain. *)
+        formula_to_string ~outer:(precedence + 1) left
         ^ " ∧ "
-        ^ formula_to_string ~outer:precedence right
+        ^ formula_to_string ~outer:(precedence + 1) right
     | Or (left, right) ->
-        formula_to_string ~outer:precedence left
+        formula_to_string ~outer:(precedence + 1) left
         ^ " ∨ "
-        ^ formula_to_string ~outer:precedence right
+        ^ formula_to_string ~outer:(precedence + 1) right
     | Imp (left, right) ->
         formula_to_string ~outer:(precedence + 1) left
         ^ " → "
