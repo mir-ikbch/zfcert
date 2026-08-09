@@ -30,18 +30,7 @@
           <div class="tutorial-lesson-select">
             <label for="tutorial-example-select">レッスンを選択</label>
             <select id="tutorial-example-select" aria-label="レッスンを選択">
-              <option value="identity">等号の反射律</option>
-              <option value="implication">含意の恒等性</option>
-              <option value="conjunction">連言の交換</option>
-              <option value="extensionality">外延性の利用</option>
-              <option value="existence">存在の証人</option>
-              <option value="obtain">存在からの取り出し</option>
-              <option value="empty">空集合公理</option>
-              <option value="separation">分出公理図式</option>
-              <option value="alias">命題エイリアス</option>
-              <option value="choose">名前付き証人の選択</option>
-              <option value="choose_function">関数の選択</option>
-              <option value="rules">基本規則だけを使う</option>
+              <option value="">レッスンを読み込んでいます…</option>
             </select>
           </div>
           <p>タクティクを1行ずつ入力してください。各行をカーネルが確認し、それまでのすべての証明状態を表示します。</p>
@@ -72,14 +61,17 @@
               <span>Enterで適用</span>
             </div>
             <div class="tutorial-input-row">
-              <input id="tutorial-input" type="text" spellcheck="false" autocomplete="off" placeholder="intro x.">
+              <input id="tutorial-input" type="text" spellcheck="false" autocomplete="off">
               <button id="tutorial-apply-button" type="button">
                 <span>適用</span>
                 <span class="button-arrow">↓</span>
               </button>
             </div>
             <div id="tutorial-message" class="tutorial-message" role="status" aria-live="polite"></div>
-            <button id="tutorial-reset-button" class="tutorial-reset-button" type="button">チュートリアルをリセット</button>
+            <div class="tutorial-actions">
+              <button id="tutorial-reset-button" class="tutorial-reset-button" type="button">チュートリアルをリセット</button>
+              <button id="tutorial-next-button" class="tutorial-next-button" type="button" hidden>次のレッスンへ →</button>
+            </div>
           </div>
 
           <div class="tutorial-history-panel">

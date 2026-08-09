@@ -30,18 +30,7 @@
           <div class="tutorial-lesson-select">
             <label for="tutorial-example-select">Choose a lesson</label>
             <select id="tutorial-example-select" aria-label="Choose a lesson">
-              <option value="identity">Equality reflexivity</option>
-              <option value="implication">Implication identity</option>
-              <option value="conjunction">Conjunction commutativity</option>
-              <option value="extensionality">Using extensionality</option>
-              <option value="existence">Existential witness</option>
-              <option value="obtain">Obtain from existence</option>
-              <option value="empty">Empty-set axiom</option>
-              <option value="separation">Separation schema</option>
-              <option value="alias">Proposition alias</option>
-              <option value="choose">Choose a named witness</option>
-              <option value="choose_function">Choose a function</option>
-              <option value="rules">Primitive rules only</option>
+              <option value="">Loading lessons…</option>
             </select>
           </div>
           <p>Enter one tactic at a time. The kernel checks each line, and every proof state stays visible below.</p>
@@ -72,14 +61,17 @@
               <span>Press Enter to apply</span>
             </div>
             <div class="tutorial-input-row">
-              <input id="tutorial-input" type="text" spellcheck="false" autocomplete="off" placeholder="intro x.">
+              <input id="tutorial-input" type="text" spellcheck="false" autocomplete="off">
               <button id="tutorial-apply-button" type="button">
                 <span>Apply</span>
                 <span class="button-arrow">↓</span>
               </button>
             </div>
             <div id="tutorial-message" class="tutorial-message" role="status" aria-live="polite"></div>
-            <button id="tutorial-reset-button" class="tutorial-reset-button" type="button">Reset tutorial</button>
+            <div class="tutorial-actions">
+              <button id="tutorial-reset-button" class="tutorial-reset-button" type="button">Reset tutorial</button>
+              <button id="tutorial-next-button" class="tutorial-next-button" type="button" hidden>Next lesson →</button>
+            </div>
           </div>
 
           <div class="tutorial-history-panel">
