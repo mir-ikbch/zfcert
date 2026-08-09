@@ -1,0 +1,24 @@
+{
+  "key": "choose",
+  "title": {
+    "en": "Choose a named witness",
+    "ja": "名前付き証人の選択"
+  },
+  "statement": {
+    "en": "is_empty empty",
+    "ja": "empty は空集合である"
+  },
+  "script": "alias is_empty x := forall y, not (y in x).\nChoose empty Hempty from empty_set.\ntheorem chosen_empty_is_empty : is_empty empty.\nput Hempty.\nexact Hempty.\nqed.",
+  "allowed_tactics": [
+    "put",
+    "exact"
+  ],
+  "explanation": {
+    "en": "<p><code>Choose</code> names a certified witness from an existential fact. The chosen fact stays hidden until you explicitly put it into the proof context.</p><ol><li>Use <code>put Hempty.</code> to reveal the fact.</li><li>Finish with <code>exact Hempty.</code>.</li></ol>",
+    "ja": "<p><code>Choose</code> は存在量化された事実から、証明済みの証人に名前を付けます。その事実は、明示的にコンテキストへ入れるまで隠されています。</p><ol><li><code>put Hempty.</code> で事実を表示します。</li><li><code>exact Hempty.</code> で終了します。</li></ol>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

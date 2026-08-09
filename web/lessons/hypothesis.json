@@ -1,0 +1,32 @@
+{
+  "key": "hypothesis",
+  "title": {
+    "en": "Introducing and using hypotheses",
+    "ja": "仮定の導入と利用"
+  },
+  "statement": {
+    "en": "forall x y, x = y -> x = y",
+    "ja": "すべての x y について x = y -> x = y"
+  },
+  "script": "theorem hypothesis_example : forall x y, x = y -> x = y.\nintro x.\nintro y.\nintro H.\nexact H.\nqed.",
+  "allowed_tactics": [
+    "intro",
+    "exact"
+  ],
+  "explanation": {
+    "en": "<p>Here we learn how to introduce and use a hypothesis. First, as in the previous lesson, fix the variables bound by <code>forall</code>.</p>",
+    "ja": "<p>ここでは仮定の導入と利用を学びます．まず，前回と同様に <code>forall</code> で束縛された変数を固定しましょう．</p>"
+  },
+  "progress": {
+    "en": [
+      "<p>There are two variables bound by <code>forall</code>, so fix not only <code>x</code> but also <code>y</code>.</p>",
+      "<p>The goal now has the form <code>P -&gt; Q</code>. To prove a proposition of this form, assume <code>P</code> and prove <code>Q</code>. Use the tactic</p><p><code>intro H.</code></p><p>to do this.</p>",
+      "<p>The hypothesis <code>H : x = y</code> has been added, and the goal is <code>x = y</code>. In this situation, use</p><p><code>exact H.</code></p><p>to apply the hypothesis <code>H</code>.</p>"
+    ],
+    "ja": [
+      "<p>今回は <code>forall</code> で束縛された変数が2つあるので，<code>x</code> だけでなく <code>y</code> も固定しましょう．</p>",
+      "<p>ゴールが <code>P -> Q</code> の形になりました．このような命題は <code>P</code> を仮定して <code>Q</code> を示すことで証明します．このためにはタクティク</p><p><code>intro H.</code></p><p>を使います．</p>",
+      "<p>仮定に <code>H : x = y</code> が追加され，ゴールが <code>x = y</code> になりました．このような場合は</p><p><code>exact H.</code></p><p>で仮定 <code>H</code> を適用できます．</p>"
+    ]
+  }
+}

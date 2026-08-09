@@ -1,0 +1,30 @@
+{
+  "key": "identity",
+  "title": {
+    "en": "Equality reflexivity",
+    "ja": "等号の反射律"
+  },
+  "statement": {
+    "en": "forall x, x = x",
+    "ja": "すべての x について x = x"
+  },
+  "script": "theorem equality_reflexive : forall x, x = x.\nintro x.\nrefl.\nqed.",
+  "allowed_tactics": [
+    "intro",
+    "refl"
+  ],
+  "explanation": {
+    "en": "<p>We begin proving a proposition whose first part is a universal quantifier.</p><p>To prove a proposition of the form <code>forall x, ...</code>, fix an arbitrary <code>x</code>. Use the tactic</p><p><code>intro x.</code></p><p>to do this.</p>",
+    "ja": "<p>まずは全称量化子から始まる命題の証明を始めます．</p><p><code>forall x, ...</code> の形の命題を示すには，<code>x</code> を任意に取って固定します．そのためにはタクティク</p><p><code>intro x.</code></p><p>を使います。</p>"
+  },
+  "progress": {
+    "en": [
+      "<p>The variable <code>x</code> is now fixed, and the goal is <code>x = x</code>. To prove an equality whose two sides are the same, use</p><p><code>refl.</code></p>",
+      "<p>The proof is complete! Use <code>qed.</code> to certify the finished proof.</p>"
+    ],
+    "ja": [
+      "<p>変数 <code>x</code> が固定され，ゴールが <code>x = x</code> になりました．左辺と右辺が同じ等式を示すには</p><p><code>refl.</code></p><p>を使います．</p>",
+      "<p>証明が完了しました！<code>qed.</code> で完成した証明を確定します．</p>"
+    ]
+  }
+}

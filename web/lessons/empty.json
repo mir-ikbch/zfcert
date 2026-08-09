@@ -1,0 +1,23 @@
+{
+  "key": "empty",
+  "title": {
+    "en": "Empty-set axiom",
+    "ja": "空集合公理"
+  },
+  "statement": {
+    "en": "exists e, forall x, not (x in e)",
+    "ja": "元を持たない集合 e が存在する"
+  },
+  "script": "theorem empty_set_exists : exists e, forall x, not (x in e).\nexact empty_set.\nqed.",
+  "allowed_tactics": [
+    "exact"
+  ],
+  "explanation": {
+    "en": "<p>The empty-set axiom already proves the theorem we want: there is a set with no members.</p><p>Use the named fact <code>empty_set</code> directly. The kernel checks that its statement matches the current goal.</p>",
+    "ja": "<p>空集合公理は、元を持たない集合が存在することをすでに証明しています。</p><p>名前付きの事実 <code>empty_set</code> を直接使います。カーネルが現在のゴールとの一致を確認します。</p>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "key": "rules",
+  "title": {
+    "en": "Primitive rules only",
+    "ja": "基本規則だけを使う"
+  },
+  "statement": {
+    "en": "forall x, x = x",
+    "ja": "すべての x について x = x"
+  },
+  "script": "theorem equality_by_rules :\n  forall x, x = x.\nrule all_intro x.\nrule equal_refl.\nqed.",
+  "allowed_tactics": [
+    "rule"
+  ],
+  "explanation": {
+    "en": "<p>This lesson exposes the underlying natural-deduction rules directly instead of using the friendly tactic names.</p><ol><li>Use <code>all_intro</code> to introduce the universal variable.</li><li>Use <code>equal_refl</code> to close the equality goal.</li></ol>",
+    "ja": "<p>このレッスンでは、親しみやすいタクティク名の代わりに、自然演繹の基本規則を直接使います。</p><ol><li><code>all_intro</code> で全称変数を導入します。</li><li><code>equal_refl</code> で等号ゴールを閉じます。</li></ol>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

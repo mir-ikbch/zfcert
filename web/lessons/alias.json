@@ -1,0 +1,24 @@
+{
+  "key": "alias",
+  "title": {
+    "en": "Proposition alias",
+    "ja": "命題エイリアス"
+  },
+  "statement": {
+    "en": "forall x, (is_empty x -> is_empty x)",
+    "ja": "すべての x について (is_empty x ならば is_empty x)"
+  },
+  "script": "alias is_empty x :=\n  forall y, not (y in x).\ntheorem empty_identity : forall x, (is_empty x -> is_empty x).\nintro x.\nintro H.\nexact H.\nqed.",
+  "allowed_tactics": [
+    "intro",
+    "exact"
+  ],
+  "explanation": {
+    "en": "<p>An alias gives a reusable name to a proposition. After the alias declaration, the theorem can use that name just like its expanded formula.</p><ol><li>Introduce the object.</li><li>Assume the aliased proposition.</li><li>Return the same assumption.</li></ol>",
+    "ja": "<p>エイリアスを使うと、命題に再利用可能な名前を付けられます。宣言後は、展開後の式と同じようにその名前を使えます。</p><ol><li>対象を導入します。</li><li>エイリアスで表された命題を仮定します。</li><li>同じ仮定を返します。</li></ol>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

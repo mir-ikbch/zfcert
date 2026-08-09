@@ -1,0 +1,25 @@
+{
+  "key": "existence",
+  "title": {
+    "en": "Existential witness",
+    "ja": "存在の証人"
+  },
+  "statement": {
+    "en": "forall x, exists y, y = x",
+    "ja": "すべての x について、y = x となる y が存在する"
+  },
+  "script": "theorem self_exists : forall x, exists y, y = x.\nintro x.\nuse x.\nrefl.\nqed.",
+  "allowed_tactics": [
+    "intro",
+    "use",
+    "refl"
+  ],
+  "explanation": {
+    "en": "<p>To prove that something exists, choose a concrete witness. Here the object introduced at the start is the natural witness.</p><ol><li>Introduce <code>x</code>.</li><li>Choose it with <code>use x.</code>.</li><li>Prove the remaining equality by reflexivity.</li></ol>",
+    "ja": "<p>何かが存在することを証明するには、具体的な証人を選びます。ここでは最初に導入した対象が自然な証人です。</p><ol><li><code>x</code> を導入します。</li><li><code>use x.</code> で証人に選びます。</li><li>残った等号を反射律で証明します。</li></ol>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

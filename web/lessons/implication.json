@@ -1,0 +1,24 @@
+{
+  "key": "implication",
+  "title": {
+    "en": "Implication identity",
+    "ja": "含意の恒等性"
+  },
+  "statement": {
+    "en": "forall x, (x in x -> x in x)",
+    "ja": "すべての x について (x ∈ x ならば x ∈ x)"
+  },
+  "script": "theorem implication_identity : forall x, (x in x -> x in x).\nintro x.\nintro H.\nexact H.\nqed.",
+  "allowed_tactics": [
+    "intro",
+    "exact"
+  ],
+  "explanation": {
+    "en": "<p>To prove an implication, assume its left-hand side. The assumption then gives exactly the goal you need.</p><ol><li>Introduce <code>x</code>.</li><li>Introduce the implication hypothesis.</li><li>Close the goal with <code>exact H.</code>.</li></ol>",
+    "ja": "<p>含意を証明するには、左辺を仮定します。その仮定が、そのまま必要なゴールになります。</p><ol><li><code>x</code> を導入します。</li><li>含意の仮定を導入します。</li><li><code>exact H.</code> でゴールを閉じます。</li></ol>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

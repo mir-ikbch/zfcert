@@ -1,0 +1,25 @@
+{
+  "key": "extensionality",
+  "title": {
+    "en": "Using extensionality",
+    "ja": "外延性の利用"
+  },
+  "statement": {
+    "en": "forall a, forall b, ((forall z, (z in a <-> z in b)) -> a = b)",
+    "ja": "同じ元を持つ集合 a, b は等しい"
+  },
+  "script": "theorem same_members_same_set :\n  forall a,\n  forall b, ((forall z, (z in a <-> z in b)) -> a = b).\nintro a.\nintro b.\nintro H.\napply extensionality.\nexact H.\nqed.",
+  "allowed_tactics": [
+    "intro",
+    "apply",
+    "exact"
+  ],
+  "explanation": {
+    "en": "<p>Two sets are equal when they have the same members. This proof applies the extensionality axiom to the membership equivalence already given.</p><ol><li>Introduce <code>a</code>, <code>b</code>, and the membership hypothesis.</li><li>Use <code>apply extensionality.</code>.</li><li>Pass the hypothesis with <code>exact H.</code>.</li></ol>",
+    "ja": "<p>同じ元を持つ2つの集合は等しくなります。この証明では、与えられた元の同値を外延性公理に渡します。</p><ol><li><code>a</code>、<code>b</code>、元についての仮定を導入します。</li><li><code>apply extensionality.</code> を使います。</li><li><code>exact H.</code> で仮定を渡します。</li></ol>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "key": "obtain",
+  "title": {
+    "en": "Obtain from existence",
+    "ja": "存在からの取り出し"
+  },
+  "statement": {
+    "en": "(exists x, x = x) -> exists y, y = y",
+    "ja": "x = x となる x の存在から、y = y となる y の存在を導く"
+  },
+  "script": "theorem obtain_witness :\n  (exists x, x = x) -> exists y, y = y.\nintro H.\nobtain x Hx from H.\nuse x.\nexact Hx.\nqed.",
+  "allowed_tactics": [
+    "intro",
+    "obtain",
+    "use",
+    "exact"
+  ],
+  "explanation": {
+    "en": "<p>An existential hypothesis hides a witness. The <code>obtain</code> tactic brings that witness and its property into the context.</p><ol><li>Introduce the existential hypothesis.</li><li>Use <code>obtain x Hx from H.</code>.</li><li>Reuse <code>x</code> as the new witness.</li></ol>",
+    "ja": "<p>存在量化された仮定には証人が隠れています。<code>obtain</code> タクティクで、その証人と性質をコンテキストに取り出します。</p><ol><li>存在量化された仮定を導入します。</li><li><code>obtain x Hx from H.</code> を使います。</li><li><code>x</code> を新しい証人として再利用します。</li></ol>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

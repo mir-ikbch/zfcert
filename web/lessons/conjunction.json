@@ -1,0 +1,26 @@
+{
+  "key": "conjunction",
+  "title": {
+    "en": "Conjunction commutativity",
+    "ja": "連言の交換"
+  },
+  "statement": {
+    "en": "forall x, forall y, ((x in y and y in x) -> (y in x and x in y))",
+    "ja": "すべての x, y について ((x ∈ y かつ y ∈ x) ならば (y ∈ x かつ x ∈ y))"
+  },
+  "script": "theorem and_commutes :\n  forall x,\n  forall y, ((x in y and y in x) -> (y in x and x in y)).\nintro x.\nintro y.\nintro H.\ncases H H_yx H_xy.\nsplit.\nexact H_xy.\nexact H_yx.\nqed.",
+  "allowed_tactics": [
+    "intro",
+    "cases",
+    "split",
+    "exact"
+  ],
+  "explanation": {
+    "en": "<p>A conjunction stores two facts in one hypothesis. Take it apart, then build a new conjunction in the opposite order.</p><ol><li>Introduce the variables and hypothesis.</li><li>Use <code>cases</code> to name both parts.</li><li>Use <code>split.</code> and solve the two goals.</li></ol>",
+    "ja": "<p>連言の仮定には2つの事実が入っています。それを取り出し、順番を入れ替えた連言を作ります。</p><ol><li>変数と仮定を導入します。</li><li><code>cases</code> で2つの部分に名前を付けます。</li><li><code>split.</code> で2つのゴールを作り、それぞれを解きます。</li></ol>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

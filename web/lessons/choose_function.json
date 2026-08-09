@@ -1,0 +1,24 @@
+{
+  "key": "choose_function",
+  "title": {
+    "en": "Choose a function",
+    "ja": "関数の選択"
+  },
+  "statement": {
+    "en": "forall a, forall b, forall x, (x in pair(a,b) <-> (x = a or x = b))",
+    "ja": "対集合 pair(a,b) の元は a または b である"
+  },
+  "script": "Choose pair Hpair from pairing.\ntheorem pair_shape :\n  forall a, forall b, forall x,\n    (x in pair(a,b) <-> (x = a or x = b)).\nput Hpair.\nexact Hpair.\nqed.",
+  "allowed_tactics": [
+    "put",
+    "exact"
+  ],
+  "explanation": {
+    "en": "<p>Some axioms provide a function-like witness. <code>Choose</code> records that witness and its certified property for later proofs.</p><ol><li>Put the named fact into the context.</li><li>Use the fact to prove the shape of the chosen function.</li></ol>",
+    "ja": "<p>公理によっては関数のような証人が得られます。<code>Choose</code> は、その証人と証明済みの性質を後の証明のために記録します。</p><ol><li>名前付きの事実をコンテキストへ入れます。</li><li>その事実を使って、選ばれた関数の形を証明します。</li></ol>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

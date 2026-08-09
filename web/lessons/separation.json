@@ -1,0 +1,25 @@
+{
+  "key": "separation",
+  "title": {
+    "en": "Separation schema",
+    "ja": "分出公理図式"
+  },
+  "statement": {
+    "en": "forall a, exists b, forall x, (x in b <-> (x in a and not (x in x)))",
+    "ja": "各 a について、条件を満たす元だけからなる b が存在する"
+  },
+  "script": "theorem russell_subset_exists :\n  forall a,\n  exists b,\n  forall x, (x in b <-> (x in a and not (x in x))).\nintro a.\nseparation S a x : not (x in x).\nexact S.\nqed.",
+  "allowed_tactics": [
+    "intro",
+    "separation",
+    "exact"
+  ],
+  "explanation": {
+    "en": "<p>Separation creates a subset by keeping exactly the members that satisfy a predicate. This example removes the sets that contain themselves.</p><ol><li>Introduce the source set.</li><li>Instantiate the schema with <code>separation</code>.</li><li>Use the generated fact to close the existential goal.</li></ol>",
+    "ja": "<p>分出は、述語を満たす元だけを残して部分集合を作ります。この例では、自分自身を含む集合を取り除きます。</p><ol><li>元の集合を導入します。</li><li><code>separation</code> で公理図式を具体化します。</li><li>生成された事実で存在ゴールを閉じます。</li></ol>"
+  },
+  "progress": {
+    "en": [],
+    "ja": []
+  }
+}

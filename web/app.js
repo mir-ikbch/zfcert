@@ -79,217 +79,88 @@ rule equal_refl.
   qed.`
 };
 
-// Lessons shown in tutorial.html. Keep this collection independent from
-// [proofExamples] so the two pages can evolve separately.
-const tutorialExamples = {
-  identity: `theorem equality_reflexive : forall x, x = x.
-intro x.
-refl.
-qed.`,
-  implication: `theorem implication_identity : forall x, (x in x -> x in x).
-intro x.
-intro H.
-exact H.
-qed.`,
-  conjunction: `theorem and_commutes :
-  forall x,
-  forall y, ((x in y and y in x) -> (y in x and x in y)).
-intro x.
-intro y.
-intro H.
-cases H H_yx H_xy.
-split.
-exact H_xy.
-exact H_yx.
-qed.`,
-  extensionality: `theorem same_members_same_set :
-  forall a,
-  forall b, ((forall z, (z in a <-> z in b)) -> a = b).
-intro a.
-intro b.
-intro H.
-apply extensionality.
-exact H.
-qed.`,
-  existence: `theorem self_exists : forall x, exists y, y = x.
-intro x.
-use x.
-refl.
-qed.`,
-  obtain: `theorem obtain_witness :
-  (exists x, x = x) -> exists y, y = y.
-intro H.
-obtain x Hx from H.
-use x.
-exact Hx.
-qed.`,
-  empty: `theorem empty_set_exists : exists e, forall x, not (x in e).
-exact empty_set.
-qed.`,
-  separation: `theorem russell_subset_exists :
-  forall a,
-  exists b,
-  forall x, (x in b <-> (x in a and not (x in x))).
-intro a.
-separation S a x : not (x in x).
-exact S.
-qed.`,
-  alias: `alias is_empty x :=
-  forall y, not (y in x).
-theorem empty_identity : forall x, (is_empty x -> is_empty x).
-intro x.
-intro H.
-exact H.
-qed.`,
-  choose: `alias is_empty x := forall y, not (y in x).
-Choose empty Hempty from empty_set.
-theorem chosen_empty_is_empty : is_empty empty.
-put Hempty.
-exact Hempty.
-qed.`,
-  choose_function: `Choose pair Hpair from pairing.
-theorem pair_shape :
-  forall a, forall b, forall x,
-    (x in pair(a,b) <-> (x = a or x = b)).
-put Hpair.
-exact Hpair.
-qed.`,
-  rules: `theorem equality_by_rules :
-  forall x, x = x.
-rule all_intro x.
-rule equal_refl.
-qed.`
-};
-
-const tutorialExplanations = {
-  identity: {
-    title: "Equality reflexivity",
-    html: `<p>Every object is equal to itself. The goal begins with a universal quantifier, so first introduce an arbitrary object.</p>
-      <ol><li>Use <code>intro x.</code> to name the object.</li><li>Use <code>refl.</code> when the goal has the form <code>t = t</code>.</li></ol>
-      <p class="tutorial-tip">Try the two tactics in order, then finish with <code>qed.</code>.</p>`
-  },
-  implication: {
-    title: "Implication identity",
-    html: `<p>To prove an implication, assume its left-hand side. The assumption then gives exactly the goal you need.</p>
-      <ol><li>Introduce <code>x</code>.</li><li>Introduce the implication hypothesis.</li><li>Close the goal with <code>exact H.</code>.</li></ol>`
-  },
-  conjunction: {
-    title: "Conjunction commutativity",
-    html: `<p>A conjunction stores two facts in one hypothesis. Take it apart, then build a new conjunction in the opposite order.</p>
-      <ol><li>Introduce the variables and hypothesis.</li><li>Use <code>cases</code> to name both parts.</li><li>Use <code>split.</code> and solve the two goals.</li></ol>`
-  },
-  extensionality: {
-    title: "Using extensionality",
-    html: `<p>Two sets are equal when they have the same members. This proof applies the extensionality axiom to the membership equivalence already given.</p>
-      <ol><li>Introduce <code>a</code>, <code>b</code>, and the membership hypothesis.</li><li>Use <code>apply extensionality.</code>.</li><li>Pass the hypothesis with <code>exact H.</code>.</li></ol>`
-  },
-  existence: {
-    title: "Existential witness",
-    html: `<p>To prove that something exists, choose a concrete witness. Here the object introduced at the start is the natural witness.</p>
-      <ol><li>Introduce <code>x</code>.</li><li>Choose it with <code>use x.</code>.</li><li>Prove the remaining equality by reflexivity.</li></ol>`
-  },
-  obtain: {
-    title: "Obtain from existence",
-    html: `<p>An existential hypothesis hides a witness. The <code>obtain</code> tactic brings that witness and its property into the context.</p>
-      <ol><li>Introduce the existential hypothesis.</li><li>Use <code>obtain x Hx from H.</code>.</li><li>Reuse <code>x</code> as the new witness.</li></ol>`
-  },
-  empty: {
-    title: "The empty set",
-    html: `<p>The empty-set axiom already proves the theorem we want: there is a set with no members.</p>
-      <p>Use the named fact <code>empty_set</code> directly. The kernel checks that its statement matches the current goal.</p>`
-  },
-  separation: {
-    title: "Separation schema",
-    html: `<p>Separation creates a subset by keeping exactly the members that satisfy a predicate. This example removes the sets that contain themselves.</p>
-      <ol><li>Introduce the source set.</li><li>Instantiate the schema with <code>separation</code>.</li><li>Use the generated fact to close the existential goal.</li></ol>`
-  },
-  alias: {
-    title: "Proposition aliases",
-    html: `<p>An alias gives a reusable name to a proposition. After the alias declaration, the theorem can use that name just like its expanded formula.</p>
-      <ol><li>Introduce the object.</li><li>Assume the aliased proposition.</li><li>Return the same assumption.</li></ol>`
-  },
-  choose: {
-    title: "Choose a named witness",
-    html: `<p><code>Choose</code> names a certified witness from an existential fact. The chosen fact stays hidden until you explicitly put it into the proof context.</p>
-      <ol><li>Use <code>put Hempty.</code> to reveal the fact.</li><li>Finish with <code>exact Hempty.</code>.</li></ol>`
-  },
-  choose_function: {
-    title: "Choose a function",
-    html: `<p>Some axioms provide a function-like witness. <code>Choose</code> records that witness and its certified property for later proofs.</p>
-      <ol><li>Put the named fact into the context.</li><li>Use the fact to prove the shape of the chosen function.</li></ol>`
-  },
-  rules: {
-    title: "Primitive rules only",
-    html: `<p>This lesson exposes the underlying natural-deduction rules directly instead of using the friendly tactic names.</p>
-      <ol><li>Use <code>all_intro</code> to introduce the universal variable.</li><li>Use <code>equal_refl</code> to close the equality goal.</li></ol>`
-  }
-};
-
+// Lessons are stored one file per tutorial lesson under web/lessons/.
 const isJapanese = document.documentElement.lang === "ja";
+let tutorialLessons = [];
+let tutorialLessonMap = Object.create(null);
+let tutorialLessonsPromise;
 
-const tutorialExplanationsJa = {
-  identity: {
-    title: "等号の反射律",
-    html: `<p>すべての対象は自分自身と等しくなります。ゴールは全称量化から始まるので、まず任意の対象を導入します。</p>
-      <ol><li><code>intro x.</code> で対象に名前を付けます。</li><li>ゴールが <code>t = t</code> の形になったら <code>refl.</code> を使います。</li></ol>
-      <p class="tutorial-tip">2つのタクティクを順番に試し、最後に <code>qed.</code> で完了します。</p>`
-  },
-  implication: {
-    title: "含意の恒等性",
-    html: `<p>含意を証明するには、左辺を仮定します。その仮定が、そのまま必要なゴールになります。</p>
-      <ol><li><code>x</code> を導入します。</li><li>含意の仮定を導入します。</li><li><code>exact H.</code> でゴールを閉じます。</li></ol>`
-  },
-  conjunction: {
-    title: "連言の交換",
-    html: `<p>連言の仮定には2つの事実が入っています。それを取り出し、順番を入れ替えた連言を作ります。</p>
-      <ol><li>変数と仮定を導入します。</li><li><code>cases</code> で2つの部分に名前を付けます。</li><li><code>split.</code> で2つのゴールを作り、それぞれを解きます。</li></ol>`
-  },
-  extensionality: {
-    title: "外延性の利用",
-    html: `<p>同じ元を持つ2つの集合は等しくなります。この証明では、与えられた元の同値を外延性公理に渡します。</p>
-      <ol><li><code>a</code>、<code>b</code>、元についての仮定を導入します。</li><li><code>apply extensionality.</code> を使います。</li><li><code>exact H.</code> で仮定を渡します。</li></ol>`
-  },
-  existence: {
-    title: "存在の証人",
-    html: `<p>何かが存在することを証明するには、具体的な証人を選びます。ここでは最初に導入した対象が自然な証人です。</p>
-      <ol><li><code>x</code> を導入します。</li><li><code>use x.</code> で証人に選びます。</li><li>残った等号を反射律で証明します。</li></ol>`
-  },
-  obtain: {
-    title: "存在からの取り出し",
-    html: `<p>存在量化された仮定には証人が隠れています。<code>obtain</code> タクティクで、その証人と性質をコンテキストに取り出します。</p>
-      <ol><li>存在量化された仮定を導入します。</li><li><code>obtain x Hx from H.</code> を使います。</li><li><code>x</code> を新しい証人として再利用します。</li></ol>`
-  },
-  empty: {
-    title: "空集合",
-    html: `<p>空集合公理は、元を持たない集合が存在することをすでに証明しています。</p>
-      <p>名前付きの事実 <code>empty_set</code> を直接使います。カーネルが現在のゴールとの一致を確認します。</p>`
-  },
-  separation: {
-    title: "分出公理図式",
-    html: `<p>分出は、述語を満たす元だけを残して部分集合を作ります。この例では、自分自身を含む集合を取り除きます。</p>
-      <ol><li>元の集合を導入します。</li><li><code>separation</code> で公理図式を具体化します。</li><li>生成された事実で存在ゴールを閉じます。</li></ol>`
-  },
-  alias: {
-    title: "命題エイリアス",
-    html: `<p>エイリアスを使うと、命題に再利用可能な名前を付けられます。宣言後は、展開後の式と同じようにその名前を使えます。</p>
-      <ol><li>対象を導入します。</li><li>エイリアスで表された命題を仮定します。</li><li>同じ仮定を返します。</li></ol>`
-  },
-  choose: {
-    title: "名前付き証人の選択",
-    html: `<p><code>Choose</code> は存在量化された事実から、証明済みの証人に名前を付けます。その事実は、明示的にコンテキストへ入れるまで隠されています。</p>
-      <ol><li><code>put Hempty.</code> で事実を表示します。</li><li><code>exact Hempty.</code> で終了します。</li></ol>`
-  },
-  choose_function: {
-    title: "関数の選択",
-    html: `<p>公理によっては関数のような証人が得られます。<code>Choose</code> は、その証人と証明済みの性質を後の証明のために記録します。</p>
-      <ol><li>名前付きの事実をコンテキストへ入れます。</li><li>その事実を使って、選ばれた関数の形を証明します。</li></ol>`
-  },
-  rules: {
-    title: "基本規則だけを使う",
-    html: `<p>このレッスンでは、親しみやすいタクティク名の代わりに、自然演繹の基本規則を直接使います。</p>
-      <ol><li><code>all_intro</code> で全称変数を導入します。</li><li><code>equal_refl</code> で等号ゴールを閉じます。</li></ol>`
-  }
-};
+function localizedLessonValue(value) {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return "";
+  return value[isJapanese ? "ja" : "en"] || value.en || value.ja || "";
+}
+
+function loadTutorialLessons() {
+  if (tutorialLessonsPromise) return tutorialLessonsPromise;
+  tutorialLessonsPromise = fetch("./lessons/index.json")
+    .then((response) => {
+      if (!response.ok) throw new Error(`Could not load the tutorial lesson list (${response.status}).`);
+      return response.json();
+    })
+    .then((files) => Promise.all(files.map((file) =>
+      fetch(`./lessons/${encodeURIComponent(file)}`)
+        .then((response) => {
+          if (!response.ok) throw new Error(`Could not load tutorial lesson ${file} (${response.status}).`);
+          return response.json();
+        })
+    )))
+    .then((lessons) => {
+      tutorialLessons = lessons;
+      tutorialLessonMap = Object.fromEntries(
+        lessons.filter((lesson) => lesson && lesson.key).map((lesson) => [lesson.key, lesson])
+      );
+      return lessons;
+    })
+    .catch((error) => {
+      tutorialLessonsPromise = undefined;
+      throw error;
+    });
+  return tutorialLessonsPromise;
+}
+
+function populateTutorialLessons() {
+  if (!tutorialExampleSelect) return;
+  const previousKey = tutorialExampleSelect.value;
+  tutorialExampleSelect.replaceChildren();
+  tutorialLessons.forEach((lesson) => {
+    const option = document.createElement("option");
+    option.value = lesson.key;
+    option.textContent = localizedLessonValue(lesson.title) || lesson.key;
+    tutorialExampleSelect.appendChild(option);
+  });
+  const selectedKey = tutorialLessonMap[previousKey]
+    ? previousKey
+    : tutorialLessons[0]?.key;
+  if (selectedKey) tutorialExampleSelect.value = selectedKey;
+}
+
+function currentTutorialLesson() {
+  return tutorialLessonMap[tutorialExampleSelect?.value] || tutorialLessons[0];
+}
+
+function updateTutorialNextButton() {
+  if (!tutorialNextButton) return;
+  tutorialNextButton.textContent = `${ui.nextLesson} →`;
+  const current = currentTutorialLesson();
+  const currentIndex = tutorialLessons.findIndex((lesson) => lesson.key === current?.key);
+  const hasNextLesson = currentIndex >= 0 && currentIndex < tutorialLessons.length - 1;
+  const last = tutorialStates[tutorialStates.length - 1];
+  const finished = last?.data?.qed === true;
+  tutorialNextButton.hidden = !(finished && hasNextLesson);
+  tutorialNextButton.disabled = tutorialBusy;
+}
+
+function goToNextTutorialLesson() {
+  if (tutorialBusy || !tutorialExampleSelect) return;
+  const current = currentTutorialLesson();
+  const currentIndex = tutorialLessons.findIndex((lesson) => lesson.key === current?.key);
+  const next = tutorialLessons[currentIndex + 1];
+  if (!next) return;
+  tutorialExampleSelect.value = next.key;
+  tutorialNextButton.hidden = true;
+  resetTutorial();
+}
 
 const ui = isJapanese ? {
   notStarted: "未開始",
@@ -340,7 +211,10 @@ const ui = isJapanese ? {
   oneLineTactic: "タクティクは1行で入力してください。",
   checkingTactic: "タクティクを確認中…",
   tacticAccepted: "タクティクを受け付けました。",
-  tutorialProofComplete: "証明完了。",
+  tutorialProofComplete: "証明完了🥳",
+  availableTactics: "使用できるタクティク",
+  nextLesson: "次のレッスンへ",
+ disallowedTactic: (name, allowed) => `「${name}」はこのレッスンでは使用できません。使用できるタクティク: ${allowed.join(", ")}`,
   selectedScheme: "(図式)"
 } : {
   notStarted: "Not started",
@@ -391,7 +265,10 @@ const ui = isJapanese ? {
   oneLineTactic: "Enter one tactic on a single line.",
   checkingTactic: "Checking tactic…",
   tacticAccepted: "Tactic accepted.",
-  tutorialProofComplete: "Proof complete.",
+  tutorialProofComplete: "Proof complete🥳",
+  availableTactics: "Available tactics",
+  nextLesson: "Next lesson",
+ disallowedTactic: (name, allowed) => `“${name}” is not available in this lesson. Available tactics: ${allowed.join(", ")}`,
   selectedScheme: "(scheme)"
 };
 
@@ -425,6 +302,7 @@ const tutorialScript = document.querySelector("#tutorial-script");
 const tutorialInput = document.querySelector("#tutorial-input");
 const tutorialApplyButton = document.querySelector("#tutorial-apply-button");
 const tutorialResetButton = document.querySelector("#tutorial-reset-button");
+const tutorialNextButton = document.querySelector("#tutorial-next-button");
 const tutorialMessage = document.querySelector("#tutorial-message");
 const tutorialExplanationTitle = document.querySelector("#tutorial-explanation-title");
 const tutorialExplanation = document.querySelector("#tutorial-explanation");
@@ -694,17 +572,39 @@ async function inspectInteractive(script) {
 
 function renderTutorialExplanation() {
   if (!tutorialExplanation || !tutorialExplanationTitle) return;
-  const explanations = isJapanese ? tutorialExplanationsJa : tutorialExplanations;
-  const lesson = explanations[tutorialExampleSelect?.value || "identity"]
-    || explanations.identity;
-  tutorialExplanationTitle.textContent = lesson.title;
-  tutorialExplanation.innerHTML = lesson.html;
+  const lesson = currentTutorialLesson();
+  if (!lesson) return;
+  const allowed = Array.isArray(lesson.allowed_tactics) ? lesson.allowed_tactics : [];
+  const explanation = localizedLessonValue(lesson.explanation);
+  const progressValue = lesson.progress?.[isJapanese ? "ja" : "en"];
+  const progressTexts = Array.isArray(progressValue) ? progressValue : [];
+  const availableHtml = `
+    <section class="tutorial-allowed">
+      <p class="tutorial-subheading">${ui.availableTactics}</p>
+      <ul>${allowed.map((name) => `<li><code>${escapeHtml(name)}</code></li>`).join("")}</ul>
+    </section>`;
+  const progress = tutorialCommands.map((_, index) => {
+    const text = progressTexts[index];
+    if (!text) return "";
+    return `<article class="tutorial-progress-step">
+     ${text}
+   </article>`;
+  }).join("");
+  tutorialExplanationTitle.textContent = localizedLessonValue(lesson.title) || lesson.key;
+  tutorialExplanation.innerHTML = `${availableHtml}${explanation}${progress}`;
+  const explanationPanel = tutorialExplanation.closest(".tutorial-explanation-panel");
+  if (explanationPanel) explanationPanel.scrollTop = explanationPanel.scrollHeight;
+}
+
+function tutorialCommandName(command) {
+  const match = command.trim().match(/^([A-Za-z_]+)/);
+  return match ? match[1].toLowerCase() : "";
 }
 
 function tutorialSource() {
   const sourceText = editor
     ? editor.value
-    : tutorialExamples[tutorialExampleSelect?.value || "identity"];
+    : currentTutorialLesson()?.script;
   if (!sourceText) return undefined;
   const checkpoints = proofCheckpoints(sourceText);
   if (checkpoints.length === 0) return undefined;
@@ -788,6 +688,7 @@ function renderTutorialHistory() {
     : ui.stateCount(tutorialStates.length);
   if (tutorialStates.length === 0) {
     tutorialHistory.innerHTML = `<div class="tutorial-history-empty">${ui.tutorialReady}</div>`;
+    tutorialHistory.scrollTop = tutorialHistory.scrollHeight;
     return;
   }
 
@@ -801,10 +702,9 @@ function renderTutorialHistory() {
       ${entry.command
         ? `<code class="tutorial-state-command">${escapeHtml(entry.command)}</code>`
         : `<p class="tutorial-state-note tutorial-state-start">${ui.tutorialReady}</p>`}
-      <div class="tutorial-state-body">${tutorialStateHtml(entry.data)}</div>
-    </article>`).join("");
-  const current = tutorialHistory.querySelector(".tutorial-state.current");
-  current?.scrollIntoView({ block: "nearest" });
+     <div class="tutorial-state-body">${tutorialStateHtml(entry.data)}</div>
+   </article>`).join("");
+  tutorialHistory.scrollTop = tutorialHistory.scrollHeight;
 }
 
 function setTutorialAvailability() {
@@ -813,9 +713,11 @@ function setTutorialAvailability() {
   tutorialInput.disabled = tutorialBusy || finished || tutorialBaseScript === "";
   tutorialApplyButton.disabled = tutorialBusy || finished || tutorialBaseScript === "";
   tutorialResetButton.disabled = tutorialBusy;
+  updateTutorialNextButton();
 }
 
 function renderTutorial() {
+  renderTutorialExplanation();
   renderTutorialScript();
   renderTutorialHistory();
   setTutorialAvailability();
@@ -885,6 +787,15 @@ async function applyTutorialTactic() {
   }
 
   const command = raw.endsWith(".") ? raw : `${raw}.`;
+  const allowedTactics = currentTutorialLesson()?.allowed_tactics || [];
+  const commandName = tutorialCommandName(command);
+  if (commandName !== "qed" && !allowedTactics.includes(commandName)) {
+    setTutorialMessage(
+      "error",
+      ui.disallowedTactic(commandName || raw, [...new Set(allowedTactics)])
+    );
+    return;
+  }
   const revision = tutorialRevision;
   const script = [tutorialBaseScript, ...tutorialCommands, command].join("\n");
   tutorialBusy = true;
@@ -1140,6 +1051,9 @@ if (editor) {
 }
 
 if (tutorialInput) {
+  tutorialInput.disabled = true;
+  tutorialApplyButton.disabled = true;
+  tutorialResetButton.disabled = true;
   tutorialApplyButton.addEventListener("click", applyTutorialTactic);
   tutorialInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -1148,6 +1062,20 @@ if (tutorialInput) {
     }
   });
   tutorialResetButton.addEventListener("click", resetTutorial);
+  tutorialNextButton?.addEventListener("click", goToNextTutorialLesson);
   tutorialExampleSelect?.addEventListener("change", resetTutorial);
-  resetTutorial();
+  loadTutorialLessons()
+    .then(() => {
+      populateTutorialLessons();
+      resetTutorial();
+    })
+    .catch((error) => {
+      tutorialTheorem.textContent = ui.theoremLoadFailed;
+      setTutorialMessage("error", error.message);
+      tutorialHistory.innerHTML =
+        `<div class="tutorial-history-empty tutorial-history-error">${escapeHtml(error.message)}</div>`;
+      tutorialInput.disabled = true;
+      tutorialApplyButton.disabled = true;
+      tutorialResetButton.disabled = false;
+    });
 }
