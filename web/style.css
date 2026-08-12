@@ -749,6 +749,8 @@ textarea {
   background: transparent;
   font: 14px/1.75 var(--mono);
   tab-size: 2;
+  white-space: pre;
+  overflow-x: auto;
 }
 
 .editor-footer {
