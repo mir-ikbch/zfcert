@@ -570,26 +570,119 @@ async function inspectInteractive(script) {
   return JSON.parse(api.step(script));
 }
 
+function normalizeTutorialText(value) {
+  return String(value ?? "")
+    .replace(/<->/gu, "↔")
+    .replace(/->/gu, "→")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function escapeTutorialPatternText(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function matchesTutorialPattern(value, pattern) {
+  const patternText = normalizeTutorialText(pattern);
+  if (!patternText) return normalizeTutorialText(value) === "";
+  const parts = patternText.split(" ");
+  const literals = parts.filter((part) => part !== "_");
+  const source = parts.map((part) => part === "_"
+    ? "(.+?)"
+    : escapeTutorialPatternText(part)).join("\\s+");
+  const match = new RegExp(`^${source}$`, "u").exec(normalizeTutorialText(value));
+  if (!match) return false;
+  return match.slice(1).every((wildcard) =>
+    literals.every((literal) => !wildcard.includes(literal)));
+}
+
+function matchesTutorialText(value, condition) {
+  const text = normalizeTutorialText(value);
+  if (typeof condition === "string") return text === normalizeTutorialText(condition);
+  if (!condition || typeof condition !== "object") return true;
+
+  const equals = condition.equals ?? condition.is;
+  const pattern = condition.pattern;
+  if (pattern !== undefined && !matchesTutorialPattern(text, pattern)) return false;
+  if (equals !== undefined) {
+    const equalsMatches = typeof equals === "string" && equals.includes("_")
+      ? matchesTutorialPattern(text, equals)
+      : text === normalizeTutorialText(equals);
+    if (!equalsMatches) return false;
+  }
+  const notEquals = condition.not_equals ?? condition.is_not;
+  if (notEquals !== undefined && text === normalizeTutorialText(notEquals)) return false;
+  const contains = condition.contains ?? condition.includes;
+  if (contains !== undefined) {
+    const values = Array.isArray(contains) ? contains : [contains];
+    if (!values.every((value) => text.includes(normalizeTutorialText(value)))) return false;
+  }
+  const notContains = condition.not_contains ?? condition.excludes;
+  if (notContains !== undefined) {
+    const values = Array.isArray(notContains) ? notContains : [notContains];
+    if (values.some((value) => text.includes(normalizeTutorialText(value)))) return false;
+  }
+  const startsWith = condition.starts_with;
+  if (startsWith !== undefined && !text.startsWith(normalizeTutorialText(startsWith))) return false;
+  const endsWith = condition.ends_with;
+  if (endsWith !== undefined && !text.endsWith(normalizeTutorialText(endsWith))) return false;
+  return true;
+}
+
+function matchesTutorialCondition(entry, data) {
+  const when = entry?.when;
+  if (!when || typeof when !== "object") return false;
+  if (when.complete !== undefined && Boolean(data?.complete) !== Boolean(when.complete)) return false;
+  if (when.qed !== undefined && Boolean(data?.qed) !== Boolean(when.qed)) return false;
+  if (when.goals !== undefined) {
+    const goalCount = Array.isArray(data?.goals) ? data.goals.length : 0;
+    if (goalCount !== Number(when.goals)) return false;
+  }
+  const target = data?.goals?.[0]?.target || "";
+  return matchesTutorialText(target, when.target);
+}
+
+function tutorialProgressActivationIndex(entry, previousActivationIndex) {
+  const when = entry?.when;
+  if (!when || typeof when !== "object") {
+    return Number.isFinite(previousActivationIndex)
+      ? previousActivationIndex + 1
+      : Infinity;
+  }
+  const stateIndex = tutorialStates.findIndex(({ data }) =>
+    matchesTutorialCondition(entry, data));
+  return stateIndex === -1 ? Infinity : stateIndex;
+}
+
 function renderTutorialExplanation() {
   if (!tutorialExplanation || !tutorialExplanationTitle) return;
   const lesson = currentTutorialLesson();
   if (!lesson) return;
   const allowed = Array.isArray(lesson.allowed_tactics) ? lesson.allowed_tactics : [];
   const explanation = localizedLessonValue(lesson.explanation);
-  const progressValue = lesson.progress?.[isJapanese ? "ja" : "en"];
-  const progressTexts = Array.isArray(progressValue) ? progressValue : [];
+  const progressEntries = Array.isArray(lesson.progress) ? lesson.progress : [];
   const availableHtml = `
     <section class="tutorial-allowed">
       <p class="tutorial-subheading">${ui.availableTactics}</p>
       <ul>${allowed.map((name) => `<li><code>${escapeHtml(name)}</code></li>`).join("")}</ul>
     </section>`;
-  const progress = tutorialCommands.map((_, index) => {
-    const text = progressTexts[index];
-    if (!text) return "";
-    return `<article class="tutorial-progress-step">
-     ${text}
-   </article>`;
-  }).join("");
+  const visibleProgressEntries = [];
+  const currentStateIndex = tutorialStates.length - 1;
+  let previousActivationIndex = 0;
+  for (const entry of progressEntries) {
+    const activationIndex = tutorialProgressActivationIndex(entry, previousActivationIndex);
+    if (currentStateIndex < activationIndex) break;
+    visibleProgressEntries.push(entry);
+    previousActivationIndex = activationIndex;
+  }
+  const progress = visibleProgressEntries
+    .map((entry) => {
+      const text = localizedLessonValue(entry);
+      if (!text) return "";
+      return `<article class="tutorial-progress-step">
+        ${text}
+      </article>`;
+    }).join("");
   tutorialExplanationTitle.textContent = localizedLessonValue(lesson.title) || lesson.key;
   tutorialExplanation.innerHTML = `${availableHtml}${explanation}${progress}`;
   const explanationPanel = tutorialExplanation.closest(".tutorial-explanation-panel");

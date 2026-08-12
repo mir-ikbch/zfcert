@@ -18,14 +18,14 @@
     "en": "<p>In this lesson, we learn how to specialize a hypothesis. First, proceed with the proof as we have done so far.</p>",
     "ja": "<p>今回は仮定の特殊化について学びます．まず，今までの方法で証明を進めてみましょう．</p>"
   },
-  "progress": {
-    "en": [
-      "<p>We know how to handle a goal of the form <code>P -&gt; Q</code> from the previous lesson.</p>",
-      "<p>The hypothesis now contains <code>forall x, not (x in emp)</code>, while the conclusion has the form obtained by substituting <code>emp</code> for this <code>x</code>. To specialize the <code>x</code> in a hypothesis <code>H : forall x, P(x)</code> to a concrete value <code>c</code> and obtain a new hypothesis <code>H1</code>, use</p><p><code>specialize H c as H1.</code></p><p>Use this tactic.</p>"
-    ],
-    "ja": [
-      "<p><code>P -> Q</code> の形のゴールの進め方は前回やった通りです．</p>",
-      "<p>仮定に <code>forall x, not (x in emp)</code> が現れ，結論はこの <code>x</code> に <code>emp</code> を代入したような形になっています．仮定 <code>H : forall x, P(x)</code> の <code>x</code> を具体的な値 <code>c</code> に特殊化して新しい仮定 <code>H1</code> を得るには，</p><p><code>specialize H c as H1.</code></p><p>を使います．</p>"
-    ]
-  }
+  "progress": [
+    {
+      "en": "<p>We know how to handle a goal of the form <code>P -&gt; Q</code> from the previous lesson.</p>",
+      "ja": "<p><code>P -> Q</code> の形のゴールの進め方は前回やった通りです．</p>"
+    },
+    {
+      "en": "<p>The hypothesis now contains <code>forall x, not (x in emp)</code>, while the conclusion has the form obtained by substituting <code>emp</code> for this <code>x</code>. To specialize the <code>x</code> in a hypothesis <code>H : forall x, P(x)</code> to a concrete value <code>c</code> and obtain a new hypothesis <code>H1</code>, use</p><p><code>specialize H c as H1.</code></p><p>Use this tactic.</p>",
+      "ja": "<p>仮定に <code>forall x, not (x in emp)</code> が現れ，結論はこの <code>x</code> に <code>emp</code> を代入したような形になっています．仮定 <code>H : forall x, P(x)</code> の <code>x</code> を具体的な値 <code>c</code> に特殊化して新しい仮定 <code>H1</code> を得るには，</p><p><code>specialize H c as H1.</code></p><p>を使います．</p>"
+    }
+  ]
 }
