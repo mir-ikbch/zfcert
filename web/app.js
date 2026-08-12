@@ -326,6 +326,7 @@ let interactiveCursor = -1;
 let interactiveCheckpoints = [];
 let interactiveRange;
 let interactiveBusy = false;
+let interactiveEditorValue = "";
 let tutorialBaseScript = "";
 let tutorialCommands = [];
 let tutorialStates = [];
@@ -404,11 +405,36 @@ function resetInteractive() {
   interactiveCursor = -1;
   interactiveCheckpoints = proofCheckpoints(editor.value);
   interactiveRange = undefined;
+  interactiveEditorValue = editor.value;
   goalCount.textContent = ui.notStarted;
   stepIndicator.textContent = ui.notStarted;
   goalView.innerHTML = `<p>${ui.startInteractive}</p>`;
   updateLineNumbers();
   updateNavigationControls();
+}
+
+function changedTextStart(previous, next) {
+  let start = 0;
+  while (start < previous.length && start < next.length &&
+      previous[start] === next[start]) {
+    start += 1;
+  }
+  return start;
+}
+
+function preserveInteractiveAfterEdit() {
+  const checkpoint = interactiveCheckpoints[interactiveCursor];
+  if (!checkpoint) return false;
+  if (changedTextStart(interactiveEditorValue, editor.value) < checkpoint.end) {
+    return false;
+  }
+
+  const checkpoints = proofCheckpoints(editor.value);
+  if (!checkpoints[interactiveCursor]) return false;
+  interactiveCheckpoints = checkpoints;
+  showInteractiveCursor(interactiveCursor);
+  updateNavigationControls();
+  return true;
 }
 
 function setExample(name) {
@@ -1097,13 +1123,15 @@ async function moveInteractive(direction) {
     : interactiveCursor + direction;
   if (target < 0 || target >= interactiveCheckpoints.length) return;
 
-  interactiveCursor = target;
   const checkpoint = interactiveCheckpoints[target];
-  showInteractiveCursor(target);
   interactiveBusy = true;
   updateNavigationControls();
   try {
     const data = await inspectInteractive(editor.value.slice(0, checkpoint.end));
+    if (data.ok) {
+      interactiveCursor = target;
+      showInteractiveCursor(target);
+    }
     renderInteractive(data);
   } catch (error) {
     renderInteractive({ ok: false, line: checkpoint.range.end, message: error.message });
@@ -1132,7 +1160,9 @@ async function loadAxioms() {
 
 if (editor) {
   editor.addEventListener("input", () => {
-    resetInteractive();
+    const preserved = preserveInteractiveAfterEdit();
+    interactiveEditorValue = editor.value;
+    if (!preserved) resetInteractive();
     if (tutorialInput) scheduleTutorialReset();
   });
   editor.addEventListener("scroll", () => {
