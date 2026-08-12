@@ -318,6 +318,12 @@ qed")
     "P and (Q and R)"
     "P ∧ (Q ∧ R)";
   check_formula_printing
+    "P and Q -> R"
+    "P ∧ Q → R";
+  check_formula_printing
+    "P -> Q and R"
+    "P → Q ∧ R";
+  check_formula_printing
     "P -> Q -> R"
     "P → Q → R";
   check_formula_printing

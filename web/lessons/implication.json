@@ -26,7 +26,7 @@
           "not_contains": "->"
         }
       },
-      "en": "<p>When we have a hypothesis <code>H : P -&gt; Q</code> and the conclusion is <code>Q</code>, we can use</p><p><code>apply H.</code></p><p>to apply it.</p>",
+      "en": "<p>When we have a hypothesis <code>H : P -&gt; Q</code> and the conclusion is <code>Q</code>, we can use</p><p><code>apply H.</code></p>",
       "ja": "<p>仮定に <code>H : P -> Q</code> があり，結論が <code>Q</code> のとき，</p><p><code>apply H.</code></p><p>が適用できます．</p>"
     },
     {
