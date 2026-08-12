@@ -814,13 +814,26 @@ function tutorialStateHtml(data) {
         ).join("")}</ul>`
       : `<p class="tutorial-no-context">${ui.noAssumptions}</p>`;
     return `
-      <div class="tutorial-goal">
+      <div class="tutorial-goal${index === 0 ? "" : " tutorial-goal-inactive"}">
         <span class="tutorial-goal-label">${isJapanese ? "ゴール" : "Goal"} ${index + 1}</span>
         ${variables}
         ${context}
         <span class="tutorial-goal-target">⊢ ${escapeHtml(goal.target)}</span>
       </div>`;
   }).join("");
+}
+
+function rewindTutorialToState(index) {
+  if (tutorialBusy || !Number.isInteger(index) || index < 0 || index >= tutorialStates.length) return;
+  if (index < tutorialStates.length - 1) {
+    tutorialRevision += 1;
+    tutorialCommands = tutorialCommands.slice(0, index);
+    tutorialStates = tutorialStates.slice(0, index + 1);
+    tutorialInput.value = "";
+    setTutorialMessage("", "");
+    renderTutorial();
+  }
+  focusTutorialInput();
 }
 
 function renderTutorialScript() {
@@ -855,7 +868,9 @@ function renderTutorialHistory() {
 
   const lastIndex = tutorialStates.length - 1;
   tutorialHistory.innerHTML = tutorialStates.map((entry, index) => `
-    <article class="tutorial-state${index === lastIndex ? " current" : ""}">
+    <article class="tutorial-state${index === lastIndex ? " current" : ""}"
+      data-state-index="${index}" role="button" tabindex="0"
+      aria-current="${index === lastIndex ? "step" : "false"}">
       <div class="tutorial-state-head">
         <span>${index === 0 ? ui.initialGoal : ui.afterTactic(index)}</span>
         <span>${index + 1}/${tutorialStates.length}</span>
@@ -1235,6 +1250,22 @@ if (tutorialInput) {
   tutorialResetButton.addEventListener("click", resetTutorial);
   tutorialNextButton?.addEventListener("click", goToNextTutorialLesson);
   tutorialExampleSelect?.addEventListener("change", resetTutorial);
+  tutorialHistory?.addEventListener("click", (event) => {
+    const state = event.target instanceof Element
+      ? event.target.closest(".tutorial-state")
+      : null;
+    if (!state || !tutorialHistory.contains(state)) return;
+    rewindTutorialToState(Number(state.dataset.stateIndex));
+  });
+  tutorialHistory?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const state = event.target instanceof Element
+      ? event.target.closest(".tutorial-state")
+      : null;
+    if (!state || !tutorialHistory.contains(state)) return;
+    event.preventDefault();
+    rewindTutorialToState(Number(state.dataset.stateIndex));
+  });
   loadTutorialLessons()
     .then(() => {
       populateTutorialLessons();

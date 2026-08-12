@@ -528,6 +528,18 @@ h1 em { color: var(--green); font-weight: 400; }
   padding: 15px 17px 17px;
   border: 1px solid var(--line);
   background: #f3f2eb;
+  cursor: pointer;
+  transition: border-color .16s, background .16s, box-shadow .16s;
+}
+
+.tutorial-state:hover {
+  border-color: var(--green);
+  box-shadow: 3px 3px 0 rgba(34, 91, 68, .12);
+}
+
+.tutorial-state:focus-visible {
+  outline: 2px solid var(--rust);
+  outline-offset: 2px;
 }
 
 .tutorial-state:last-child { margin-bottom: 0; }
@@ -585,6 +597,11 @@ h1 em { color: var(--green); font-weight: 400; }
 .tutorial-goal + .tutorial-goal {
   border-top: 1px solid var(--line);
   padding-top: 13px;
+}
+
+.tutorial-goal-inactive {
+  opacity: .42;
+  filter: grayscale(1);
 }
 
 .tutorial-goal-label {
