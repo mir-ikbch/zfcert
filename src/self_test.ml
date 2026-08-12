@@ -458,6 +458,16 @@ intro H")
     failwith "The kernel accepted an invalid equality proof";
   if not
        (rejected
+          "theorem bad_intro_name : forall x, x = x\nintro x y\nqed")
+  then
+    failwith "intro accepted multiple identifiers as one name";
+  if not
+       (rejected
+          "theorem bad_intro_tab_name : forall x, x = x\nintro x\ty\nqed")
+  then
+    failwith "intro accepted a whitespace-containing identifier";
+  if not
+       (rejected
           "alias foo := forall x, x = x\ntheorem bad_alias_fact : foo\nexact foo\nqed")
   then
     failwith "A proposition alias was accepted as a proof";

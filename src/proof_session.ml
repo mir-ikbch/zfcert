@@ -256,7 +256,16 @@ let unfold line_no aliases formula =
   unfold_formula line_no aliases StringSet.empty formula
 
 let split_first_word line =
-  match String.index_opt line ' ' with
+  let is_space = function
+    | ' ' | '\t' | '\r' | '\n' -> true
+    | _ -> false
+  in
+  let rec find index =
+    if index >= String.length line then None
+    else if is_space line.[index] then Some index
+    else find (index + 1)
+  in
+  match find 0 with
   | None -> (line, "")
   | Some i -> (String.sub line 0 i, trim (String.sub line (i + 1) (String.length line - i - 1)))
 
@@ -625,10 +634,27 @@ let close_fact line_no name context =
     | None -> verified_error line_no
 
 let words text =
-  text
-  |> String.split_on_char ' '
-  |> List.map trim
-  |> List.filter (fun word -> word <> "")
+  let is_space = function
+    | ' ' | '\t' | '\r' | '\n' -> true
+    | _ -> false
+  in
+  let length = String.length text in
+  let rec skip index =
+    if index < length && is_space text.[index] then skip (index + 1)
+    else index
+  in
+  let rec word_end index =
+    if index < length && not (is_space text.[index]) then word_end (index + 1)
+    else index
+  in
+  let rec collect index result =
+    let start = skip index in
+    if start >= length then List.rev result
+    else
+      let finish = word_end start in
+      collect finish (String.sub text start (finish - start) :: result)
+  in
+  collect 0 []
 
 let parse_choice_words line_no command argument =
   match words argument with
@@ -846,6 +872,10 @@ let fresh_intro_name base used =
   if StringSet.mem base used then fresh_name base used else base
 
 let execute_intro line_no state argument =
+  let argument = trim argument in
+  if argument <> "" && not (valid_term_name argument) then
+    raise (Proof_error (line_no,
+      "intro accepts exactly one identifier; use intros x y. for multiple introductions."));
   match materialize_goals line_no state with
   | [] -> raise (Proof_error (line_no, "The proof is already complete."))
   | goal :: _ ->

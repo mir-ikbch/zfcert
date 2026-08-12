@@ -5,13 +5,39 @@ exception Error of string
 let trim = String.trim
 
 let words text =
-  text
-  |> String.split_on_char ' '
-  |> List.map trim
-  |> List.filter (fun word -> word <> "")
+  let is_space = function
+    | ' ' | '\t' | '\r' | '\n' -> true
+    | _ -> false
+  in
+  let length = String.length text in
+  let rec skip index =
+    if index < length && is_space text.[index] then skip (index + 1)
+    else index
+  in
+  let rec word_end index =
+    if index < length && not (is_space text.[index]) then word_end (index + 1)
+    else index
+  in
+  let rec collect index result =
+    let start = skip index in
+    if start >= length then List.rev result
+    else
+      let finish = word_end start in
+      collect finish (String.sub text start (finish - start) :: result)
+  in
+  collect 0 []
 
 let split_first_word line =
-  match String.index_opt line ' ' with
+  let is_space = function
+    | ' ' | '\t' | '\r' | '\n' -> true
+    | _ -> false
+  in
+  let rec find index =
+    if index >= String.length line then None
+    else if is_space line.[index] then Some index
+    else find (index + 1)
+  in
+  match find 0 with
   | None -> (line, "")
   | Some index ->
       (String.sub line 0 index,
