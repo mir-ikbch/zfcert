@@ -139,15 +139,28 @@ function currentTutorialLesson() {
   return tutorialLessonMap[tutorialExampleSelect?.value] || tutorialLessons[0];
 }
 
+function hasNextTutorialLesson() {
+  const current = currentTutorialLesson();
+  const currentIndex = tutorialLessons.findIndex((lesson) => lesson.key === current?.key);
+  return currentIndex >= 0 && currentIndex < tutorialLessons.length - 1;
+}
+
+function tutorialIsComplete() {
+  const last = tutorialStates[tutorialStates.length - 1];
+  return last?.data?.qed === true;
+}
+
+function focusTutorialInput() {
+  if (!tutorialInput) return;
+  window.requestAnimationFrame(() => {
+    if (!tutorialInput.disabled) tutorialInput.focus({ preventScroll: true });
+  });
+}
+
 function updateTutorialNextButton() {
   if (!tutorialNextButton) return;
   tutorialNextButton.textContent = `${ui.nextLesson} →`;
-  const current = currentTutorialLesson();
-  const currentIndex = tutorialLessons.findIndex((lesson) => lesson.key === current?.key);
-  const hasNextLesson = currentIndex >= 0 && currentIndex < tutorialLessons.length - 1;
-  const last = tutorialStates[tutorialStates.length - 1];
-  const finished = last?.data?.qed === true;
-  tutorialNextButton.hidden = !(finished && hasNextLesson);
+  tutorialNextButton.hidden = !(tutorialIsComplete() && hasNextTutorialLesson());
   tutorialNextButton.disabled = tutorialBusy;
 }
 
@@ -803,7 +816,8 @@ function renderTutorialHistory() {
 function setTutorialAvailability() {
   const last = tutorialStates[tutorialStates.length - 1];
   const finished = last?.data?.qed === true;
-  tutorialInput.disabled = tutorialBusy || finished || tutorialBaseScript === "";
+  const canAdvance = finished && hasNextTutorialLesson();
+  tutorialInput.disabled = tutorialBusy || (finished && !canAdvance) || tutorialBaseScript === "";
   tutorialApplyButton.disabled = tutorialBusy || finished || tutorialBaseScript === "";
   tutorialResetButton.disabled = tutorialBusy;
   updateTutorialNextButton();
@@ -857,6 +871,7 @@ async function resetTutorial() {
     if (revision === tutorialRevision) {
       tutorialBusy = false;
       setTutorialAvailability();
+      if (tutorialStates.length > 0 && !tutorialIsComplete()) focusTutorialInput();
     }
   }
 }
@@ -865,6 +880,10 @@ async function applyTutorialTactic() {
   if (tutorialBusy) return;
   if (!tutorialBaseScript) {
     setTutorialMessage("error", ui.tutorialStartError);
+    return;
+  }
+  if (tutorialIsComplete()) {
+    goToNextTutorialLesson();
     return;
   }
 
@@ -906,13 +925,14 @@ async function applyTutorialTactic() {
     tutorialInput.value = "";
     setTutorialMessage("accepted", data.qed ? ui.tutorialProofComplete : ui.tacticAccepted);
     renderTutorial();
-    tutorialInput.focus();
   } catch (error) {
     if (revision === tutorialRevision) setTutorialMessage("error", error.message);
   } finally {
     if (revision === tutorialRevision) {
       tutorialBusy = false;
       setTutorialAvailability();
+      if (tutorialStates.length > 0 &&
+          (!tutorialIsComplete() || hasNextTutorialLesson())) focusTutorialInput();
     }
   }
 }
