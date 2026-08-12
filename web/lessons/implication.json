@@ -1,24 +1,37 @@
 {
   "key": "implication",
   "title": {
-    "en": "Implication identity",
-    "ja": "含意の恒等性"
+    "en": "implication",
+    "ja": "含意"
   },
   "statement": {
-    "en": "forall x, (x in x -> x in x)",
-    "ja": "すべての x について (x ∈ x ならば x ∈ x)"
+    "en": "forall x y s, (x in s -> x = y) -> x in s -> x = y",
+    "ja": "forall x y s, (x in s -> x = y) -> x in s -> x = y"
   },
-  "script": "theorem implication_identity : forall x, (x in x -> x in x).\nintro x.\nintro H.\nexact H.\nqed.",
+  "script": "theorem impl_example : forall x y s, (x in s -> x = y) -> x in s -> x = y.\nintros x y s H.\nsplit.\n- (* x in s *)\n  admit.\n- (* x = y *)\n  apply H.\n  admit.\nqed.",
   "allowed_tactics": [
     "intro",
-    "exact"
+    "intros",
+    "exact",
+    "apply"
   ],
   "explanation": {
-    "en": "<p>To prove an implication, assume its left-hand side. The assumption then gives exactly the goal you need.</p><ol><li>Introduce <code>x</code>.</li><li>Introduce the implication hypothesis.</li><li>Close the goal with <code>exact H.</code>.</li></ol>",
-    "ja": "<p>含意を証明するには、左辺を仮定します。その仮定が、そのまま必要なゴールになります。</p><ol><li><code>x</code> を導入します。</li><li>含意の仮定を導入します。</li><li><code>exact H.</code> でゴールを閉じます。</li></ol>"
+    "en": "<p>With the <code>intros</code> tactic, you do not need to repeat <code>intro</code> several times.</p><p><code>intros x y.</code></p><p>performs the same actions as <code>intro x. intro y.</code>.</p><p><code>intros.</code></p><p>repeats <code>intro</code> as many times as possible, assigning names automatically.</p>",
+    "ja": "<p>タクティク <code>intros</code> を使うと<code>intro</code>を何度も繰り返す必要がなくなります． </p><p><code>intros x y.</code></p><p>で<code>intro x. intro y.</code>と同じ動作をします．</p><p><code>intros.</code></p><p>で，名前を自動的に付けた上で <code>intro</code> が可能な限り繰り返されます．</p>"
   },
-  "progress": {
-    "en": [],
-    "ja": []
-  }
+  "progress": [
+    {
+      "when": {
+        "target": {
+          "not_contains": "->"
+        }
+      },
+      "en": "<p>When we have a hypothesis <code>H : P -&gt; Q</code> and the conclusion is <code>Q</code>, we can use</p><p><code>apply H.</code></p><p>to apply it.</p>",
+      "ja": "<p>仮定に <code>H : P -> Q</code> があり，結論が <code>Q</code> のとき，</p><p><code>apply H.</code></p><p>が適用できます．</p>"
+    },
+    {
+      "en": "<p>The conclusion has changed. From here, we can complete the proof using the methods we have already learned.</p>",
+      "ja": "<p>結論が変わりましたね．ここからはこれまでの方法で証明が完了します．</p>"
+    }
+  ]
 }

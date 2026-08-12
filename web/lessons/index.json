@@ -1,5 +1,7 @@
 [
   "identity.json",
   "hypothesis.json",
-  "specialize.json"
+  "specialize.json",
+  "implication.json",
+  "conjunction.json"
 ]

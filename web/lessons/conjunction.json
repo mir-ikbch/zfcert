@@ -1,26 +1,58 @@
 {
   "key": "conjunction",
   "title": {
-    "en": "Conjunction commutativity",
-    "ja": "連言の交換"
+    "en": "conjunction",
+    "ja": "論理積"
   },
   "statement": {
-    "en": "forall x, forall y, ((x in y and y in x) -> (y in x and x in y))",
-    "ja": "すべての x, y について ((x ∈ y かつ y ∈ x) ならば (y ∈ x かつ x ∈ y))"
+    "en": "forall x y z, z in x <-> z in y -> z in x -> z in x and z in y",
+    "ja": "forall x y z, z in x <-> z in y -> z in x -> z in x and z in y"
   },
-  "script": "theorem and_commutes :\n  forall x,\n  forall y, ((x in y and y in x) -> (y in x and x in y)).\nintro x.\nintro y.\nintro H.\ncases H H_yx H_xy.\nsplit.\nexact H_xy.\nexact H_yx.\nqed.",
+  "script": "theorem conj_example : forall x y z, z in x <-> z in y -> z in x -> z in x and z in y.\nintros x y z H H0.\nsplit.\nexact H0.\ncases H H1 H2.\nexact H2.\nqed.",
   "allowed_tactics": [
     "intro",
-    "cases",
+    "intros",
     "split",
-    "exact"
+    "exact",
+    "cases",
+    "apply"
   ],
   "explanation": {
-    "en": "<p>A conjunction stores two facts in one hypothesis. Take it apart, then build a new conjunction in the opposite order.</p><ol><li>Introduce the variables and hypothesis.</li><li>Use <code>cases</code> to name both parts.</li><li>Use <code>split.</code> and solve the two goals.</li></ol>",
-    "ja": "<p>連言の仮定には2つの事実が入っています。それを取り出し、順番を入れ替えた連言を作ります。</p><ol><li>変数と仮定を導入します。</li><li><code>cases</code> で2つの部分に名前を付けます。</li><li><code>split.</code> で2つのゴールを作り、それぞれを解きます。</li></ol>"
+    "en": "<p>First, try to proceed with the proof as in the previous lesson.</p>",
+    "ja": "<p>まずは前回と同様に証明を進めてみましょう．</p>"
   },
-  "progress": {
-    "en": [],
-    "ja": []
-  }
+  "progress": [
+    {
+      "when": {
+        "target": {
+          "not_contains": "->"
+        }
+      },
+      "en": "<p>To prove a goal of the form <code>P and Q</code>, use</p><p><code>split.</code></p><p>to prove both <code>P</code> and <code>Q</code>.</p>",
+      "ja": "<p><code>P and Q</code> の形のゴールを示すには，</p><p><code>split.</code></p><p>を使って <code>P</code> と <code>Q</code> 両方を示します．</p>"
+    },
+    {
+      "when": {
+        "target": {
+          "not_contains": "->",
+          "not_contains": "and"
+        }
+      },
+      "en": "<p>The goal has been split into two. The first goal can be proved using the methods we have already learned.</p>",
+      "ja": "<p>ゴールが2つに分かれました．一つ目のゴールは今までの方法で証明できます．</p>"
+    },
+    {
+      "when": {
+        "target": {
+          "contains": "_ <-> _"
+        }
+      },
+      "en": "<p>There is a hypothesis <code>P &lt;-&gt; Q</code>. This is shorthand for <code>P -&gt; Q and Q -&gt; P</code>. A hypothesis of the form <code>H : _ &lt;-&gt; _</code> or <code>H : _ and _</code> can be decomposed with</p><p><code>cases H HL HR.</code></p><p>If you omit <code>HL</code> and <code>HR</code>, names are assigned automatically.</p>",
+      "ja": "<p>仮定の <code>P <-> Q</code> がありますね．これは <code>P -> Q and Q -> P</code> の略記です．仮定 <code>H : _ <-> _</code> や <code>H : _ and _</code> は，</p><p><code>cases H HL HR.</code></p><p>で分解できます．<code>HL</code> や <code>HR</code> を省略すると自動で名前が付きます．</p>"
+    },
+    {
+      "en": "<p>From here, we can complete the proof using the methods we have already learned.</p>",
+      "ja": "<p>この先はこれまでの方法で証明できます．</p>"
+    }
+  ]
 }
