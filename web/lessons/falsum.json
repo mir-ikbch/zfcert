@@ -1,0 +1,43 @@
+{
+  "key": "falsum",
+  "title": {
+    "en": "contradiction and negation",
+    "ja": "矛盾と否定"
+  },
+  "statement": {
+    "en": "forall x y, not x in y -> x in y -> y in x",
+    "ja": "forall x y, not x in y -> x in y -> y in x"
+  },
+  "script": "theorem my_ext : forall x y, not x in y -> x in y -> y in x.",
+  "allowed_tactics": [
+    "intro",
+    "intros",
+    "rule",
+    "exact",
+    "apply"
+  ],
+  "explanation": {
+    "en": "<p>Here we learn about contradiction and negation. First, try to proceed with the proof as in the previous lesson.</p>",
+    "ja": "<p>ここでは，矛盾と否定について学びます．まずは前回と同様に証明を進めてみましょう．</p>"
+  },
+  "progress": [
+    {
+      "when": {
+        "target": {
+          "not_contains": "->"
+        }
+      },
+      "en": "<p>We have the hypotheses <code>¬x in x</code> and <code>x in x</code>, so they appear to be contradictory. If a contradiction can be proved from the hypotheses, the original claim follows. Here, change the goal to <code>falsum</code> (written as <code>⊥</code>) to prove the contradiction.</p><p>Use</p><p><code>rule falsum_elim.</code></p><p>to change the goal to <code>⊥</code>.</p>",
+      "ja": "<p>仮定に <code>¬x in y</code> と <code>x in y</code> があるので，仮定矛盾していると言えそうです．もし仮定から矛盾が証明される場合，元の主張は真となります．ここでは，矛盾を証明するために，結論を矛盾 <code>falsum</code> (⊥ in unicode)に変えます．</p><p><code>rule falsum_elim</code></p><p>を使えば，結論を <code>⊥</code> に変えることができます．</p>"
+    },
+    {
+      "when": {
+        "target": {
+          "equals": "⊥"
+        }
+      },
+      "en": "<p><code>not P</code> (<code>¬P</code> in unicode) is shorthand for <code>P -&gt; ⊥</code>. Thus, a hypothesis <code>H : not P</code> can be applied to the current goal.</p>",
+      "ja": "<p><code>not P</code> (unicode表記で <code>¬P</code>) は <code>P → ⊥</code> の略記です．つまり，<code>H : not P</code>という仮定は現在のゴールに対して apply できそうです．</p>"
+    }
+  ]
+}

@@ -3,5 +3,7 @@
   "hypothesis.json",
   "specialize.json",
   "implication.json",
-  "conjunction.json"
+  "conjunction.json",
+  "falsum.json",
+  "axiom.json"
 ]

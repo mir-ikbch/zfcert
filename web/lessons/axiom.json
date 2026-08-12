@@ -1,0 +1,46 @@
+{
+  "key": "axiom",
+  "title": {
+    "en": "using axioms",
+    "ja": "公理の利用"
+  },
+  "statement": {
+    "en": "forall x y, (forall z, z in x -> z in y) -> (forall z, z in y -> z in x) -> x = y",
+    "ja": "forall x y, (forall z, z in x -> z in y) -> (forall z, z in y -> z in x) -> x = y"
+  },
+  "script": "theorem my_ext : forall x y, (forall z, z in x -> z in y) -> (forall z, z in y -> z in x) -> x = y.",
+  "allowed_tactics": [
+    "intro",
+    "intros",
+    "split",
+    "exact",
+    "apply"
+  ],
+  "axioms": [
+    "extensionality"
+  ],
+  "explanation": {
+    "en": "<p>Here we learn how to use axioms. First, try to proceed with the proof as in the previous lesson.</p>",
+    "ja": "<p>ここでは，公理の使用法を学びます．まずは前回と同様に証明を進めてみましょう．</p>"
+  },
+  "progress": [
+    {
+      "when": {
+        "target": {
+          "not_contains": "->"
+        }
+      },
+      "en": "<p>The <code>apply</code> tactic can be used not only with hypotheses, but also with axioms. The extensionality axiom <code>extensionality</code> is available here, so try applying it with</p><p><code>apply extensionality.</code></p>",
+      "ja": "<p>タクティク <code>apply</code> は仮定だけでなく公理に対しても使えます．今回は外延性の公理 <code>extensionality</code> が使えるので，</p><p><code>apply extensionality.</code></p><p>で公理を適用してみましょう．</p>"
+    },
+    {
+      "when": {
+        "target": {
+          "not_contains": "="
+        }
+      },
+      "en": "<p>From here, we can complete the proof using the methods we have already learned.</p>",
+      "ja": "<p>この後は今までの方法で証明できます．</p>"
+    }
+  ]
+}

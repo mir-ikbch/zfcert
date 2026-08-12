@@ -34,7 +34,6 @@
     {
       "when": {
         "target": {
-          "not_contains": "->",
           "not_contains": "∧"
         }
       },

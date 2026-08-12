@@ -84,6 +84,8 @@ const isJapanese = document.documentElement.lang === "ja";
 let tutorialLessons = [];
 let tutorialLessonMap = Object.create(null);
 let tutorialLessonsPromise;
+let axiomLibrary = [];
+let axiomLibraryPromise;
 
 function localizedLessonValue(value) {
   if (typeof value === "string") return value;
@@ -117,6 +119,20 @@ function loadTutorialLessons() {
       throw error;
     });
   return tutorialLessonsPromise;
+}
+
+function loadAxiomLibrary() {
+  if (axiomLibraryPromise) return axiomLibraryPromise;
+  axiomLibraryPromise = wasmApi()
+    .then((api) => {
+      axiomLibrary = JSON.parse(api.axioms);
+      return axiomLibrary;
+    })
+    .catch((error) => {
+      axiomLibraryPromise = undefined;
+      throw error;
+    });
+  return axiomLibraryPromise;
 }
 
 function populateTutorialLessons() {
@@ -226,6 +242,7 @@ const ui = isJapanese ? {
   tacticAccepted: "タクティクを受け付けました。",
   tutorialProofComplete: "証明完了🥳",
   availableTactics: "使用できるタクティク",
+  usedAxioms: "使う公理",
   nextLesson: "次のレッスンへ",
  disallowedTactic: (name, allowed) => `「${name}」はこのレッスンでは使用できません。使用できるタクティク: ${allowed.join(", ")}`,
   selectedScheme: "(図式)"
@@ -280,6 +297,7 @@ const ui = isJapanese ? {
   tacticAccepted: "Tactic accepted.",
   tutorialProofComplete: "Proof complete🥳",
   availableTactics: "Available tactics",
+  usedAxioms: "Used axioms",
   nextLesson: "Next lesson",
  disallowedTactic: (name, allowed) => `“${name}” is not available in this lesson. Available tactics: ${allowed.join(", ")}`,
   selectedScheme: "(scheme)"
@@ -698,6 +716,8 @@ function renderTutorialExplanation() {
   const lesson = currentTutorialLesson();
   if (!lesson) return;
   const allowed = Array.isArray(lesson.allowed_tactics) ? lesson.allowed_tactics : [];
+  const axioms = Array.isArray(lesson.axioms) ? lesson.axioms : [];
+  const axiomMap = new Map(axiomLibrary.map((axiom) => [axiom.key, axiom]));
   const explanation = localizedLessonValue(lesson.explanation);
   const progressEntries = Array.isArray(lesson.progress) ? lesson.progress : [];
   const availableHtml = `
@@ -705,6 +725,15 @@ function renderTutorialExplanation() {
       <p class="tutorial-subheading">${ui.availableTactics}</p>
       <ul>${allowed.map((name) => `<li><code>${escapeHtml(name)}</code></li>`).join("")}</ul>
     </section>`;
+  const axiomsHtml = axioms.length === 0 ? "" : `
+    <section class="tutorial-allowed tutorial-axioms">
+     <p class="tutorial-subheading">${ui.usedAxioms}</p>
+      <ul>${axioms.map((name) => {
+        const axiom = axiomMap.get(name);
+        const statement = axiom?.statement ? ` : ${axiom.statement}` : "";
+        return `<li><code>${escapeHtml(`${name}${statement}`)}</code></li>`;
+      }).join("")}</ul>
+   </section>`;
   const visibleProgressEntries = [];
   const currentStateIndex = tutorialStates.length - 1;
   let previousActivationIndex = 0;
@@ -723,7 +752,7 @@ function renderTutorialExplanation() {
       </article>`;
     }).join("");
   tutorialExplanationTitle.textContent = localizedLessonValue(lesson.title) || lesson.key;
-  tutorialExplanation.innerHTML = `${availableHtml}${explanation}${progress}`;
+  tutorialExplanation.innerHTML = `${availableHtml}${axiomsHtml}${explanation}${progress}`;
   const explanationPanel = tutorialExplanation.closest(".tutorial-explanation-panel");
   if (explanationPanel) explanationPanel.scrollTop = explanationPanel.scrollHeight;
 }
@@ -1144,8 +1173,7 @@ async function moveInteractive(direction) {
 async function loadAxioms() {
   const list = document.querySelector("#axiom-list");
   try {
-    const api = await wasmApi();
-    const axioms = JSON.parse(api.axioms);
+    const axioms = await loadAxiomLibrary();
     list.innerHTML = axioms.map((axiom, index) => `
       <article class="axiom">
         <span class="axiom-index">${String(index + 1).padStart(2, "0")}</span>
@@ -1210,6 +1238,9 @@ if (tutorialInput) {
   loadTutorialLessons()
     .then(() => {
       populateTutorialLessons();
+      return loadAxiomLibrary().catch(() => []);
+    })
+    .then(() => {
       resetTutorial();
     })
     .catch((error) => {
