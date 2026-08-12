@@ -1,0 +1,31 @@
+{
+  "key": "empty_unique",
+  "title": {
+    "en": "uniqueness of the empty set",
+    "ja": "空集合の一意性"
+  },
+  "statement": {
+    "en": "forall emp1 emp2, (forall x, not x in emp1) -> (forall x, not x in emp2) -> emp1 = emp2",
+    "ja": "forall emp1 emp2, (forall x, not x in emp1) -> (forall x, not x in emp2) -> emp1 = emp2"
+  },
+  "script": "theorem empty_unique : forall emp1 emp2, (forall x, not x in emp1) -> (forall x, not x in emp2) -> emp1 = emp2.",
+  "allowed_tactics": [
+    "intro",
+    "intros",
+    "split",
+    "exact",
+    "cases",
+    "apply",
+    "specialize",
+    "rule"
+  ],
+  "axioms": [
+    "extensionality"
+  ],
+  "explanation": {
+    "en": "<p>As a culmination of the lessons so far, let us prove the uniqueness of the empty set.</p><p>We say that a set <code>emp</code> is empty when it satisfies</p><p><code>forall x, not x in emp</code></p><p>The goal is to show that if two sets <code>emp1</code> and <code>emp2</code> are empty, then they are equal.</p><p>There are no hints. Try to prove it yourself using what you have learned.</p>",
+    "ja": "<p>このレッスンでは今までの集大成として，「空集合の一意性」を証明しましょう．集合 <code>emp</code> が空集合であるとは，</p><p><code>forall x, not x in emp</code></p><p>をみたすときに言います．今回のゴールは「2つの集合<code>emp1, emp2</code>が空集合なら，それらは等しい」を示すことです．</p><p>ヒントはありません．これまの知識を使って自分で証明してみましょう．</p>"
+  },
+  "progress": {
+  }
+}
