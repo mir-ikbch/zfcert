@@ -474,6 +474,11 @@ intro H")
     failwith "intro accepted a whitespace-containing identifier";
   if not
        (rejected
+          "theorem ambiguous_apply : forall c, ((forall x, (x = x -> c = c)) -> c = c)\nintro c\nintro H\napply H\nqed")
+  then
+    failwith "apply guessed an unconstrained universal instantiation";
+  if not
+       (rejected
           "alias foo := forall x, x = x\ntheorem bad_alias_fact : foo\nexact foo\nqed")
   then
     failwith "A proposition alias was accepted as a proof";

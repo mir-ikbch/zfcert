@@ -269,6 +269,29 @@ let split_first_word line =
   | None -> (line, "")
   | Some i -> (String.sub line 0 i, trim (String.sub line (i + 1) (String.length line - i - 1)))
 
+let words text =
+  let is_space = function
+    | ' ' | '\t' | '\r' | '\n' -> true
+    | _ -> false
+  in
+  let length = String.length text in
+  let rec skip index =
+    if index < length && is_space text.[index] then skip (index + 1)
+    else index
+  in
+  let rec word_end index =
+    if index < length && not (is_space text.[index]) then word_end (index + 1)
+    else index
+  in
+  let rec collect index result =
+    let start = skip index in
+    if start >= length then List.rev result
+    else
+      let finish = word_end start in
+      collect finish (String.sub text start (finish - start) :: result)
+  in
+  collect 0 []
+
 let split_schema_argument line_no aliases argument =
   match String.index_opt argument ':' with
   | None ->
@@ -278,9 +301,7 @@ let split_schema_argument line_no aliases argument =
       let names =
         String.sub argument 0 i
         |> trim
-        |> String.split_on_char ' '
-        |> List.map trim
-        |> List.filter (fun name -> name <> "")
+        |> words
       in
       let statement = trim (String.sub argument (i + 1) (String.length argument - i - 1)) in
       if statement = "" then
@@ -468,6 +489,15 @@ let decompose_forall formula =
   in
   loop StringSet.empty formula
 
+let unresolved_instantiations metas substitutions =
+  StringSet.elements metas
+  |> List.filter (fun name -> not (StringMap.mem name substitutions))
+
+let cannot_infer_instantiations names =
+  "Cannot infer an instantiation for universally quantified variable(s): "
+  ^ String.concat ", " names
+  ^ ". Use specialize first or provide a more specific goal."
+
 let decompose_imp formula =
   let rec loop premises = function
     | Imp (a, b) -> loop (a :: premises) b
@@ -482,8 +512,13 @@ let apply_fact fact goal =
   match match_formula metas conclusion goal.target with
   | None -> Error "The conclusion of this fact does not match the current goal."
   | Some sub ->
-      let premises = List.map (instantiate_formula sub) premises in
-      Ok (premises, sub)
+      begin match unresolved_instantiations metas sub with
+      | name :: rest ->
+          Error (cannot_infer_instantiations (name :: rest))
+      | [] ->
+          let premises = List.map (instantiate_formula sub) premises in
+          Ok (premises, sub)
+      end
 
 let add_step state text kernel_state =
   { state with
@@ -632,29 +667,6 @@ let close_fact line_no name context =
     | Some kind ->
         (Extracted.NRAxiom, [Extracted.fixed_axiom kind])
     | None -> verified_error line_no
-
-let words text =
-  let is_space = function
-    | ' ' | '\t' | '\r' | '\n' -> true
-    | _ -> false
-  in
-  let length = String.length text in
-  let rec skip index =
-    if index < length && is_space text.[index] then skip (index + 1)
-    else index
-  in
-  let rec word_end index =
-    if index < length && not (is_space text.[index]) then word_end (index + 1)
-    else index
-  in
-  let rec collect index result =
-    let start = skip index in
-    if start >= length then List.rev result
-    else
-      let finish = word_end start in
-      collect finish (String.sub text start (finish - start) :: result)
-  in
-  collect 0 []
 
 let parse_choice_words line_no command argument =
   match words argument with
@@ -1043,6 +1055,11 @@ let execute_tactic line_no state line =
                             "The selected hypothesis does not match the premise of "
                             ^ fact_name ^ "."))
                       | Some substitutions ->
+                          begin match unresolved_instantiations metas substitutions with
+                          | name :: rest ->
+                              raise (Proof_error (line_no,
+                                cannot_infer_instantiations (name :: rest)))
+                          | [] ->
                           let instantiated_premise =
                             instantiate_formula substitutions premise
                           in
@@ -1086,6 +1103,7 @@ let execute_tactic line_no state line =
                           apply_certificate_program line_no state program
                             ("apply " ^ fact_name ^ " in " ^ source_name
                              ^ " as " ^ new_name)
+                          end
                       end
                   | _ ->
                       raise (Proof_error (line_no,
@@ -1210,11 +1228,7 @@ let execute_tactic line_no state line =
                 ("rewrite " ^ equality_name)
           end
       | "specialize" ->
-          let words =
-            String.split_on_char ' ' argument
-            |> List.map trim
-            |> List.filter (fun word -> word <> "")
-          in
+          let words = words argument in
           let rec split_as before = function
             | ["as"; new_name] -> (List.rev before, new_name)
             | "as" :: _ ->
@@ -1260,11 +1274,7 @@ let execute_tactic line_no state line =
                 "Use specialize H term... as name with at least one term."))
           end
       | "cases" ->
-          let words =
-            String.split_on_char ' ' argument
-            |> List.map trim
-            |> List.filter (fun word -> word <> "")
-          in
+          let words = words argument in
           begin match words with
           | fact_name :: names ->
               begin match lookup_assumption state goal.context fact_name with
@@ -1521,9 +1531,7 @@ let parse_alias line_no aliases line =
   let declaration =
     String.sub content 0 assignment
     |> trim
-    |> String.split_on_char ' '
-    |> List.map trim
-    |> List.filter (fun word -> word <> "")
+    |> words
   in
   let name, parameters =
     match declaration with
