@@ -12,20 +12,52 @@
 - Coq（Coq の形式化を検査するとき。`make coq` が `coqc` を呼び出します）
 - VS Code 拡張を開発・パッケージ化する場合は Node.js
 
-### OCaml サーバーをビルドして起動する
+### 最短手順（ソースから利用する場合）
 
-リポジトリのルートで次を実行します。
+まずリポジトリのルートで一度だけビルドします。
 
 ```sh
 dune build
-dune exec src/main.exe -- --self-test
-dune exec src/main.exe -- --port 8080
 ```
 
-ブラウザで <http://127.0.0.1:8080> を開きます。CLI の既定ポートは 8080 です（VS Code と
-Emacs の自動起動は 8099 を使います）。`--self-test`
-では抽出カーネルを含む回帰試験を実行します。単一の `.zfp` ファイルを一度に検査する
-には `--check` を使います。
+その後は、使うエディタに応じて次の設定だけで利用できます。
+
+#### VS Code
+
+1. リポジトリのルートを VS Code で開く。
+2. [`zfcert-vscode-0.2.0.vsix`](zfcert-vscode-0.2.0.vsix) を `Extensions: Install from VSIX...` でインストールする。
+3. `.zfp` ファイルを開く。サイドバーの **ZFCert Goals** に証明状態が表示される。
+
+カーソル位置まで実行するには macOS では `Cmd+Alt+Enter`、その他では
+`Ctrl+Alt+Enter` を押します。全体を検査するには `Shift` も加えます。
+
+#### Emacs
+
+Emacs の設定に次を追加して `.zfp` ファイルを開きます。
+
+```elisp
+(add-to-list 'load-path "/absolute/path/to/zfprover/emacs-zfcert")
+(require 'zfcert-mode)
+```
+
+プロジェクトを自動検出できない場合だけ、次も設定します。
+
+```elisp
+(setq zfcert-workspace-root "/absolute/path/to/zfprover")
+```
+
+`C-c C-RET` でカーソル行まで、`C-c C-n` で次の行まで、`C-c C-c` でファイル全体を
+検査します。証明状態は `*ZFCert Goals*` に表示されます。
+
+### CLI
+
+リポジトリのルートで、抽出カーネルを含む回帰試験を実行できます。
+
+```sh
+dune exec src/main.exe -- --self-test
+```
+
+単一の `.zfp` ファイルを一度に検査するには `--check` を使います。
 
 ```sh
 dune exec src/main.exe -- --check examples/specialize.zfp
@@ -38,7 +70,9 @@ dune exec src/main.exe -- --check examples/specialize.zfp
 dune exec src/main.exe -- --check path/to/proof.zfp
 ```
 
-`--check` はサーバーを起動せず、ファイル全体を読み込んで `qed.` まで含めて検査します。
+`--check` はファイル全体を読み込んで `qed.` まで含めて検査します。
+
+### Coq 形式化と抽出
 
 Coq のすべての形式化を検査するには次を実行します。
 
@@ -56,49 +90,21 @@ dune build
 生成された `extracted/proof_state.ml` はリポジトリに含まれる抽出物です。通常の利用では
 手で編集しません。
 
-### VS Code 拡張
+### VS Code 拡張（詳細設定）
 
-既成の拡張は、リポジトリ直下の
-[zfcert-vscode-0.2.0.vsix](zfcert-vscode-0.2.0.vsix) を VS Code の
-`Extensions: Install from VSIX...` で選択してインストールします。ソースは
-[`vscode-zfcert/`](vscode-zfcert) にあります。
-
-インストール後、このリポジトリを VS Code のワークスペースとして開き、`.zfp` ファイルを
-開いてください。拡張は既定でワークスペースから `dune-project` を探し、次のカーネルを
-自動起動します。
-
-```sh
-dune exec src/main.exe -- --port 8099
-```
-
-`Cannot find dune-project. Set zfcert.workspaceRoot.` と表示された場合は、設定
-（`Code > Settings > Open Settings (JSON)`）に次を追加します。
+拡張はワークスペース内の `dune-project` を自動検出します。検出できない場合は
+`zfcert.workspaceRoot` に `dune-project` のあるディレクトリを指定してください。
 
 ```json
 {
   "zfcert.workspaceRoot": "/absolute/path/to/zfprover",
-  "zfcert.dunePath": "dune",
-  "zfcert.serverUrl": "http://127.0.0.1:8099",
-  "zfcert.autoStartKernel": true,
-  "zfcert.analyzeOnType": true
+  "zfcert.dunePath": "dune"
 }
 ```
 
-`zfcert.workspaceRoot` は `dune-project` を含むディレクトリです。別のカーネルを既に
-起動している場合は `zfcert.serverUrl` を変更し、`zfcert.autoStartKernel` を `false` に
-してください。Goals ビューが閉じているときはコマンドパレットの
-`ZFCert: Show Goals` で再表示できます。
-
-主な操作は次のとおりです。
-
-- カーソル位置まで実行: macOS は `Cmd+Alt+Enter`、その他は `Ctrl+Alt+Enter`
-- 証明全体を検査: 上記にさらに `Shift`
-- コマンドパレット: `ZFCert: Run to Cursor`、`ZFCert: Check Entire Proof`、
-  `ZFCert: Restart Kernel`、`ZFCert: Stop Kernel`
-
-拡張を開発する場合は、ルートを VS Code で開き、`Run and Debug` の
-`Run ZFCert Extension` を実行します。Extension Development Host で例題を開いて
-動作を確認できます。拡張のテストと VSIX の作成は次のとおりです。
+Goals ビューが閉じている場合はコマンドパレットの `ZFCert: Show Goals` で再表示できます。
+開発版は `Run and Debug > Run ZFCert Extension` で起動できます。拡張のテストと VSIX の
+作成は次のとおりです。
 
 ```sh
 cd vscode-zfcert
@@ -106,34 +112,11 @@ npm test
 npm run package
 ```
 
-### Emacs 拡張
+### Emacs 拡張（詳細設定）
 
-`emacs-zfcert/zfcert-mode.el` を `load-path` に追加してモードを読み込みます。
-
-```elisp
-(add-to-list 'load-path "/absolute/path/to/zfprover/emacs-zfcert")
-(require 'zfcert-mode)
-
-;; 通常は自動検出でよい。別の場所にある場合だけ指定する。
-(setq zfcert-workspace-root "/absolute/path/to/zfprover")
-(setq zfcert-server-url "http://127.0.0.1:8099")
-(setq zfcert-auto-start-kernel t)
-;; 長い resolution を待つ場合は nil（無制限）にもできる。
-(setq zfcert-request-timeout 60)
-```
-
-`.zfp` を開くと `zfcert-mode` が有効になります。`zfcert-workspace-root` が `nil` なら、
-現在のファイルから上へ向かって `dune-project` を自動探索します。
-
-- `C-c C-RET`: カーソル行まで実行
-- `C-c C-n`: 次の行まで実行し、その行へ移動
-- `C-c C-c`: バッファ全体を検査
-- `C-c C-g`: `*ZFCert Goals*` を表示
-- `C-c C-r`: カーネルを再起動
-- `C-c C-k`: カーネルを停止
-
-長い証明で待ち時間を延ばすときは `M-x customize-variable RET
-zfcert-request-timeout` を使います。詳細は
+`zfcert-workspace-root` が `nil` なら現在のファイルから `dune-project` を自動探索します。
+長い `resolution` を待つ場合は `M-x customize-variable RET zfcert-request-timeout` で
+タイムアウトを変更できます。その他の設定とキーバインドは
 [Emacs 拡張の README](emacs-zfcert/README.md) を参照してください。
 
 ### WebAssembly 版（任意）
