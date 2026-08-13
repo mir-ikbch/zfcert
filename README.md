@@ -22,8 +22,23 @@ dune exec src/main.exe -- --self-test
 dune exec src/main.exe -- --port 8080
 ```
 
-ブラウザで <http://127.0.0.1:8080> を開きます。標準ポートは 8099 です。`--self-test`
-では抽出カーネルを含む回帰試験を実行します。
+ブラウザで <http://127.0.0.1:8080> を開きます。CLI の既定ポートは 8080 です（VS Code と
+Emacs の自動起動は 8099 を使います）。`--self-test`
+では抽出カーネルを含む回帰試験を実行します。単一の `.zfp` ファイルを一度に検査する
+には `--check` を使います。
+
+```sh
+dune exec src/main.exe -- --check examples/specialize.zfp
+```
+
+成功時は `OK` を表示して終了コード 0、構文・証明エラー時はファイル名と行番号を表示して
+終了コード 1 になります。CI では次のように利用できます。
+
+```sh
+dune exec src/main.exe -- --check path/to/proof.zfp
+```
+
+`--check` はサーバーを起動せず、ファイル全体を読み込んで `qed.` まで含めて検査します。
 
 Coq のすべての形式化を検査するには次を実行します。
 
