@@ -96,7 +96,7 @@ async function main() {
     "utf8"
   );
   const chooseLine = chooseProof.split(/\r?\n/).findIndex((line) =>
-    line.trim().startsWith("Choose ")
+    line.trim().startsWith("choose ")
   );
   const chooseDeclaration = await client.step(
     textThroughLine(chooseProof, chooseLine)
@@ -107,7 +107,7 @@ async function main() {
 
   const chooseResult = await client.check(`alias is_empty x :=
     forall y, not (y in x).
-  Choose empty Hempty from empty_set.
+  choose empty Hempty from empty_set.
   theorem chosen_empty : is_empty empty.
   exact Hempty.
   qed.`);

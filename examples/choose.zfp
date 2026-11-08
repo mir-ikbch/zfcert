@@ -1,5 +1,5 @@
 alias is_empty x := forall y, not (y in x).
-Choose empty Hempty from empty_set.
+choose empty Hempty from empty_set.
 
 theorem chosen_empty_is_empty : is_empty empty.
 put Hempty.

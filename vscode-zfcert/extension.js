@@ -319,7 +319,7 @@ function scheduleAnalysis(editor, services) {
 function tacticCompletions() {
   const entries = [
     ["alias", "alias ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.", "Give a transparent alias to a proposition, optionally with arguments"],
-    ["Choose", "Choose ${1:empty} ${2:Hempty} from ${3:empty_set}.", "Declare a global witness constant and its certified fact"],
+    ["choose", "choose ${1:empty} ${2:Hempty} from ${3:empty_set}.", "Declare a global witness constant and its certified fact"],
     ["rule", "rule ${1|axiom,hypothesis,falsum_elim,impl_intro,impl_elim,conj_intro,conj_elim_l,conj_elim_r,disj_intro_l,disj_intro_r,disj_elim,all_intro,all_elim,ex_intro,ex_elim,equal_refl,equal_elim,cut|}.", "Apply one primitive natural-deduction rule"],
     ["rule cut", "rule cut ${1:H} : ${2:P}.", "Introduce and prove an intermediate proposition with Cut"],
     ["rule equal_elim", "rule equal_elim ${1:s} ${2:t} ${3:x} : ${4:P}.", "Apply primitive equality elimination"],

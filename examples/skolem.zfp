@@ -1,5 +1,5 @@
 (* A function symbol introduced from the pairing axiom. *)
-Choose pair Hpair from pairing.
+choose pair Hpair from pairing.
 
 theorem pair_shape :
   forall a, forall b, forall x,

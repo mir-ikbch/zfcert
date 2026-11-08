@@ -91,7 +91,7 @@ type proposition_alias = {
   body : formula;
 }
 
-(** A [Choose] declaration extends the extracted global environment.  With
+(** A [choose] declaration extends the extracted global environment.  With
     specialization terms it selects an existential witness; without terms it
     introduces a certified Skolem function for a universal-existential fact. *)
 type choose_declaration = {
@@ -393,7 +393,7 @@ let lookup_fact name context =
       end
 
 (* Global facts are present in the extracted proof state, but facts declared
-   by an earlier theorem (and facts introduced by [Choose]) are deliberately
+   by an earlier theorem (and facts introduced by [choose]) are deliberately
    hidden from the surface context and from automatic resolution.  Explicit
    name-based tactics may still refer to them. *)
 let global_fact_context state =
@@ -721,7 +721,7 @@ let execute_obtain line_no state command argument =
             "The selected fact does not become existential after specialization."))
       end
 
-(** Prove the existential selected by a [Choose] declaration, replay its
+(** Prove the existential selected by a [choose] declaration, replay its
     certificate, and ask the extracted global environment to add the fresh
     constant and fact.  OCaml plans the certificate but never constructs or
     mutates the logical environment itself. *)
@@ -809,7 +809,7 @@ let declare_global_skolem environment declaration =
     ~source:(kernel_formula source)
     ~proof:certificate
     environment
-  |> accept_kernel_result line_no "global Choose declaration"
+  |> accept_kernel_result line_no "global choose declaration"
 
 let context_names context =
   List.fold_left
@@ -1590,7 +1590,7 @@ let analyze_script script =
             (String.length line - String.length prefix))
         in
         let name, fact, source, terms =
-          parse_choice_words line_no "Choose" argument
+          parse_choice_words line_no "choose" argument
         in
         let declaration = {
           choose_line = line_no;
@@ -1604,7 +1604,7 @@ let analyze_script script =
     | (line_no, line) :: _rest
       when starts_with_at (String.lowercase_ascii line) 0 "skolem " ->
         raise (Proof_error (line_no,
-          "The Skolem keyword has been removed; use Choose f H from fact."))
+          "The Skolem keyword has been removed; use choose f H from fact."))
     | rest -> (aliases, declarations, rest)
   in
   let apply_declarations environment steps declarations =
@@ -1629,7 +1629,7 @@ let analyze_script script =
              in
              let description =
                String.concat " "
-                 ("Choose" :: declaration.choose_name ::
+                 ("choose" :: declaration.choose_name ::
                   declaration.choose_fact :: "from" ::
                   declaration.choose_source :: declaration.choose_terms)
              in
@@ -1643,7 +1643,7 @@ let analyze_script script =
     let global_environment, declaration_steps =
       apply_declarations environment steps declarations
     in
-    (* A [Choose] declaration is a global declaration, not an automatic
+    (* A [choose] declaration is a global declaration, not an automatic
        hypothesis of the theorem that follows it.  Keep its certified fact in
        the extracted environment so that it can still be used as a source by
        later declarations, but hide it from the surface proof context and
@@ -1680,7 +1680,7 @@ let analyze_script script =
         let prefix = "theorem " in
         if not (starts_with_at lower_header 0 prefix) then
           raise (Proof_error (header_line,
-            "After aliases and Choose declarations, use: theorem name : formula."));
+            "After aliases and choose declarations, use: theorem name : formula."));
         let content = trim (String.sub header (String.length prefix) (String.length header - String.length prefix)) in
         let colon =
           try find_colon content

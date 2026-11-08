@@ -71,7 +71,7 @@ resolution, may legitimately take longer than a short interactive request."
 (defvar-local zfcert--error-overlay nil)
 
 (defconst zfcert--font-lock-keywords
-  `((,(regexp-opt '("alias" "Choose" "theorem" "qed") 'symbols)
+  `((,(regexp-opt '("alias" "choose" "theorem" "qed") 'symbols)
      . font-lock-keyword-face)
     (,(regexp-opt
        '("rule" "intro" "intros" "exact" "apply" "specialize" "obtain" "put" "cases" "use"

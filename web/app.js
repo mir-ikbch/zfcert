@@ -60,12 +60,12 @@ intro H.
 exact H.
 qed.`,
   choose: `alias is_empty x := forall y, not (y in x).
-Choose empty Hempty from empty_set.
+choose empty Hempty from empty_set.
 theorem chosen_empty_is_empty : is_empty empty.
 put Hempty.
 exact Hempty.
 qed.`,
-  choose_function: `Choose pair Hpair from pairing.
+  choose_function: `choose pair Hpair from pairing.
 theorem pair_shape :
   forall a, forall b, forall x,
     (x in pair(a,b) <-> (x = a or x = b)).

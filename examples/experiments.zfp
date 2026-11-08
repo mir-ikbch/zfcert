@@ -1,6 +1,15 @@
-Choose empty empty_is_empty from empty_set.
+choose empty empty_is_empty from empty_set.
 
-Choose pair Hpair from pairing.
+choose pair Hpair from pairing.
+theorem same_members_same_set :
+  forall a,
+  forall b, ((forall z, (z in a <-> z in b)) -> a = b).
+intro a.
+intro b.
+intro H.
+apply extensionality.
+apply H.
+qed.
 
 theorem exists_ordpair : forall x, forall y, exists p, forall z, (z in p) <-> (z = x or z = pair(x, y)).
 intros x y.
@@ -8,7 +17,7 @@ specialize pairing x pair(x,y) as H.
 apply H.
 qed.
 
-Choose ordpair Hordpair from exists_ordpair.
+choose ordpair Hordpair from exists_ordpair.
 
 theorem exists_singleton : forall x, exists p, forall y, (y in p) <-> (y = x).
 intro x.
@@ -17,7 +26,7 @@ put Hordpair.
 resolution.
 qed.
 
-Choose singleton Hsingleton from exists_singleton.
+choose singleton Hsingleton from exists_singleton.
 
 theorem exists_cup : forall x, forall y, exists u, forall z, (z in u <-> z in x or z in y).
 intro x.
@@ -69,7 +78,7 @@ split.
       refl.
 qed.
 
-Choose cup Hcup from exists_cup.
+choose cup Hcup from exists_cup.
 
 theorem exists_succ : forall x, exists u, forall z, (z in u <-> z in x or z in singleton(x)).
 intro x.
@@ -77,12 +86,12 @@ specialize exists_cup x singleton(x) as Hc.
 exact Hc.
 qed.
 
-Choose succ Hsucc from exists_succ.
+choose succ Hsucc from exists_succ.
 
 alias is_emp_or_succ n := n = empty() or exists k, n = succ(k).
 alias is_natural n := is_emp_or_succ n and forall m, m in n -> is_emp_or_succ m.
 
-Choose inf Hinf from infinity.
+choose inf Hinf from infinity.
 
 theorem separation_nat : forall a, exists b, forall x, x in b <-> x in a and is_natural x.
 intro a.
@@ -95,9 +104,9 @@ specialize separation_nat inf as H.
 apply H.
 qed.
 
-Choose nat Hnat from separation_infnat.
+choose nat Hnat from separation_infnat.
 
-Choose pow Hpow from power_set.
+choose pow Hpow from power_set.
 
 theorem exists_prod :
 forall x y, exists pr, forall w,

@@ -4,9 +4,9 @@
     "body": "alias ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.",
     "description": "Give a transparent alias to a proposition, optionally with arguments"
   },
-  "Choose declaration": {
-    "prefix": "Choose",
-    "body": "Choose ${1:empty} ${2:Hempty} from ${3:empty_set}.",
+  "choose declaration": {
+    "prefix": "choose",
+    "body": "choose ${1:empty} ${2:Hempty} from ${3:empty_set}.",
     "description": "Declare a certified constant or function and its fact"
   },
   "Primitive rule proof": {

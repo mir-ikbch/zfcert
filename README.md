@@ -162,7 +162,7 @@ exists x, P        # ∃x, P
 false              # ⊥
 ```
 
-### 定理、別名、Choose
+### 定理、別名、choose
 
 ```text
 alias is_empty x := forall y, not (y in x).
@@ -179,12 +179,12 @@ qed.
 `alias foo := P.` と書けます。`intro x y.` のように `intro` に複数の名前を渡すことは
 できません。複数導入には `intros x y.` を使います。
 
-`Choose` は、存在命題の証明書を検査した後で、定数または関数記号と具体化済みの事実を
+`choose` は、存在命題の証明書を検査した後で、定数または関数記号と具体化済みの事実を
 グローバル環境に追加します。
 
 ```text
-Choose empty Hempty from empty_set.
-Choose pair Hpair from pairing.
+choose empty Hempty from empty_set.
+choose pair Hpair from pairing.
 
 theorem pair_shape :
   forall a, forall b, forall x,
@@ -194,8 +194,8 @@ exact Hpair.
 qed.
 ```
 
-`Choose f H from fact.` は `forall ... exists ...` から関数記号 `f` を導入します。
-存在事実に具体化項を指定すると、0 引数の定数を選べます。Choose で追加された事実や
+`choose f H from fact.` は `forall ... exists ...` から関数記号 `f` を導入します。
+存在事実に具体化項を指定すると、0 引数の定数を選べます。choose で追加された事実や
 以前の定理は後続の証明状態・`resolution` の探索範囲には自動では入りません。必要なら
 `put Hempty.` や `put previous_result.` で現在の仮定に明示的に追加してください。
 ただし、`specialize`、`apply`、`exact`、`obtain`、`cases`、`rewrite` など、名前を
@@ -356,7 +356,7 @@ ZFCERT_RESOLUTION_STATS=1 dune exec src/main.exe -- --self-test
 - `src/parser.ml`: 字句解析、論理式の優先順位、複数行文、終端 `.`、コメント。
 - `src/kernel_syntax.ml`: 表面構文と抽出された名前付き構文の変換。
 - `src/rule_parser.ml`: `rule` 文を型付きの名前付き規則要求へ変換する純粋なパーサー。
-- `src/proof_session.ml`: 別名・Choose の展開、表面タクティクの規則列計画、抽出 API の
+- `src/proof_session.ml`: 別名・choose の展開、表面タクティクの規則列計画、抽出 API の
   実行、対話的証明状態、`qed` 時の証明書再実行。
 - `src/resolution.ml`: `resolution` の節変換、単一化、探索、プリミティブ証明列の生成。
 - `src/api_json.ml`: 証明状態、ゴール、エラー、証明書の JSON 表現。
