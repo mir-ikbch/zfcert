@@ -566,6 +566,26 @@ choose impossible Himpossible from Hempty")
         if not (contains message "Function applications use f(a, b), not f a b")
         then failwith "The function-application parser error was not informative"
   end;
+  List.iter
+    (fun (input, suggestion) ->
+       try
+         ignore (Parser.parse_formula input);
+         failwith "The parser accepted a whitespace function before a relation"
+       with
+       | Parser.Parse_error (_, message) ->
+           if not (contains message "Function applications require parentheses")
+              || not (contains message suggestion)
+           then failwith
+             ("The parser did not suggest parentheses for: " ^ input))
+    [
+      ("zero in s and (forall x, x in s -> succ x in s)", "succ(x)");
+      ("succ x = y", "succ(x)");
+      ("succ x != y", "succ(x)");
+      ("pair x y in s", "pair(x, y)");
+    ];
+  List.iter
+    (fun input -> ignore (Parser.parse_formula input))
+    ["P x"; "(P x)"; "P x -> Q x"; "succ(x) in s"];
   if not
        (rejected
           "choose empty Hempty from empty_set

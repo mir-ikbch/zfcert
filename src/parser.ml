@@ -281,7 +281,17 @@ and parse_prefix state =
                     arguments (argument :: result)
                 | _ -> List.rev result
               in
-              Named (name, arguments [])
+              let arguments = arguments [] in
+              begin match arguments, peek state with
+              | _ :: _, (Equal | NotEqual | Member) ->
+                  raise (Parse_error
+                    (state.position,
+                     Printf.sprintf
+                       "Function applications require parentheses. Write %s(%s) instead of %s."
+                       name (String.concat ", " arguments)
+                       (String.concat " " (name :: arguments))))
+              | _ -> Named (name, arguments)
+              end
           | App _ ->
               raise (Parse_error
                 (state.position, "A function application must be used in a formula."))
