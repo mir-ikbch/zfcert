@@ -1,4 +1,9 @@
 {
+  "Input proof file": {
+    "prefix": "input",
+    "body": "input \"${1:filename.zfp}\".",
+    "description": "Read a saved proof file relative to this file"
+  },
   "Proposition alias": {
     "prefix": "alias",
     "body": "alias ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.",

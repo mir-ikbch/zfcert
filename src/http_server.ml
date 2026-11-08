@@ -29,24 +29,90 @@ let send_response channel status content_type body =
   output_string channel body;
   flush channel
 
-let rec read_headers channel content_length =
+type request_headers = {
+  content_length : int;
+  filename : string option;
+  duplicate_filename : bool;
+}
+
+let rec read_headers channel headers =
   match input_line channel with
-  | exception End_of_file -> content_length
+  | exception End_of_file -> headers
   | line ->
       let line = trim line in
-      if line = "" then content_length
+      if line = "" then headers
       else
-        let prefix = "content-length:" in
-        let content_length =
-          if starts_with (String.lowercase_ascii line) prefix then
-            let value =
-              String.sub line (String.length prefix)
-                (String.length line - String.length prefix)
-            in
-            try int_of_string (trim value) with Failure _ -> 0
-          else content_length
+        let headers =
+          match String.index_opt line ':' with
+          | None -> headers
+          | Some separator ->
+              let name =
+                String.sub line 0 separator |> String.lowercase_ascii
+              in
+              let value =
+                String.sub line (separator + 1)
+                  (String.length line - separator - 1) |> trim
+              in
+              match name with
+              | "content-length" ->
+                  let content_length =
+                    try int_of_string value with Failure _ -> 0
+                  in
+                  { headers with content_length }
+              | "x-zfcert-filename" ->
+                  { headers with
+                    filename = Some value;
+                    duplicate_filename = headers.filename <> None }
+              | _ -> headers
         in
-        read_headers channel content_length
+        read_headers channel headers
+
+let request_filename headers =
+  let invalid message =
+    raise (Proof_session.Proof_error
+             (1, "Invalid X-ZFCert-Filename header: " ^ message))
+  in
+  if headers.duplicate_filename then invalid "duplicate header";
+  match headers.filename with
+  | None -> None
+  | Some encoded ->
+      let decoded = Buffer.create (String.length encoded) in
+      let hex = function
+        | '0' .. '9' as character -> Char.code character - Char.code '0'
+        | 'a' .. 'f' as character -> Char.code character - Char.code 'a' + 10
+        | 'A' .. 'F' as character -> Char.code character - Char.code 'A' + 10
+        | _ -> invalid "malformed percent escape"
+      in
+      let rec decode index =
+        if index < String.length encoded then
+          if encoded.[index] = '%' then begin
+            if index + 2 >= String.length encoded then
+              invalid "malformed percent escape";
+            let character =
+              Char.chr (hex encoded.[index + 1] * 16 + hex encoded.[index + 2])
+            in
+            Buffer.add_char decoded character;
+            decode (index + 3)
+          end else begin
+            Buffer.add_char decoded encoded.[index];
+            decode (index + 1)
+          end
+      in
+      decode 0;
+      let filename = Buffer.contents decoded in
+      if filename = "" || Filename.is_relative filename then
+        invalid "expected a nonempty absolute filename";
+      if String.exists
+           (fun character -> character = '\000' || character = '\r'
+                             || character = '\n') filename then
+        invalid "filename contains a forbidden character";
+      let filename =
+        try Unix.realpath filename with
+        | Unix.Unix_error ((Unix.ENOENT | Unix.ENOTDIR), _, _) -> filename
+        | Unix.Unix_error (error, _, _) ->
+            invalid ("cannot resolve filename: " ^ Unix.error_message error)
+      in
+      Some filename
 
 let proof_response evaluate body =
   try evaluate body with
@@ -88,10 +154,14 @@ let handle_client web_root socket =
              | method_ :: path :: _ -> (method_, path)
              | _ -> ("", "")
            in
-           let content_length = read_headers input 0 in
+           let headers =
+             read_headers input
+               { content_length = 0; filename = None;
+                 duplicate_filename = false }
+           in
            let body =
-             if content_length > 0 then
-               really_input_string input content_length
+             if headers.content_length > 0 then
+               really_input_string input headers.content_length
              else ""
            in
            match method_, path with
@@ -107,7 +177,12 @@ let handle_client web_root socket =
                let response =
                  proof_response
                    (fun script ->
-                      Proof_session.check_script script |> Api_json.success)
+                      let filename = request_filename headers in
+                      let load_input =
+                        Option.map (fun _ -> Native_input.load) filename
+                      in
+                      Proof_session.check_script ?filename ?load_input script
+                      |> Api_json.success)
                    body
                in
                send_response output "200 OK"
@@ -116,8 +191,12 @@ let handle_client web_root socket =
                let response =
                  proof_response
                    (fun script ->
+                      let filename = request_filename headers in
+                      let load_input =
+                        Option.map (fun _ -> Native_input.load) filename
+                      in
                       let state, has_qed =
-                        Proof_session.analyze_script script
+                        Proof_session.analyze_script ?filename ?load_input script
                       in
                       Api_json.step state ~has_qed)
                    body

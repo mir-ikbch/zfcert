@@ -42,10 +42,15 @@ class KernelClient {
     this.timeoutMs = timeoutMs;
   }
 
-  request(method, path, body = "") {
+  request(method, path, body = "", filename) {
     const target = new URL(path, `${this.serverUrl}/`);
     const transport = target.protocol === "https:" ? https : http;
     const payload = Buffer.from(body, "utf8");
+    const headers = {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Content-Length": payload.length
+    };
+    if (filename) headers["X-ZFCert-Filename"] = encodeURIComponent(filename);
 
     return new Promise((resolve, reject) => {
       const request = transport.request({
@@ -54,10 +59,7 @@ class KernelClient {
         port: target.port,
         path: `${target.pathname}${target.search}`,
         method,
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Content-Length": payload.length
-        }
+        headers
       }, (response) => {
         const chunks = [];
         response.on("data", (chunk) => chunks.push(chunk));
@@ -88,12 +90,12 @@ class KernelClient {
     return this.request("GET", "api/health");
   }
 
-  step(script) {
-    return this.request("POST", "api/step", script);
+  step(script, filename) {
+    return this.request("POST", "api/step", script, filename);
   }
 
-  check(script) {
-    return this.request("POST", "api/check", script);
+  check(script, filename) {
+    return this.request("POST", "api/check", script, filename);
   }
 }
 

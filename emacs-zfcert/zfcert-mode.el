@@ -19,6 +19,7 @@
 (require 'url)
 (require 'url-http)
 (require 'url-parse)
+(require 'url-util)
 
 (defgroup zfcert nil
   "Interactive support for ZFCert proofs."
@@ -71,7 +72,7 @@ resolution, may legitimately take longer than a short interactive request."
 (defvar-local zfcert--error-overlay nil)
 
 (defconst zfcert--font-lock-keywords
-  `((,(regexp-opt '("alias" "choose" "theorem" "qed") 'symbols)
+  `((,(regexp-opt '("input" "alias" "choose" "theorem" "qed") 'symbols)
      . font-lock-keyword-face)
     (,(regexp-opt
        '("rule" "intro" "intros" "exact" "apply" "specialize" "obtain" "put" "cases" "use"
@@ -161,14 +162,22 @@ URL library's prompt asking whether the old HTTP buffer should be killed."
       (kill-buffer buffer))))
 
 (defun zfcert--request (method endpoint &optional body timeout)
-  "Send METHOD request to ENDPOINT with BODY and decode its JSON response."
+  "Send METHOD request to ENDPOINT with BODY and decode its JSON response.
+For proof requests, send `buffer-file-name' to resolve relative input paths."
   (when zfcert--request-in-flight
     (user-error "A ZFCert request is already in progress"))
   (let* ((url-request-method method)
          (url-request-data
           (and body (encode-coding-string body 'utf-8)))
          (url-request-extra-headers
-          '(("Content-Type" . "text/plain; charset=utf-8")))
+          (append
+           '(("Content-Type" . "text/plain; charset=utf-8"))
+           (when (and buffer-file-name
+                      (equal method "POST")
+                      (member endpoint '("api/check" "api/step")))
+             (list (cons "X-ZFCert-Filename"
+                         (url-hexify-string
+                          (expand-file-name buffer-file-name)))))))
          (url-show-status nil)
          (target (concat (zfcert--base-url) "/" endpoint))
          ;; This dynamically scoped flag also protects against an idle timer

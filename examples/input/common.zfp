@@ -1,0 +1,6 @@
+alias is_empty x := forall y, not (y in x).
+choose empty Hempty from empty_set.
+
+theorem empty_is_empty : is_empty empty.
+exact Hempty.
+qed.

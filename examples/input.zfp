@@ -1,0 +1,5 @@
+input "input/common.zfp".
+
+theorem use_input : is_empty empty.
+exact empty_is_empty.
+qed.

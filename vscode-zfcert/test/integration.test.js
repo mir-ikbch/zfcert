@@ -2,6 +2,7 @@
 
 const assert = require("assert");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { KernelClient, textThroughLine } = require("../kernelClient");
 
@@ -46,7 +47,7 @@ async function main() {
   assert.strictEqual(rejected.ok, false);
   assert.strictEqual(
     rejected.message,
-    "After aliases and choices, use: theorem name : formula."
+    "After aliases and choose declarations, use: theorem name : formula."
   );
 
   const commented = await client.check(`(* A block comment may contain periods.
@@ -120,6 +121,41 @@ async function main() {
   const ruleResult = await client.check(rulesProof);
   assert.strictEqual(ruleResult.ok, true);
   assert.strictEqual(ruleResult.theorem, "equality_transport_by_rules");
+
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "zfcert input 証明 #100%-"));
+  try {
+    fs.mkdirSync(path.join(directory, "lib"));
+    fs.writeFileSync(path.join(directory, "lib", "base.zfp"), `
+      theorem imported_identity : forall x, x = x.
+      intro x.
+      refl.
+      qed.`);
+    fs.writeFileSync(path.join(directory, "lib", "middle.zfp"), 'input "base.zfp".');
+    const filename = path.join(directory, "main.zfp");
+    // The editor buffer is authoritative even when the root file differs on disk.
+    fs.writeFileSync(filename, "bogus.");
+    const script = `input "lib/middle.zfp".
+      theorem from_input : forall x, x = x.
+      put imported_identity.
+      exact imported_identity.
+      qed.`;
+    const included = await client.check(script, filename);
+    assert.strictEqual(included.ok, true, included.message);
+    assert.strictEqual(included.theorem, "from_input");
+
+    const afterInput = await client.step(textThroughLine(script, 2), filename);
+    assert.strictEqual(afterInput.ok, true, afterInput.message);
+    assert.strictEqual(afterInput.goals[0].context.some((entry) =>
+      entry.name === "imported_identity"), true);
+
+    fs.writeFileSync(path.join(directory, "lib", "base.zfp"), "\nbogus.");
+    const invalidInput = await client.check(script, filename);
+    assert.strictEqual(invalidInput.ok, false);
+    assert.strictEqual(invalidInput.line, 1);
+    assert.ok(invalidInput.message.includes("base.zfp:2"), invalidInput.message);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 
   console.log("VS Code client integration tests passed");
 }

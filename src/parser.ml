@@ -307,6 +307,22 @@ let parse_formula input =
 let split_statements script =
   let length = String.length script in
   let buffer = Buffer.create 256 in
+  let rec quoted_string start_line index line escaped =
+    if index >= length then
+      raise
+        (Statement_error
+           (start_line, "Unterminated double-quoted string."))
+    else
+      let character = script.[index] in
+      Buffer.add_char buffer character;
+      let next_line = if character = '\n' then line + 1 else line in
+      if escaped then
+        quoted_string start_line (index + 1) next_line false
+      else if character = '"' then
+        (index + 1, next_line)
+      else
+        quoted_string start_line (index + 1) next_line (character = '\\')
+  in
   let rec loop index line start_line line_comment block_depth
       block_start_line statements =
     if index >= length && block_depth > 0 then
@@ -347,6 +363,14 @@ let split_statements script =
           loop (index + 1) line start_line true 0 None statements
       else
         match character with
+        | '"' ->
+            Buffer.add_char buffer character;
+            let next_index, next_line =
+              quoted_string line (index + 1) line false
+            in
+            loop next_index next_line
+              (Some (Option.value start_line ~default:line))
+              false 0 None statements
         | _ when starts_with_at script index "(*" ->
             Buffer.add_char buffer ' ';
             loop (index + 2) line start_line false 1 (Some line)

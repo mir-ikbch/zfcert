@@ -162,6 +162,39 @@ exists x, P        # ∃x, P
 false              # ⊥
 ```
 
+### 別ファイルの読み込み
+
+`input "filename".` で、別ファイルの文をその位置に読み込めます。
+
+```text
+input "input/common.zfp".
+
+theorem use_input : is_empty empty.
+exact empty_is_empty.
+qed.
+```
+
+読み込んだ `alias`、`choose`、定理は、同じファイルに書いた場合と同じように後続の
+証明で使えます。証明の途中で、タクティクを書いたファイルを読み込むこともできます。
+名前空間は追加せず、同じファイルを複数回指定すると、その都度読み込みます。
+
+相対パスは **`input` を書いたファイルのディレクトリ** が基準です。読み込み先にも
+`input` を書けますが、循環する読み込みはエラーになります。ファイル名は二重引用符で
+囲み、空白や日本語も使えます。ファイル名中の `"` と `\` は `\"` と `\\` で表せます。
+エラーには読み込み先のファイル名と行番号が表示され、エディタでは呼び出し元の
+`input` 行が示されます。
+
+CLI と、ネイティブカーネルを使う VS Code・Emacs で利用できます。エディタでは
+呼び出し元にファイル名が必要です。読み込み先はディスクに保存した内容を使うので、
+編集後は保存してから再検査してください。ブラウザの WebAssembly / JavaScript 版から
+ローカルファイルを読み込むことはできません。
+
+実行できる例は [`examples/input.zfp`](examples/input.zfp) です。
+
+```sh
+dune exec src/main.exe -- --check examples/input.zfp
+```
+
 ### 定理、別名、choose
 
 ```text
@@ -354,6 +387,8 @@ ZFCERT_RESOLUTION_STATS=1 dune exec src/main.exe -- --self-test
   関数の返り値からしか得られません。
 - `src/syntax.ml`: 論理式の構文木、表示、自由変数、捕獲回避代入、α同値。
 - `src/parser.ml`: 字句解析、論理式の優先順位、複数行文、終端 `.`、コメント。
+- `src/script_input.ml`: `input` の文展開、循環検出、読み込み元の位置情報。
+- `src/native_input.ml`: CLI・HTTP 用のファイル読み込みと相対パス解決。
 - `src/kernel_syntax.ml`: 表面構文と抽出された名前付き構文の変換。
 - `src/rule_parser.ml`: `rule` 文を型付きの名前付き規則要求へ変換する純粋なパーサー。
 - `src/proof_session.ml`: 別名・choose の展開、表面タクティクの規則列計画、抽出 API の

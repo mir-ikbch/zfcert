@@ -8,11 +8,12 @@
   resolution
   rule_parser
   kernel_syntax
+  script_input
   parser
   syntax)
  (libraries zfcert_kernel))
 
 (executable
  (name main)
- (modules main cli self_test http_server)
+ (modules main cli self_test input_test http_server native_input)
  (libraries unix zfcert_core))

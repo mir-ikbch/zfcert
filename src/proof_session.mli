@@ -24,8 +24,10 @@ exception Proof_error of int * string
 
 val axioms : axiom list
 val find_axiom : string -> axiom option
-val analyze_script : string -> session * bool
-val check_script : string -> session
+val analyze_script :
+  ?filename:string -> ?load_input:Script_input.loader -> string -> session * bool
+val check_script :
+  ?filename:string -> ?load_input:Script_input.loader -> string -> session
 
 val theorem_name : session -> string
 val theorem : session -> Syntax.formula

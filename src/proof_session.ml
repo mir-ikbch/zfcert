@@ -121,11 +121,6 @@ exception Proof_error of int * string
 
 let trim = String.trim
 
-let split_statements script =
-  try Parser.split_statements script with
-  | Parser.Statement_error (line, message) ->
-      raise (Proof_error (line, message))
-
 let find_alias name aliases =
   List.find_opt
     (fun alias -> alias.alias_name = name)
@@ -1575,8 +1570,7 @@ let parse_alias line_no aliases line =
       body;
     }]
 
-let analyze_script script =
-  let meaningful = split_statements script in
+let analyze_statements meaningful =
   let rec read_declarations aliases declarations = function
     | (line_no, line) :: rest
       when starts_with_at (String.lowercase_ascii line) 0 "alias " ->
@@ -1742,23 +1736,41 @@ let analyze_script script =
   in
   process StringSet.empty [] Extracted.empty_environment [] meaningful
 
-let check_script script =
-  let state, _ = analyze_script script in
-  if state.theorem_name = "" then state
-  else if Extracted.solved state.kernel_state then
-    begin match state.final_certificate with
-    | Some _ -> state
-    | None ->
-        let line = List.length (String.split_on_char '\n' script) in
-        let certificate =
-          Extracted.finalize state.kernel_state
-          |> accept_kernel_result line "final certificate replay"
-        in
-        { state with final_certificate = Some certificate }
-    end
-  else
-    let line = List.length (String.split_on_char '\n' script) in
-    raise (Proof_error (line, "The proof has unresolved goals."))
+let prepare_script ?filename ?load_input script =
+  try Script_input.expand ?filename ?load_input script with
+  | Script_input.Error (line, message) -> raise (Proof_error (line, message))
+
+let with_source source evaluate =
+  if Script_input.statements source = [] then evaluate ()
+  else try evaluate () with
+  | Proof_error (line, message) ->
+      let line, message = Script_input.error source line message in
+      raise (Proof_error (line, message))
+
+let analyze_script ?filename ?load_input script =
+  let source = prepare_script ?filename ?load_input script in
+  with_source source (fun () ->
+    analyze_statements (Script_input.statements source))
+
+let check_script ?filename ?load_input script =
+  let source = prepare_script ?filename ?load_input script in
+  with_source source (fun () ->
+    let state, _ = analyze_statements (Script_input.statements source) in
+    if state.theorem_name = "" then state
+    else if Extracted.solved state.kernel_state then
+      begin match state.final_certificate with
+      | Some _ -> state
+      | None ->
+          let line = Script_input.end_line source in
+          let certificate =
+            Extracted.finalize state.kernel_state
+            |> accept_kernel_result line "final certificate replay"
+          in
+          { state with final_certificate = Some certificate }
+      end
+    else
+      let line = Script_input.end_line source in
+      raise (Proof_error (line, "The proof has unresolved goals.")))
 
 let theorem_name state = state.theorem_name
 let theorem state = state.theorem

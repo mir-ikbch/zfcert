@@ -1,13 +1,9 @@
-let read_file path =
-  let channel = open_in_bin path in
-  Fun.protect
-    ~finally:(fun () -> close_in_noerr channel)
-    (fun () -> really_input_string channel (in_channel_length channel))
-
 let check_file path =
   try
-    let script = read_file path in
-    let state = Proof_session.check_script script in
+    let filename, script = Native_input.load ~from:None path in
+    let state =
+      Proof_session.check_script ~filename ~load_input:Native_input.load script
+    in
     let theorem = Proof_session.theorem_name state in
     if theorem = "" then
       Printf.printf "OK: %s (declarations checked)\n%!" path

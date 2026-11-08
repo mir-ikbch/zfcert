@@ -7,6 +7,9 @@
       "include": "#comments"
     },
     {
+      "include": "#strings"
+    },
+    {
       "include": "#declarations"
     },
     {
@@ -23,6 +26,17 @@
     }
   ],
   "repository": {
+    "strings": {
+      "name": "string.quoted.double.zfcert",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.zfcert",
+          "match": "\\\\."
+        }
+      ]
+    },
     "comments": {
       "patterns": [
         {
@@ -43,6 +57,10 @@
     },
     "declarations": {
       "patterns": [
+        {
+          "name": "keyword.control.input.zfcert",
+          "match": "\\binput\\b"
+        },
         {
           "name": "meta.alias.zfcert",
           "match": "\\b(alias)\\s+([A-Za-z_][A-Za-z0-9_']*)(?=\\s|:=)",

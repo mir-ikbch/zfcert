@@ -273,7 +273,8 @@ async function analyze(editor, line, services, force = false) {
 
   await ensureKernel(editor, services.output, services.status);
   const script = textThroughLine(document.getText(), line);
-  const data = await client().step(script);
+  const filename = document.uri.scheme === "file" ? document.uri.fsPath : undefined;
+  const data = await client().step(script, filename);
   lastAnalysisVersion = document.version;
   services.goals.update(data);
   services.diagnostics.set(document.uri, diagnosticFor(document, data));
@@ -318,6 +319,7 @@ function scheduleAnalysis(editor, services) {
 
 function tacticCompletions() {
   const entries = [
+    ["input", "input \"${1:filename.zfp}\".", "Read a saved proof file relative to this file"],
     ["alias", "alias ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.", "Give a transparent alias to a proposition, optionally with arguments"],
     ["choose", "choose ${1:empty} ${2:Hempty} from ${3:empty_set}.", "Declare a global witness constant and its certified fact"],
     ["rule", "rule ${1|axiom,hypothesis,falsum_elim,impl_intro,impl_elim,conj_intro,conj_elim_l,conj_elim_r,disj_intro_l,disj_intro_r,disj_elim,all_intro,all_elim,ex_intro,ex_elim,equal_refl,equal_elim,cut|}.", "Apply one primitive natural-deduction rule"],
@@ -384,7 +386,9 @@ function activate(context) {
       if (!editor) return vscode.window.showInformationMessage("Open a .zfp proof file first.");
       try {
         await ensureKernel(editor, output, status);
-        const data = await client().check(editor.document.getText());
+        const document = editor.document;
+        const filename = document.uri.scheme === "file" ? document.uri.fsPath : undefined;
+        const data = await client().check(document.getText(), filename);
         goals.update(data);
         diagnostics.set(editor.document.uri, diagnosticFor(editor.document, data));
         if (data.ok) {

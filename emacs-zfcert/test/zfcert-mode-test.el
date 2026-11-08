@@ -89,6 +89,53 @@
      (zfcert--request "POST" "api/step" "")
      :type 'user-error)))
 
+(ert-deftest zfcert-request-sends-filename-for-proof-requests-only ()
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/証明 #100%/main.zfp")
+    (let (requests)
+      (cl-letf (((symbol-function 'url-retrieve-synchronously)
+                 (lambda (target &rest _)
+                   (push (list target
+                               (cdr (assoc "X-ZFCert-Filename"
+                                           url-request-extra-headers))
+                               (and url-request-data
+                                    (decode-coding-string
+                                     url-request-data 'utf-8)))
+                         requests)
+                   (let ((response (generate-new-buffer " *zfcert-test-http*")))
+                     (with-current-buffer response
+                       (setq-local url-http-response-status 200)
+                       (setq-local url-http-end-of-headers (point-min))
+                       (insert "{\"ok\": true}"))
+                     response))))
+        (zfcert--request "POST" "api/check" "input \"基本.zfp\".")
+        (zfcert--request "POST" "api/step" "input \"基本.zfp\".")
+        (zfcert--request "GET" "api/health")
+        (setq buffer-file-name nil)
+        (zfcert--request "POST" "api/check" "input \"基本.zfp\"."))
+      (setq requests (nreverse requests))
+      (dolist (request (cl-subseq requests 0 2))
+        (should (equal (nth 1 request)
+                       "%2Ftmp%2F%E8%A8%BC%E6%98%8E%20%23100%25%2Fmain.zfp"))
+        (should (equal (nth 2 request) "input \"基本.zfp\".")))
+      (should-not (nth 1 (nth 2 requests)))
+      (should-not (nth 1 (nth 3 requests))))))
+
+(ert-deftest zfcert-mode-recognizes-quoted-input-paths ()
+  (with-temp-buffer
+    (zfcert-mode)
+    (insert "input \"lib/# theorem (* text *).zfp\".\n")
+    (font-lock-ensure)
+    (should (eq (get-text-property (point-min) 'face)
+                'font-lock-keyword-face))
+    (goto-char (point-min))
+    (search-forward "text")
+    (should (nth 3 (syntax-ppss)))
+    (should-not (nth 4 (syntax-ppss)))
+    (goto-char (point-max))
+    (should-not (nth 3 (syntax-ppss)))
+    (should-not (nth 4 (syntax-ppss)))))
+
 (ert-deftest zfcert-mode-recognizes-nested-block-comments ()
   (with-temp-buffer
     (zfcert-mode)
