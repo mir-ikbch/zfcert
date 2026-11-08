@@ -232,3 +232,9 @@ qed.
 choose prod Hprod from product_exists.
 
 alias is_relation X Y R := subset R prod(X,Y).
+
+alias is_function X Y R :=
+      is_relation X Y R and
+      (forall x, x in X -> exists y, opair(x,y) in R) and
+      (forall x, forall y1, forall y2, opair(x,y1) in R -> opair(x,y2) in R -> y1 = y2).
+

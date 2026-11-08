@@ -246,7 +246,7 @@ qed.
 
 choose inf Hinf from inf_zs.
 
-theorem exists_nat : exists nat, contains_nat nat and contained_nat nat.
+theorem exists_nat' : exists nat, contains_nat nat and contained_nat nat.
 separation Hnat inf x : x = zero or (exists x', x = succ(x')).
 obtain nat Hnat' from Hnat.
 cases Hinf.
@@ -277,10 +277,10 @@ split.
     exact Hnatx'_right.
 qed.
 
-theorem exists_nat_minimal : exists n,
+theorem exists_nat : exists n,
   (contains_nat n and contained_nat n) and
   (forall s, contains_nat s -> subset n s).
-obtain m Hm from exists_nat.
+obtain m Hm from exists_nat'.
 cases Hm.
 cases Hm_left.
 separation Hsep m x : forall s, contains_nat s -> x in s.
@@ -332,12 +332,7 @@ split.
   exact Hs.
 qed.
 
-choose nat Hnat_minimal from exists_nat_minimal.
-
-theorem Hnat : contains_nat nat and contained_nat nat.
-cases Hnat_minimal.
-exact Hnat_minimal_left.
-qed.
+choose nat Hnat from exists_nat.
 
 theorem nat_ind :
   forall s,
@@ -346,8 +341,8 @@ theorem nat_ind :
     (forall x, x in s -> succ(x) in s) ->
     s = nat.
 intros s Hsub Hz Hs.
-cases Hnat_minimal.
-specialize Hnat_minimal_right s as Hmin.
+cases Hnat.
+specialize Hnat_right s as Hmin.
 rule cut Hns : subset nat s.
   apply Hmin.
   split.
@@ -363,3 +358,4 @@ split.
   apply Hns.
   exact Hx.
 qed.
+
