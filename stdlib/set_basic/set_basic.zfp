@@ -18,6 +18,8 @@ specialize H2 z as Hz2.
 contradiction.
 qed.
 
+alias subset x y := forall a, a in x -> a in y.
+
 choose pair Hpair from pairing.
 
 theorem exists_singleton : forall x, exists p, forall y, (y in p <-> y = x).
@@ -165,3 +167,8 @@ rule equal_elim a b z : z in s.
 exact Heq.
 exact Ha.
 qed.
+
+definition opair(x,y) := pair(x, pair(x,y)).
+
+theorem product_exists :
+  forall s1 s2, exists prod, forall x, x in prod <->

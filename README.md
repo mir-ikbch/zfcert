@@ -299,8 +299,14 @@ qed.
 - `exact H.` は仮定・公理・以前の定理をそのままゴールに使います。
 - `apply H.` は含意の結論を現在のゴールに合わせます。全称変数をゴールから特定できない
   ときは推測せず失敗します。その場合は `specialize H a as Ha.` のように先に具体化します。
+- `H : p <-> q` に対して、`apply <- H.` はゴール `p` を `q` に、`apply -> H.` は
+  ゴール `q` を `p` に変えます。矢印は同値から使う含意の向きを指定します。
 - `apply H0 in H as H1.` は `H0` の一つの含意前提に `H` を適用し、結果を `H1` として
   仮定に追加します。
+- `H : p <-> q` と `H' : p` に対して、`apply -> H in H' as H''.` は `H'' : q` を
+  仮定に追加します。`H' : q` に逆向きで使う場合は `apply <- H in H' as H''.` で
+  `H'' : p` を得ます。`as` の後には新しい仮定名を指定し、元の仮定も残ります。
+  使用例は [`examples/directed_apply.zfp`](examples/directed_apply.zfp) にあります。
 - `specialize H a b as Hab.` は全称仮定を複数の項で一度に具体化します。
   `choose` で導入した関数記号も使えます。例えば `specialize H f(x) as H1.`、
   `specialize H pair(x, f(x)) as H2.` と書けます。関数項内の空白・改行も使えます。

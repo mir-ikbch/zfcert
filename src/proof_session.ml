@@ -556,9 +556,18 @@ let decompose_imp formula =
   in
   loop [] formula
 
-let apply_fact fact goal =
+let decompose_apply_fact direction fact =
   let metas, body = decompose_forall fact in
-  let premises, conclusion = decompose_imp body in
+  match direction, body with
+  | None, _ ->
+      let premises, conclusion = decompose_imp body in
+      Ok (metas, premises, conclusion)
+  (* Preserve each side as a whole, including implications and negations. *)
+  | Some `Forward, Iff (left, right) -> Ok (metas, [left], right)
+  | Some `Backward, Iff (left, right) -> Ok (metas, [right], left)
+  | Some _, _ -> Error "Directional apply requires an equivalence (<->)."
+
+let apply_fact (metas, premises, conclusion) goal =
   match match_formula metas conclusion goal.target with
   | None -> Error "The conclusion of this fact does not match the current goal."
   | Some sub ->
@@ -711,6 +720,29 @@ let specialize_rules ?(bound = StringSet.empty) line_no definitions fact terms =
           "Too many terms were supplied for universal specialization."))
   in
   build fact terms []
+
+let apply_fact_rules ~bound line_no definitions direction fact substitutions =
+  let rec forall_names = function
+    | Forall (name, body) -> name :: forall_names body
+    | _ -> []
+  in
+  let terms =
+    List.map (fun binder -> StringMap.find binder substitutions)
+      (forall_names fact)
+  in
+  let instantiated, all_commands =
+    specialize_rules ~bound line_no definitions fact terms
+  in
+  let projection =
+    match direction, instantiated with
+    | None, _ -> []
+    | Some `Forward, Iff (left, right) ->
+        [Extracted.NRConjElimL (kernel_formula (Imp (right, left)))]
+    | Some `Backward, Iff (left, right) ->
+        [Extracted.NRConjElimR (kernel_formula (Imp (left, right)))]
+    | Some _, _ -> verified_error line_no
+  in
+  projection @ all_commands
 
 let close_fact line_no name context =
   if List.mem_assoc name context then
@@ -1112,7 +1144,24 @@ let execute_tactic line_no state line =
                 "The type of " ^ argument ^ " does not match the current goal."))
           end
       | "apply" ->
-          let apply_words = words argument in
+          let direction, apply_words =
+            match words argument with
+            | "->" :: rest -> (Some `Forward, rest)
+            | "<-" :: rest -> (Some `Backward, rest)
+            | rest -> (None, rest)
+          in
+          let application =
+            "apply " ^
+            (match direction with
+             | None -> ""
+             | Some `Forward -> "-> "
+             | Some `Backward -> "<- ")
+          in
+          let decompose_fact fact =
+            match decompose_apply_fact direction fact with
+            | Ok parts -> parts
+            | Error message -> raise (Proof_error (line_no, message))
+          in
           begin match apply_words with
           | [fact_name; in_word; source_name; as_word; new_name]
               when String.lowercase_ascii in_word = "in"
@@ -1135,8 +1184,7 @@ let execute_tactic line_no state line =
                   raise (Proof_error (line_no,
                     "Theorem, hypothesis, or axiom not found: " ^ fact_name))
               | Some fact ->
-                  let metas, body = decompose_forall fact in
-                  let premises, conclusion = decompose_imp body in
+                  let metas, premises, conclusion = decompose_fact fact in
                   begin match premises with
                   | [premise] ->
                       begin match match_formula metas premise source_formula with
@@ -1156,22 +1204,9 @@ let execute_tactic line_no state line =
                           let instantiated_conclusion =
                             instantiate_formula substitutions conclusion
                           in
-                          let rec forall_names names = function
-                            | Forall (name, body) ->
-                                forall_names (name :: names) body
-                            | body -> (List.rev names, body)
-                          in
-                          let binders, _ = forall_names [] fact in
-                          let terms =
-                            List.map
-                              (fun binder ->
-                                 Option.value
-                                   (StringMap.find_opt binder substitutions)
-                                   ~default:binder)
-                              binders
-                          in
-                          let _, all_commands =
-                            specialize_rules ~bound line_no state.definitions fact terms
+                          let fact_commands =
+                            apply_fact_rules ~bound line_no state.definitions
+                              direction fact substitutions
                           in
                           let close_command, axioms =
                             close_fact line_no fact_name
@@ -1185,13 +1220,13 @@ let execute_tactic line_no state line =
                              checked_step
                                (Extracted.NRImplElim
                                   (kernel_formula instantiated_premise))]
-                            @ List.map checked_step all_commands
+                            @ List.map checked_step fact_commands
                             @ [checked_step ~axioms close_command;
                                checked_step
                                  (Extracted.NRHypothesis source_name)]
                           in
                           apply_certificate_program line_no state program
-                            ("apply " ^ fact_name ^ " in " ^ source_name
+                            (application ^ fact_name ^ " in " ^ source_name
                              ^ " as " ^ new_name)
                           end
                       end
@@ -1207,25 +1242,12 @@ let execute_tactic line_no state line =
                   raise (Proof_error (line_no,
                     "Theorem, hypothesis, or axiom not found: " ^ fact_name))
               | Some fact ->
-                  begin match apply_fact fact goal with
+                  begin match apply_fact (decompose_fact fact) goal with
                   | Error message -> raise (Proof_error (line_no, message))
                   | Ok (premises, substitutions) ->
-                      let rec forall_names names = function
-                        | Forall (name, body) ->
-                            forall_names (name :: names) body
-                        | body -> (List.rev names, body)
-                      in
-                      let binders, _ = forall_names [] fact in
-                      let terms =
-                        List.map
-                          (fun binder ->
-                             Option.value
-                               (StringMap.find_opt binder substitutions)
-                               ~default:binder)
-                          binders
-                      in
-                      let _, all_commands =
-                        specialize_rules ~bound line_no state.definitions fact terms
+                      let fact_commands =
+                        apply_fact_rules ~bound line_no state.definitions
+                          direction fact substitutions
                       in
                       let implication_commands =
                         List.rev premises
@@ -1238,16 +1260,16 @@ let execute_tactic line_no state line =
                       in
                       let program =
                         List.map checked_step
-                          (implication_commands @ all_commands)
+                          (implication_commands @ fact_commands)
                         @ [checked_step ~axioms close_command]
                       in
                       apply_certificate_program line_no state program
-                        ("apply " ^ fact_name)
+                        (application ^ fact_name)
                   end
               end
           | _ ->
               raise (Proof_error (line_no,
-                "Use apply H or apply H0 in H as H1."))
+                "Use apply [->|<-] H or apply [->|<-] H0 in H as H1."))
           end
       | "rewrite" ->
           let direction, equality_name =

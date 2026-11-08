@@ -130,6 +130,177 @@ let rejected script =
     false
   with Proof_session.Proof_error _ -> true
 
+let run_directional_apply_tests () =
+  let assert_formula actual expected message =
+    if not (Syntax.alpha_equal actual (Parser.parse_formula expected)) then
+      failwith message
+  in
+  let assert_replayed script =
+    let state = Proof_session.check_script (terminate_lines script) in
+    match Proof_session.certificate_rules state with
+    | Some (_ :: _) -> ()
+    | _ -> failwith "Directional apply did not produce a replayed certificate"
+  in
+  let assert_transition prefix tactic expected_target expected_context finish =
+    let script = prefix ^ "\n" ^ tactic in
+    let state, has_qed =
+      Proof_session.analyze_script (terminate_lines script)
+    in
+    if has_qed then failwith "Directional apply unexpectedly finalized a proof";
+    begin match Proof_session.goals state with
+    | [{ target; context; _ }] ->
+        assert_formula target expected_target
+          ("Directional apply produced an unexpected goal after " ^ tactic);
+        if List.length context <> List.length expected_context then
+          failwith ("Directional apply changed the context size after " ^ tactic);
+        List.iter
+          (fun (name, expected) ->
+             match List.assoc_opt name context with
+             | Some actual ->
+                 assert_formula actual expected
+                   ("Directional apply changed hypothesis " ^ name)
+             | None ->
+                 failwith ("Directional apply lost hypothesis " ^ name))
+          expected_context
+    | _ -> failwith "Directional apply did not leave one transformed goal"
+    end;
+    assert_replayed (script ^ "\n" ^ finish ^ "\nqed")
+  in
+  let equivalence = "a in b <-> b in a" in
+  let forward_prefix =
+    "theorem directional_apply_forward : forall a b, ((a in b <-> b in a) -> (a in b -> b in a))\nintros a b H Ha"
+  in
+  let backward_prefix =
+    "theorem directional_apply_backward : forall a b, ((a in b <-> b in a) -> (b in a -> a in b))\nintros a b H Hb"
+  in
+  assert_transition forward_prefix "apply -> H" "a in b"
+    ["H", equivalence; "Ha", "a in b"] "exact Ha";
+  assert_transition backward_prefix "apply <- H" "b in a"
+    ["H", equivalence; "Hb", "b in a"] "exact Hb";
+  assert_transition forward_prefix "apply -> H in Ha as Hb" "b in a"
+    ["H", equivalence; "Ha", "a in b"; "Hb", "b in a"] "exact Hb";
+  assert_transition backward_prefix "apply <- H in Hb as Ha" "a in b"
+    ["H", equivalence; "Hb", "b in a"; "Ha", "a in b"] "exact Ha";
+  let implication_prefix =
+    "theorem directional_apply_implication_side : forall a b, (((a in b -> b in a) <-> a = a) -> ((a in b -> b in a) -> a = a))\nintros a b H H'"
+  in
+  let implication_context =
+    ["H", "(a in b -> b in a) <-> a = a";
+     "H'", "a in b -> b in a"]
+  in
+  assert_transition implication_prefix "apply -> H" "a in b -> b in a"
+    implication_context "exact H'";
+  assert_transition implication_prefix "apply -> H in H' as H''" "a = a"
+    (implication_context @ ["H''", "a = a"]) "exact H''";
+  let implication_conclusion_prefix =
+    "theorem directional_apply_implication_conclusion : forall a b, (((a in b -> b in a) <-> a = a) -> (a = a -> (a in b -> b in a)))\nintros a b H H'"
+  in
+  let implication_conclusion_context =
+    ["H", "(a in b -> b in a) <-> a = a"; "H'", "a = a"]
+  in
+  assert_transition implication_conclusion_prefix "apply <- H" "a = a"
+    implication_conclusion_context "exact H'";
+  assert_transition implication_conclusion_prefix "apply <- H in H' as H''"
+    "a in b -> b in a"
+    (implication_conclusion_context @ ["H''", "a in b -> b in a"])
+    "exact H''";
+  let negation_prefix =
+    "theorem directional_apply_negation_side : forall a b, ((a = a <-> not (a in b)) -> (not (a in b) -> a = a))\nintros a b H H'"
+  in
+  let negation_context =
+    ["H", "a = a <-> not (a in b)"; "H'", "not (a in b)"]
+  in
+  assert_transition negation_prefix "apply <- H" "not (a in b)"
+    negation_context "exact H'";
+  assert_transition negation_prefix "apply <- H in H' as H''" "a = a"
+    (negation_context @ ["H''", "a = a"]) "exact H''";
+  let negation_conclusion_prefix =
+    "theorem directional_apply_negation_conclusion : forall a b, ((a = a <-> not (a in b)) -> (a = a -> not (a in b)))\nintros a b H H'"
+  in
+  let negation_conclusion_context =
+    ["H", "a = a <-> not (a in b)"; "H'", "a = a"]
+  in
+  assert_transition negation_conclusion_prefix "apply -> H" "a = a"
+    negation_conclusion_context "exact H'";
+  assert_transition negation_conclusion_prefix "apply -> H in H' as H''"
+    "not (a in b)"
+    (negation_conclusion_context @ ["H''", "not (a in b)"])
+    "exact H''";
+  let quantified_equivalence = "forall x, (x in a <-> x in b)" in
+  let quantified_forward_prefix =
+    "theorem directional_apply_forall_forward : forall a b c, ((forall x, (x in a <-> x in b)) -> (c in a -> c in b))\nintros a b c H Ha"
+  in
+  let quantified_backward_prefix =
+    "theorem directional_apply_forall_backward : forall a b c, ((forall x, (x in a <-> x in b)) -> (c in b -> c in a))\nintros a b c H Hb"
+  in
+  assert_transition quantified_forward_prefix "apply -> H" "c in a"
+    ["H", quantified_equivalence; "Ha", "c in a"] "exact Ha";
+  assert_transition quantified_backward_prefix "apply <- H" "c in b"
+    ["H", quantified_equivalence; "Hb", "c in b"] "exact Hb";
+  assert_transition quantified_forward_prefix "apply -> H in Ha as Hb" "c in b"
+    ["H", quantified_equivalence; "Ha", "c in a"; "Hb", "c in b"] "exact Hb";
+  assert_transition quantified_backward_prefix "apply <- H in Hb as Ha" "c in a"
+    ["H", quantified_equivalence; "Hb", "c in b"; "Ha", "c in a"] "exact Ha";
+  let hidden_source =
+    "theorem directional_apply_source : forall x, (x = x <-> x = x)\nintro x\nsplit\nintro H\nexact H\nintro H\nexact H\nqed\n"
+  in
+  assert_transition
+    (hidden_source ^ "theorem directional_apply_hidden_goal : forall a, a = a\nintro a")
+    "apply -> directional_apply_source" "a = a" [] "refl";
+  assert_transition
+    (hidden_source ^ "theorem directional_apply_hidden_hypothesis : forall a, (a = a -> a = a)\nintros a Ha")
+    "apply <- directional_apply_source in Ha as Hb" "a = a"
+    ["Ha", "a = a"; "Hb", "a = a"] "exact Hb";
+  let chosen_prefix =
+    "choose pair Hpair from pairing\ntheorem directional_apply_chosen : forall a b c, ((c = a or c = b) -> c in pair(a, b))\nintros a b c Hmem"
+  in
+  assert_transition chosen_prefix "apply <- Hpair" "c = a or c = b"
+    ["Hmem", "c = a or c = b"] "exact Hmem";
+  assert_transition chosen_prefix "apply <- Hpair in Hmem as Hpairmem"
+    "c in pair(a, b)"
+    ["Hmem", "c = a or c = b"; "Hpairmem", "c in pair(a, b)"]
+    "exact Hpairmem";
+  let assert_rejected script message =
+    let rejected =
+      try
+        ignore (Proof_session.analyze_script (terminate_lines script));
+        false
+      with Proof_session.Proof_error _ -> true
+    in
+    if not rejected then failwith message
+  in
+  List.iter
+    (fun (script, message) -> assert_rejected script message)
+    [
+      (backward_prefix ^ "\napply -> H",
+       "Directional apply accepted the wrong direction for a goal");
+      (forward_prefix ^ "\napply <- H",
+       "Reverse directional apply accepted the wrong goal");
+      (forward_prefix ^ "\napply <- H in Ha as Hb",
+       "Directional apply accepted the wrong source hypothesis");
+      (backward_prefix ^ "\napply -> H in Hb as Ha",
+       "Forward directional apply accepted the wrong source hypothesis");
+      (forward_prefix ^ "\napply -> H in Ha as Ha",
+       "Directional apply accepted a duplicate output hypothesis");
+      (forward_prefix ^ "\napply -> H in Hmissing as Hb",
+       "Directional apply accepted a missing source hypothesis");
+      (forward_prefix ^ "\napply -> Hmissing",
+       "Directional apply accepted a missing equivalence");
+      (forward_prefix ^ "\napply -> Ha",
+       "Directional apply accepted a non-equivalence fact");
+      (forward_prefix ^ "\napply <- Ha in Ha as Hb",
+       "Directional apply in accepted a non-equivalence fact");
+      ("theorem directional_apply_implication : forall a b, ((a in b -> b in a) -> (a in b -> b in a))\nintros a b H Ha\napply -> H",
+       "Directional apply accepted an implication as an equivalence");
+      ("theorem directional_apply_unresolved_goal : forall a, ((forall x, (x = x <-> a = a)) -> a = a)\nintros a H\napply -> H",
+       "Directional apply guessed an unconstrained universal instantiation");
+      ("theorem directional_apply_unresolved_source : forall a, ((forall x, (a = a <-> x = x)) -> (a = a -> a = a))\nintros a H Ha\napply -> H in Ha as Hb",
+       "Directional apply in guessed an unconstrained universal instantiation");
+      ("theorem directional_apply_unresolved_reverse : forall a, ((forall x, (x = x <-> a = a)) -> (a = a -> a = a))\nintros a H Ha\napply <- H in Ha as Hb",
+       "Reverse directional apply in guessed an unconstrained instantiation");
+    ];
+  Printf.printf "Directional apply tests passed (20 replay cases, 13 rejection cases).\n%!"
+
 let run () =
   Input_test.run ();
   Definition_test.run ();
@@ -156,6 +327,7 @@ let run () =
        | None -> failwith "A completed proof was not finalized by replay"
        end)
     valid_scripts;
+  run_directional_apply_tests ();
   let multiline_specialize_script =
     "choose f Hf from union.
      choose pair Hpair from pairing.

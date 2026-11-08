@@ -1,0 +1,32 @@
+# The arrows select an implication from the equivalence H.
+# apply <- H uses (b in a -> a in b) backwards on the goal.
+theorem iff_backward_goal :
+  forall a b, ((a in b <-> b in a) -> b in a -> a in b).
+intros a b H Hq.
+apply <- H.
+exact Hq.
+qed.
+
+# apply -> H uses (a in b -> b in a) backwards on the goal.
+theorem iff_forward_goal :
+  forall a b, ((a in b <-> b in a) -> a in b -> b in a).
+intros a b H Hp.
+apply -> H.
+exact Hp.
+qed.
+
+# Applying to a hypothesis retains H and H' and adds H''.
+theorem iff_forward_hypothesis :
+  forall a b, ((a in b <-> b in a) -> a in b -> b in a).
+intros a b H H'.
+apply -> H in H' as H''.
+exact H''.
+qed.
+
+# The reverse direction also works on hypotheses.
+theorem iff_backward_hypothesis :
+  forall a b, ((a in b <-> b in a) -> b in a -> a in b).
+intros a b H H'.
+apply <- H in H' as H''.
+exact H''.
+qed.
