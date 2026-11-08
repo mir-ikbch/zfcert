@@ -1,0 +1,167 @@
+(* Basic Set Theory *)
+
+choose empty Hempty from empty_set.
+
+theorem empty_unique : forall a, forall b, ((forall z, not (z in a)) -> (forall z, not (z in b)) -> a = b).
+intro a.
+intro b.
+intro H1.
+intro H2.
+apply extensionality.
+intro z.
+split.
+intro Hz.
+specialize H1 z as Hz1.
+contradiction.
+intro Hz.
+specialize H2 z as Hz2.
+contradiction.
+qed.
+
+choose pair Hpair from pairing.
+
+theorem exists_singleton : forall x, exists p, forall y, (y in p <-> y = x).
+intro x.
+specialize pairing x x as H.
+resolution.
+qed.
+
+choose singleton Hsingleton from exists_singleton.
+
+
+theorem exists_cup : forall x, forall y, exists u, forall z, (z in u <-> z in x or z in y).
+intro x.
+intro y.
+specialize union pair(x,y) as H.
+obtain u Hu from H.
+use u.
+intro z.
+specialize Hu z as Huz.
+cases Huz.
+split.
+  intro Hzinu.
+  rule cut Hex : exists y', z in y' and y' in pair(x,y).
+    apply Huz_forward.
+    exact Hzinu.
+  obtain y' Hy' from Hex.
+  cases Hy'.
+  rule cut Hy'eq : y' = x or y' = y.
+    specialize Hpair x y y' as Hp.
+    cases Hp.
+    apply Hp_forward.
+    exact Hy'_right.
+  cases Hy'eq.
+  left.
+  rewrite <- Hy'eq_left.
+  exact Hy'_left.
+  right.
+  rewrite <- Hy'eq_right.
+  exact Hy'_left.
+  intro Hor.
+  cases Hor.
+  apply Huz_backward.
+  use x.
+  split.
+    exact Hor_left.
+    specialize Hpair x y x as Hp.
+    cases Hp.
+    apply Hp_backward.
+    left.
+    refl.
+    apply Huz_backward.
+    use y.
+    specialize Hpair x y y as Hp.
+    cases Hp.
+    split.
+      exact Hor_right.
+      apply Hp_backward.
+      right.
+      refl.
+qed.
+
+choose cup Hcup from exists_cup.
+
+theorem eq_subst_mem : forall a, forall b, forall y, (a = b -> (y in a -> y in b)).
+intro a.
+intro b.
+intro y.
+intro Heq.
+intro Hy.
+rule equal_elim a b z : y in z.
+exact Heq.
+exact Hy.
+qed.
+
+theorem eq_sym : forall a, forall b, (a = b -> b = a).
+intro a.
+intro b.
+intro Heq.
+rule equal_elim a b z : z = a.
+exact Heq.
+refl.
+qed.
+
+theorem no_two_cycle : forall m, forall n, (m in n -> (n in m -> false)).
+intro m.
+intro n.
+intro Hmn.
+intro Hnm.
+rule cut Hnonempty : exists a, a in pair(m,n).
+  use m.
+  specialize Hpair m n m as Hpmm.
+  cases Hpmm.
+  apply Hpmm_backward.
+  left.
+  refl.
+specialize foundation pair(m,n) as Hf.
+apply Hf in Hnonempty as Hy.
+obtain y Hy2 from Hy.
+cases Hy2.
+specialize Hpair m n y as Hpy.
+cases Hpy.
+rule cut Hyeq : y = m or y = n.
+  apply Hpy_forward.
+  exact Hy2_left.
+cases Hyeq.
+  specialize eq_sym y m as Es1.
+  apply Es1 in Hyeq_left as Hmy.
+  specialize eq_subst_mem m y n as Esub1.
+  rule cut Hniny : n in y.
+    apply Esub1.
+    exact Hmy.
+    exact Hnm.
+  specialize Hy2_right n as Hspec1.
+  apply Hspec1.
+  exact Hniny.
+  specialize Hpair m n n as Hpnn.
+  cases Hpnn.
+  apply Hpnn_backward.
+  right.
+  refl.
+  specialize eq_sym y n as Es2.
+  apply Es2 in Hyeq_right as Hny.
+  specialize eq_subst_mem n y m as Esub2.
+  rule cut Hminy : m in y.
+    apply Esub2.
+    exact Hny.
+    exact Hmn.
+  specialize Hy2_right m as Hspec2.
+  apply Hspec2.
+  exact Hminy.
+  specialize Hpair m n m as Hpmm2.
+  cases Hpmm2.
+  apply Hpmm2_backward.
+  left.
+  refl.
+qed.
+
+theorem eq_subst_mem_left : forall a, forall b, forall s, (a = b -> (a in s -> b in s)).
+intro a.
+intro b.
+intro s.
+intro Heq.
+intro Ha.
+rule equal_elim a b z : z in s.
+exact Heq.
+exact Ha.
+qed.
