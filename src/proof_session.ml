@@ -1260,7 +1260,7 @@ let execute_tactic line_no state line =
                 description
           end
       | "specialize" ->
-          let words = words argument in
+          let words = Rule_parser.term_words argument in
           let rec split_as before = function
             | ["as"; new_name] -> (List.rev before, new_name)
             | "as" :: _ ->

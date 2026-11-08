@@ -57,6 +57,11 @@ let valid_scripts =
     "choose pair Hpair from pairing\ntheorem sep_term : forall a, forall b, exists c, forall x, (x in c <-> (x in pair(a, b) and not (x in x)))\nintro a\nintro b\nseparation S pair(a, b) x : not (x in x)\nexact S\nqed";
     "theorem rep : forall a, ((forall x, exists y, (y = x and forall z, (z = x -> z = y))) -> exists b, forall y, (y in b <-> exists x, (x in a and y = x)))\nintro a\nreplacement R a x y : y = x\nexact R\nqed";
     "theorem universal_contradiction : forall a, forall b, ((forall x, not (x in b)) -> (a in b -> b in a))\nintro a\nintro b\nintro H\nintro Ha\nspecialize H a as Hna\ncontradiction\nqed";
+    "choose f Hf from union\ntheorem specialize_function : forall x, ((forall y, y = x) -> f(x) = x)\nintros x H\nspecialize H f(x) as Hinst\nexact Hinst\nqed";
+    "choose f Hf from union\nchoose pair Hpair from pairing\ntheorem specialize_multiple_functions : forall x, ((forall a b, a = b) -> pair(x, f(x)) = f(pair(x, x)))\nintros x H\nspecialize H pair ( x, f (x) )\tf ( pair(x, x) ) as Hinst\nexact Hinst\nqed";
+    "choose f Hf from union\nchoose pair Hpair from pairing\ntheorem specialize_function_source : forall y, y = y\nintro y\nrefl\nqed\ntheorem specialize_hidden_function : forall x, pair(x, f(x)) = pair(x, f(x))\nintro x\nspecialize specialize_function_source pair(x, f(x)) as Hinst\nexact Hinst\nqed";
+    "choose f Hf from union\nchoose pair Hpair from pairing\ntheorem specialize_chosen_fact_functions : forall x z, (z in pair(pair(x, f(x)), f(x)) <-> (z = pair(x, f(x)) or z = f(x)))\nintros x z\nspecialize Hpair pair(x, f(x)) f(x) z as Hinst\nexact Hinst\nqed";
+    "choose f Hf from union\ntheorem specialize_function_avoids_capture : forall y, ((forall z, forall y, z in y) -> forall u, f(y) in u)\nintros y H\nspecialize H f(y) as Hinst\nexact Hinst\nqed";
     "theorem surface_split : forall a, (a = a and a = a)\nintro a\nsplit\nrefl\nrefl\nqed";
     "theorem surface_left : forall a, (a = a or false)\nintro a\nleft\nrefl\nqed";
     "theorem surface_right : forall a, (false or a = a)\nintro a\nright\nrefl\nqed";
@@ -150,6 +155,37 @@ let run () =
        | None -> failwith "A completed proof was not finalized by replay"
        end)
     valid_scripts;
+  let multiline_specialize_script =
+    "choose f Hf from union.
+     choose pair Hpair from pairing.
+     theorem specialize_multiline : forall x, ((forall a b, a = b) -> pair(x, f(x)) = f(pair(x, x))).
+     intros x H.
+     specialize H
+       pair( x,
+             f(x) )
+       f( pair(x, x) )
+       as Hinst."
+  in
+  let multiline_specialized, _ =
+    Proof_session.analyze_script multiline_specialize_script
+  in
+  begin match Proof_session.goals multiline_specialized with
+  | [{ context; _ }] ->
+      begin match List.assoc_opt "Hinst" context, List.assoc_opt "H" context with
+      | Some specialized, Some original
+        when Syntax.alpha_equal specialized
+               (Parser.parse_formula "pair(x, f(x)) = f(pair(x, x))")
+          && Syntax.alpha_equal original
+               (Parser.parse_formula "forall a b, a = b") -> ()
+      | _ ->
+          failwith
+            "Multiline function specialization changed the source or produced the wrong fact"
+      end
+  | _ -> failwith "Function specialization did not preserve the current goal"
+  end;
+  ignore
+    (Proof_session.check_script
+       (multiline_specialize_script ^ "\nexact Hinst.\nqed."));
   let assert_rewrite_goal script expected =
     let state, _ =
       Proof_session.analyze_script (terminate_lines script)

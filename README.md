@@ -275,6 +275,8 @@ qed.
 - `apply H0 in H as H1.` は `H0` の一つの含意前提に `H` を適用し、結果を `H1` として
   仮定に追加します。
 - `specialize H a b as Hab.` は全称仮定を複数の項で一度に具体化します。
+  `choose` で導入した関数記号も使えます。例えば `specialize H f(x) as H1.`、
+  `specialize H pair(x, f(x)) as H2.` と書けます。関数項内の空白・改行も使えます。
 - `obtain p Hp from H.` は存在仮定を具体化し、`p` と `Hp` を追加します。
 - `cases H H1 H2.` は連言・同値・選言・存在仮定を分解します。名前を省略できる場合は
   `cases H.` で自動名を使います。

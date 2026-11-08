@@ -46,24 +46,37 @@ let split_first_word line =
            (String.length line - index - 1)))
 
 let term_words text =
-  (* Whitespace inside a function application belongs to the same term. *)
-  let rec collect depth current result = function
-    | [] -> List.rev (if current = "" then result else current :: result)
-    | character :: rest ->
-        let next_depth =
-          match character with
-          | '(' -> depth + 1
-          | ')' -> depth - 1
-          | _ -> depth
-        in
-        begin match character with
-        | (' ' | '\t' | '\r' | '\n') when depth = 0 ->
-            let result = if current = "" then result else current :: result in
-            collect depth "" result rest
-        | _ -> collect next_depth (current ^ String.make 1 character) result rest
-        end
+  (* Keep whitespace inside applications and before their opening parenthesis.
+     The term parser remains responsible for checking each resulting token. *)
+  let is_space = function
+    | ' ' | '\t' | '\r' | '\n' -> true
+    | _ -> false
   in
-  collect 0 "" [] (List.of_seq (String.to_seq text))
+  let length = String.length text in
+  let rec skip index =
+    if index < length && is_space text.[index] then skip (index + 1)
+    else index
+  in
+  let rec word_end depth index =
+    if index >= length then index
+    else
+      match text.[index] with
+      | '(' -> word_end (depth + 1) (index + 1)
+      | ')' -> word_end (depth - 1) (index + 1)
+      | character when depth = 0 && is_space character ->
+          let next = skip index in
+          if next < length && text.[next] = '(' then word_end depth next
+          else index
+      | _ -> word_end depth (index + 1)
+  in
+  let rec collect index result =
+    let start = skip index in
+    if start >= length then List.rev result
+    else
+      let finish = word_end 0 start in
+      collect finish (String.sub text start (finish - start) :: result)
+  in
+  collect 0 []
 
 let split_formula ?(split_parameters = words) argument =
   match String.index_opt argument ':' with
