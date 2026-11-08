@@ -294,7 +294,20 @@ qed.
 ```
 
 `rewrite H.` は `H : a = b` を使ってゴール中の `a` を `b` に置換し、`rewrite <- H.`
-は逆方向に置換します。現在は名前付き項の等式を対象にしています。
+は逆方向に置換します。`choose` で導入した関数記号を含む `H : f(x) = c` のような
+等式も使えます。ゴール中の一致する項を、関数の引数の中も含めてすべて置換します。
+量化された変数との混同や変数捕獲は避けられます。
+
+```text
+choose f Hf from union.
+
+theorem rewrite_function :
+  forall x c, (f(x) = c -> forall z, (z in c -> z in f(x))).
+intros x c H z Hz.
+rewrite H.
+exact Hz.
+qed.
+```
 
 `refl.` は `t = t`、`contradiction.` は矛盾する仮定からの証明に使います。空集合公理は
 `empty_set` という名前で登録されています。

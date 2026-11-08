@@ -45,12 +45,32 @@ let split_first_word line =
          (String.sub line (index + 1)
            (String.length line - index - 1)))
 
-let split_formula argument =
+let term_words text =
+  (* Whitespace inside a function application belongs to the same term. *)
+  let rec collect depth current result = function
+    | [] -> List.rev (if current = "" then result else current :: result)
+    | character :: rest ->
+        let next_depth =
+          match character with
+          | '(' -> depth + 1
+          | ')' -> depth - 1
+          | _ -> depth
+        in
+        begin match character with
+        | (' ' | '\t' | '\r' | '\n') when depth = 0 ->
+            let result = if current = "" then result else current :: result in
+            collect depth "" result rest
+        | _ -> collect next_depth (current ^ String.make 1 character) result rest
+        end
+  in
+  collect 0 "" [] (List.of_seq (String.to_seq text))
+
+let split_formula ?(split_parameters = words) argument =
   match String.index_opt argument ':' with
   | None -> raise (Error "This rule requires a formula after :.")
   | Some index ->
       let parameters =
-        String.sub argument 0 index |> trim |> words
+        String.sub argument 0 index |> trim |> split_parameters
       in
       let formula =
         String.sub argument (index + 1)
@@ -226,7 +246,9 @@ let parse ~parse_formula argument =
       require_no_arguments "equal_refl" rule_argument;
       Kernel.NPrimitiveRule Kernel.NREqualRefl
   | "equal_elim" ->
-      let parameters, formula_text = split_formula rule_argument in
+      let parameters, formula_text =
+        split_formula ~split_parameters:term_words rule_argument
+      in
       let left, right, binder =
         match parameters with
         | [left; right; binder] -> (left, right, binder)
@@ -237,7 +259,9 @@ let parse ~parse_formula argument =
       in
       Kernel.NPrimitiveRule
         (Kernel.NREqualElim
-          (left, right, Kernel_syntax.to_kernel predicate))
+          (parse_kernel_term parse_formula left,
+           parse_kernel_term parse_formula right,
+           Kernel_syntax.to_kernel predicate))
   | "cut" ->
       let parameters, formula_text = split_formula rule_argument in
       let hypothesis =

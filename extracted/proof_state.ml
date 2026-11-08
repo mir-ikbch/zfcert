@@ -1679,7 +1679,7 @@ type named_rule =
 | NRExIntro of named_term
 | NRExElim of string * string * named_formula
 | NREqualRefl
-| NREqualElim of string * string * named_formula
+| NREqualElim of named_term * named_term * named_formula
 | NRCut of string * named_formula
 
 type rule_plan = { planned_rule : rule;
@@ -1949,16 +1949,16 @@ let plan_named_rule metadata view primitive =
      (match predicate with
       | NAll (binder, body) ->
         let next_environment =
-          add_environment_name constants
-            (add_environment_name constants
+          extend_environment_term constants
+            (extend_environment_term constants
               (extend_environment constants environment predicate) first)
             second
         in
         named_bind (elaborate constants (binder :: []) next_environment body)
           (fun core_predicate ->
-          named_bind (term_index constants next_environment (NName first))
+          named_bind (term_index constants next_environment first)
             (fun core_first ->
-            named_bind (term_index constants next_environment (NName second))
+            named_bind (term_index constants next_environment second)
               (fun core_second -> NOk { planned_rule = (REqualElim
               (core_predicate, core_first, core_second));
               planned_generated_metadata =

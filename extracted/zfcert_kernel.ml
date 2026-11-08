@@ -39,7 +39,7 @@ type rule = Raw.named_rule =
   | NRExIntro of named_term
   | NRExElim of string * string * formula
   | NREqualRefl
-  | NREqualElim of string * string * formula
+  | NREqualElim of named_term * named_term * formula
   | NRCut of string * formula
 
 type rule_request = Raw.named_rule_request =

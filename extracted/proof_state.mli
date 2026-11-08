@@ -412,7 +412,7 @@ type named_rule =
 | NRExIntro of named_term
 | NRExElim of string * string * named_formula
 | NREqualRefl
-| NREqualElim of string * string * named_formula
+| NREqualElim of named_term * named_term * named_formula
 | NRCut of string * named_formula
 
 type rule_plan = { planned_rule : rule;

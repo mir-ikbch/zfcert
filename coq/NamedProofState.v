@@ -760,7 +760,7 @@ Inductive named_rule : Type :=
     (existential : named_formula)
 | NREqualRefl
 | NREqualElim
-    (left right : string)
+    (left right : named_term)
     (predicate : named_formula)
 | NRCut (hypothesis : string) (lemma : named_formula).
 
@@ -1055,8 +1055,8 @@ Definition plan_named_rule
       match predicate with
       | NAll binder body =>
           let next_environment :=
-            add_environment_name constants
-              (add_environment_name constants
+            extend_environment_term constants
+              (extend_environment_term constants
                 (extend_environment constants environment predicate) first)
               second
           in

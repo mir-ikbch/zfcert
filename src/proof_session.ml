@@ -827,6 +827,41 @@ let intro_name_set state goal =
           (all_vars goal.target)
           (environment_names state)))
 
+(* Abstract free occurrences of a whole term, including occurrences nested in
+   function arguments.  The caller chooses [binder] fresh for the entire goal;
+   substitution by the equality rule then also avoids capture of its endpoints. *)
+let abstract_rewrite_term source binder formula =
+  let source_variables = term_free_vars source in
+  let rec abstract_term term =
+    if term = source then Name binder
+    else
+      match term with
+      | Name _ -> term
+      | App (name, arguments) ->
+          App (name, List.map abstract_term arguments)
+  in
+  let rec abstract_formula = function
+    | Bottom -> Bottom
+    | Named (name, arguments) ->
+        Named (name,
+          List.map
+            (fun argument ->
+               if Name argument = source then binder else argument)
+            arguments)
+    | Eq (left, right) -> Eq (abstract_term left, abstract_term right)
+    | Mem (left, right) -> Mem (abstract_term left, abstract_term right)
+    | Not body -> Not (abstract_formula body)
+    | And (left, right) -> And (abstract_formula left, abstract_formula right)
+    | Or (left, right) -> Or (abstract_formula left, abstract_formula right)
+    | Imp (left, right) -> Imp (abstract_formula left, abstract_formula right)
+    | Iff (left, right) -> Iff (abstract_formula left, abstract_formula right)
+    | (Forall (name, _) | Exists (name, _)) as quantified
+        when StringSet.mem name source_variables -> quantified
+    | Forall (name, body) -> Forall (name, abstract_formula body)
+    | Exists (name, body) -> Exists (name, abstract_formula body)
+  in
+  abstract_formula formula
+
 let execute_separation line_no state fact_name source element predicate =
   let kernel_state =
     Extracted.separation_term_tactic_step
@@ -1163,12 +1198,9 @@ let execute_tactic line_no state line =
           in
           begin match direction with
           | (`Forward | `Backward) ->
-              let left_name, right_name =
+              let left, right =
                 match lookup_assumption state goal.context equality_name with
-                | Some (Eq (Name left, Name right)) -> (left, right)
-                | Some (Eq _) ->
-                    raise (Proof_error (line_no,
-                      "rewrite currently requires an equality between named terms."))
+                | Some (Eq (left, right)) -> (left, right)
                 | Some _ ->
                     raise (Proof_error (line_no,
                       "rewrite requires an equality hypothesis."))
@@ -1178,46 +1210,54 @@ let execute_tactic line_no state line =
               in
               let used =
                 StringSet.union
-                  (context_free_vars goal.context)
+                  (intro_name_set state goal)
                   (StringSet.union
-                     (all_vars goal.target)
-                     (StringSet.of_list [left_name; right_name]))
+                     (StringSet.of_list goal.variables)
+                     (StringSet.union
+                        (term_free_vars left) (term_free_vars right)))
               in
               let binder = fresh_name "rewrite_var" used in
-              let source_name =
+              let source =
                 match direction with
-                | `Forward -> left_name
-                | `Backward -> right_name
+                | `Forward -> left
+                | `Backward -> right
               in
               let predicate_body =
-                subst source_name (Name binder) goal.target
+                abstract_rewrite_term source binder goal.target
               in
               let predicate = Forall (binder, predicate_body) in
               let symmetry_predicate =
-                Forall (binder, Eq (Name binder, Name left_name))
+                Forall (binder, Eq (Name binder, left))
+              in
+              let kernel_left = Kernel_syntax.to_kernel_term left in
+              let kernel_right = Kernel_syntax.to_kernel_term right in
+              let description =
+                match direction with
+                | `Forward -> "rewrite " ^ equality_name
+                | `Backward -> "rewrite <- " ^ equality_name
               in
               let program =
                 match direction with
                 | `Forward ->
                     [ checked_step
                         (Extracted.NREqualElim
-                           (right_name, left_name,
+                           (kernel_right, kernel_left,
                             kernel_formula predicate));
                       checked_step
                         (Extracted.NREqualElim
-                           (left_name, right_name,
+                           (kernel_left, kernel_right,
                             kernel_formula symmetry_predicate));
                       checked_step (Extracted.NRHypothesis equality_name);
                       checked_step Extracted.NREqualRefl ]
                 | `Backward ->
                     [ checked_step
                         (Extracted.NREqualElim
-                           (left_name, right_name,
+                           (kernel_left, kernel_right,
                             kernel_formula predicate));
                       checked_step (Extracted.NRHypothesis equality_name) ]
               in
               apply_certificate_program line_no state program
-                ("rewrite " ^ equality_name)
+                description
           end
       | "specialize" ->
           let words = words argument in
@@ -1845,7 +1885,8 @@ let display_rule = function
   | Extracted.NREqualRefl -> "equal_refl"
   | Extracted.NREqualElim (left, right, predicate) ->
       Printf.sprintf "equal_elim %s %s : %s"
-        left right (display_kernel_formula predicate)
+        (display_kernel_term left) (display_kernel_term right)
+        (display_kernel_formula predicate)
   | Extracted.NRCut (hypothesis, lemma) ->
       Printf.sprintf "cut %s : %s"
         hypothesis (display_kernel_formula lemma)

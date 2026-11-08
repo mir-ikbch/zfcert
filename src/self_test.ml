@@ -68,6 +68,15 @@ let valid_scripts =
     "theorem surface_apply_in_forall : forall a, ((forall x, (x = a -> x = a)) -> (a = a -> a = a))\nintro a\nintro H0\nintro H\napply H0 in H as H1\nexact H1\nqed";
     "theorem surface_rewrite : forall a, forall b, forall c, (a = b -> (a = c -> a = c))\nintro a\nintro b\nintro c\nintro H\nintro Ha\nrewrite H\nrule equal_elim a b x : x = c\nexact H\nexact Ha\nqed";
     "theorem surface_rewrite_back : forall a, forall b, (a = b -> b = b)\nintro a\nintro b\nintro H\nrewrite <- H\nrefl\nqed";
+    "choose f Hf from union\ntheorem rewrite_function : forall x c s, (f(x) = c -> (c in s -> f(x) in s))\nintros x c s H Hmem\nrewrite H\nexact Hmem\nqed";
+    "choose f Hf from union\ntheorem rewrite_function_back : forall x c s, (f(x) = c -> (f(x) in s -> c in s))\nintros x c s H Hmem\nrewrite <- H\nexact Hmem\nqed";
+    "choose f Hf from union\nchoose pair Hpair from pairing\ntheorem rewrite_nested_functions : forall x c d, (f(x) = pair(c, c) -> (pair(pair(c, c), f(pair(c, c))) in pair(pair(c, c), d) -> pair(f(x), f(f(x))) in pair(f(x), d)))\nintros x c d H Hmem\nrewrite H\nexact Hmem\nqed";
+    "choose empty Hempty from empty_set\ntheorem rewrite_chosen_constant : forall c s, (empty = c -> (c in s -> empty in s))\nintros c s H Hmem\nrewrite H\nexact Hmem\nqed";
+    "choose f Hf from union\ntheorem rewrite_function_avoids_capture : forall x y, (f(x) = y -> ((forall z, y in z) -> forall y, f(x) in y))\nintros x y H Hall\nrewrite H\nexact Hall\nqed";
+    "choose f Hf from union\ntheorem rewrite_function_back_avoids_capture : forall x c, (f(x) = c -> ((forall z, f(x) in z) -> forall x, c in x))\nintros x c H Hall\nrewrite <- H\nexact Hall\nqed";
+    "choose f Hf from union\ntheorem rewrite_function_preserves_bound_occurrence : forall x c, (f(x) = c -> ((forall x, f(x) in c) -> forall x, f(x) in c))\nintros x c H Hall\nrewrite H\nexact Hall\nqed";
+    "choose f Hf from union\ntheorem rewrite_function_preserves_bound_subterm : forall x c s, (f(x) = c -> ((c in s and forall z, f(z) in s) -> (f(x) in s and forall x, f(x) in s)))\nintros x c s H Hmem\nrewrite H\nexact Hmem\nqed";
+    "choose f Hf from union\nchoose rewrite_var0 Hempty from empty_set\ntheorem rewrite_function_fresh_constant : forall x c, (f(x) = c -> (c in rewrite_var0 -> f(x) in rewrite_var0))\nintros x c H Hmem\nrewrite H\nexact Hmem\nqed";
     "theorem surface_cases_ex : ((exists x, x = x) -> exists y, y = y)\nintro H\ncases H x Hx\nuse x\nexact Hx\nqed";
     "alias is_empty x := forall y, not (y in x)\nalias empty_alias x := is_empty x\ntheorem alias_identity : forall a, (empty_alias a -> is_empty a)\nintro a\nintro H\nexact H\nqed";
     "alias has_equal x := exists y, y = x\ntheorem alias_avoids_capture : forall y, (has_equal y -> exists z, z = y)\nintro y\nintro H\nexact H\nqed";
@@ -90,6 +99,7 @@ let valid_scripts =
     "theorem rule_default_all_intro : forall x, x = x\nrule all_intro\nrule equal_refl\nqed";
     "theorem rule_cut : forall x, x = x\nrule cut H : forall x, x = x\nrule all_intro x\nrule equal_refl\nrule hypothesis H\nqed";
     "theorem rule_equal_elim : forall s, forall t, (s = t -> (s in s -> s in t))\nrule all_intro s\nrule all_intro t\nrule impl_intro Heq\nrule impl_intro Hmem\nrule equal_elim s t x : s in x\nrule hypothesis Heq\nrule hypothesis Hmem\nqed";
+    "choose f Hf from union\nchoose pair Hpair from pairing\ntheorem rule_equal_elim_functions : forall x c s, (f(x) = pair(c, c) -> (f(x) in s -> pair(c, c) in s))\nintros x c s Heq Hmem\nrule equal_elim f(x) pair(c, c) z : z in s\nexact Heq\nexact Hmem\nqed";
     "theorem rule_all_elim : forall a, ((forall x, x = x) -> a = a)\nrule all_intro a\nrule impl_intro H\nrule all_elim a x : x = x\nrule hypothesis H\nqed";
     "theorem rule_axiom : exists e, forall x, not (x in e)\nrule axiom\nqed";
     "theorem rule_impl_elim : forall a, forall b, ((a = a -> b = b) -> (a = a -> b = b))\nrule all_intro a\nrule all_intro b\nrule impl_intro Himp\nrule impl_intro Ha\nrule impl_elim : a = a\nrule hypothesis Himp\nrule hypothesis Ha\nqed";
@@ -140,6 +150,65 @@ let run () =
        | None -> failwith "A completed proof was not finalized by replay"
        end)
     valid_scripts;
+  let assert_rewrite_goal script expected =
+    let state, _ =
+      Proof_session.analyze_script (terminate_lines script)
+    in
+    match Proof_session.goals state with
+    | [{ target; _ }]
+      when Syntax.alpha_equal target (Parser.parse_formula expected) -> ()
+    | [{ target; _ }] ->
+        failwith
+          ("Unexpected rewritten goal: " ^ Syntax.formula_to_string target ^
+           " (expected " ^ expected ^ ")")
+    | _ -> failwith "rewrite did not preserve a single transformed goal"
+  in
+  List.iter
+    (fun (script, expected) -> assert_rewrite_goal script expected)
+    [
+      ("choose f Hf from union\ntheorem rewrite_goal : forall x c s, (f(x) = c -> (c in s -> f(x) in s))\nintros x c s H Hmem\nrewrite H",
+       "c in s");
+      ("choose f Hf from union\ntheorem rewrite_back_goal : forall x c s, (f(x) = c -> (f(x) in s -> c in s))\nintros x c s H Hmem\nrewrite <- H",
+       "f(x) in s");
+      ("choose f Hf from union\nchoose pair Hpair from pairing\ntheorem rewrite_nested_goal : forall x c d, (f(x) = pair(c, c) -> (pair(pair(c, c), f(pair(c, c))) in pair(pair(c, c), d) -> pair(f(x), f(f(x))) in pair(f(x), d)))\nintros x c d H Hmem\nrewrite H",
+       "pair(pair(c, c), f(pair(c, c))) in pair(pair(c, c), d)");
+      ("choose empty Hempty from empty_set\ntheorem rewrite_constant_goal : forall c s, (empty = c -> (c in s -> empty in s))\nintros c s H Hmem\nrewrite H",
+       "c in s");
+      ("choose f Hf from union\ntheorem rewrite_capture_goal : forall x y, (f(x) = y -> ((forall z, y in z) -> forall y, f(x) in y))\nintros x y H Hall\nrewrite H",
+       "forall z, y in z");
+      ("choose f Hf from union\ntheorem rewrite_back_capture_goal : forall x c, (f(x) = c -> ((forall z, f(x) in z) -> forall x, c in x))\nintros x c H Hall\nrewrite <- H",
+       "forall z, f(x) in z");
+      ("choose f Hf from union\ntheorem rewrite_bound_goal : forall x c, (f(x) = c -> ((forall x, f(x) in c) -> forall x, f(x) in c))\nintros x c H Hall\nrewrite H",
+       "forall z, f(z) in c");
+      ("choose f Hf from union\ntheorem rewrite_bound_subterm_goal : forall x c s, (f(x) = c -> ((c in s and forall z, f(z) in s) -> (f(x) in s and forall x, f(x) in s)))\nintros x c s H Hmem\nrewrite H",
+       "c in s and forall z, f(z) in s");
+      ("choose f Hf from union\nchoose rewrite_var0 Hempty from empty_set\ntheorem rewrite_fresh_constant_goal : forall x c, (f(x) = c -> (c in rewrite_var0 -> f(x) in rewrite_var0))\nintros x c H Hmem\nrewrite H",
+       "c in rewrite_var0");
+    ];
+  let fresh_rewrite_variable_state =
+    Proof_session.check_script
+      (terminate_lines
+         "choose f Hf from union\ntheorem rewrite_fresh_variable : forall rewrite_var0 x c s, (f(x) = c -> (c in s -> f(x) in s))\nintros rewrite_var0 x c s H Hmem\nrewrite H\nexact Hmem\nqed")
+  in
+  begin match Proof_session.certificate_rules fresh_rewrite_variable_state with
+  | Some rules
+    when not (List.exists (fun rule -> contains rule "∀rewrite_var0,") rules) ->
+      ()
+  | _ ->
+      failwith "rewrite reused an introduced variable for its predicate binder"
+  end;
+  let fresh_rewrite_constant_state =
+    Proof_session.check_script
+      (terminate_lines
+         "choose f Hf from union\nchoose rewrite_var0 Hempty from empty_set\ntheorem rewrite_fresh_unused_constant : forall x c s, (f(x) = c -> (c in s -> f(x) in s))\nintros x c s H Hmem\nrewrite H\nexact Hmem\nqed")
+  in
+  begin match Proof_session.certificate_rules fresh_rewrite_constant_state with
+  | Some rules
+    when not (List.exists (fun rule -> contains rule "∀rewrite_var0,") rules) ->
+      ()
+  | _ ->
+      failwith "rewrite reused a declared constant for its predicate binder"
+  end;
   let hidden_source_state, _ =
     Proof_session.analyze_script
       (terminate_lines
