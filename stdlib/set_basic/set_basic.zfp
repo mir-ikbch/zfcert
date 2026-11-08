@@ -230,6 +230,5 @@ split.
 qed.
 
 choose prod Hprod from product_exists.
-(*
-alias is_relation X Y R := forall x, x in R -> x in prod(X,Y).
-  *)
+
+alias is_relation X Y R := subset R prod(X,Y).

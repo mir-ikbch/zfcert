@@ -175,7 +175,7 @@ let rec unfold_term line_no definitions bound term =
 let substitution_variables substitutions =
   StringMap.fold
     (fun variable term variables ->
-       StringSet.add variable (StringSet.add term variables))
+       StringSet.add variable (StringSet.union (term_free_vars term) variables))
     substitutions
     StringSet.empty
 
@@ -187,69 +187,82 @@ let substitute_surface_term substitutions term =
   in
   go term
 
-let rec subst_many substitutions = function
+let rec subst_many reserved substitutions = function
   | Bottom -> Bottom
   | Named (name, arguments) ->
-      Named (name,
-        List.map
-          (fun argument ->
-             Option.value
-               (StringMap.find_opt argument substitutions)
-               ~default:argument)
-          arguments)
+      Named (name, List.map (substitute_term substitutions) arguments)
   | Eq (a, b) ->
-      Eq (substitute_surface_term substitutions a,
-          substitute_surface_term substitutions b)
+      Eq (substitute_term substitutions a,
+          substitute_term substitutions b)
   | Mem (a, b) ->
-      Mem (substitute_surface_term substitutions a,
-           substitute_surface_term substitutions b)
-  | Not f -> Not (subst_many substitutions f)
-  | And (a, b) -> And (subst_many substitutions a, subst_many substitutions b)
-  | Or (a, b) -> Or (subst_many substitutions a, subst_many substitutions b)
-  | Imp (a, b) -> Imp (subst_many substitutions a, subst_many substitutions b)
-  | Iff (a, b) -> Iff (subst_many substitutions a, subst_many substitutions b)
+      Mem (substitute_term substitutions a,
+           substitute_term substitutions b)
+  | Not f -> Not (subst_many reserved substitutions f)
+  | And (a, b) -> And (subst_many reserved substitutions a, subst_many reserved substitutions b)
+  | Or (a, b) -> Or (subst_many reserved substitutions a, subst_many reserved substitutions b)
+  | Imp (a, b) -> Imp (subst_many reserved substitutions a, subst_many reserved substitutions b)
+  | Iff (a, b) -> Iff (subst_many reserved substitutions a, subst_many reserved substitutions b)
   | Forall (x, f) ->
       let substitutions = StringMap.remove x substitutions in
       let captures =
         StringMap.exists
           (fun parameter argument ->
-             argument = x && StringSet.mem parameter (free_vars f))
+             StringSet.mem x (term_free_vars argument)
+             && StringSet.mem parameter (free_vars f))
           substitutions
       in
       if captures then
         let used =
-          StringSet.union (all_vars f)
-            (substitution_variables substitutions)
+          StringSet.union reserved
+            (StringSet.union (all_vars f) (substitution_variables substitutions))
         in
         let fresh = fresh_name x used in
         Forall (fresh,
-          subst_many substitutions (rename_bound x fresh f))
+          subst_many reserved substitutions (rename_bound x fresh f))
       else
-        Forall (x, subst_many substitutions f)
+        Forall (x, subst_many reserved substitutions f)
   | Exists (x, f) ->
       let substitutions = StringMap.remove x substitutions in
       let captures =
         StringMap.exists
           (fun parameter argument ->
-             argument = x && StringSet.mem parameter (free_vars f))
+             StringSet.mem x (term_free_vars argument)
+             && StringSet.mem parameter (free_vars f))
           substitutions
       in
       if captures then
         let used =
-          StringSet.union (all_vars f)
-            (substitution_variables substitutions)
+          StringSet.union reserved
+            (StringSet.union (all_vars f) (substitution_variables substitutions))
         in
         let fresh = fresh_name x used in
         Exists (fresh,
-          subst_many substitutions (rename_bound x fresh f))
+          subst_many reserved substitutions (rename_bound x fresh f))
       else
-        Exists (x, subst_many substitutions f)
+        Exists (x, subst_many reserved substitutions f)
 
-let rec unfold_formula line_no aliases definitions bound visiting = function
+(* Validate source arguments before expansion, including parameters that an
+   alias or term definition discards. *)
+let rec check_alias_argument line_no definitions constants bound = function
+  | Name name when StringSet.mem name bound -> ()
+  | Name name ->
+      begin match find_definition name definitions with
+      | Some definition -> check_definition_arity line_no definition []
+      | None when StringSet.mem name constants -> ()
+      | None -> raise (Proof_error (line_no,
+          "Undeclared free variables in alias argument: " ^ name))
+      end
+  | App (name, arguments) ->
+      begin match find_definition name definitions with
+      | Some definition -> check_definition_arity line_no definition arguments
+      | None when StringSet.mem name constants -> ()
+      | None -> raise (Proof_error (line_no,
+          "Undefined function name in alias argument: " ^ name))
+      end;
+      List.iter (check_alias_argument line_no definitions constants bound) arguments
+
+let rec unfold_formula line_no aliases definitions constants bound = function
   | Named (name, arguments) ->
-      if StringSet.mem name visiting then
-        raise (Proof_error (line_no,
-          "Recursive proposition alias: " ^ name));
       begin match find_alias name aliases with
       | Some alias ->
           let expected = List.length alias.parameters in
@@ -259,15 +272,18 @@ let rec unfold_formula line_no aliases definitions bound visiting = function
               Printf.sprintf
                 "Alias %s expects %d arguments, but received %d."
                 name expected actual));
+          List.iter (check_alias_argument line_no definitions constants bound) arguments;
+          let arguments = List.map (unfold_term line_no definitions bound) arguments in
           let substitutions =
             List.fold_left2
               (fun substitutions parameter argument ->
                  StringMap.add parameter argument substitutions)
               StringMap.empty alias.parameters arguments
           in
-          let instantiated = subst_many substitutions alias.body in
-          unfold_formula line_no aliases definitions bound
-            (StringSet.add name visiting) instantiated
+          (* Bodies were expanded when declared. Expand arguments in the
+             caller's scope, then substitute without reinterpreting their names
+             under the alias body's binders. *)
+          subst_many constants substitutions alias.body
       | None ->
           raise (Proof_error (line_no,
             "Undefined proposition name: " ^ name))
@@ -279,28 +295,29 @@ let rec unfold_formula line_no aliases definitions bound visiting = function
   | Mem (a, b) ->
       Mem (unfold_term line_no definitions bound a,
            unfold_term line_no definitions bound b)
-  | Not f -> Not (unfold_formula line_no aliases definitions bound visiting f)
+  | Not f -> Not (unfold_formula line_no aliases definitions constants bound f)
   | And (a, b) ->
-      And (unfold_formula line_no aliases definitions bound visiting a,
-           unfold_formula line_no aliases definitions bound visiting b)
+      And (unfold_formula line_no aliases definitions constants bound a,
+           unfold_formula line_no aliases definitions constants bound b)
   | Or (a, b) ->
-      Or (unfold_formula line_no aliases definitions bound visiting a,
-          unfold_formula line_no aliases definitions bound visiting b)
+      Or (unfold_formula line_no aliases definitions constants bound a,
+          unfold_formula line_no aliases definitions constants bound b)
   | Imp (a, b) ->
-      Imp (unfold_formula line_no aliases definitions bound visiting a,
-           unfold_formula line_no aliases definitions bound visiting b)
+      Imp (unfold_formula line_no aliases definitions constants bound a,
+           unfold_formula line_no aliases definitions constants bound b)
   | Iff (a, b) ->
-      Iff (unfold_formula line_no aliases definitions bound visiting a,
-           unfold_formula line_no aliases definitions bound visiting b)
+      Iff (unfold_formula line_no aliases definitions constants bound a,
+           unfold_formula line_no aliases definitions constants bound b)
   | Forall (x, f) ->
-      Forall (x, unfold_formula line_no aliases definitions
-        (StringSet.add x bound) visiting f)
+      Forall (x, unfold_formula line_no aliases definitions constants
+        (StringSet.add x bound) f)
   | Exists (x, f) ->
-      Exists (x, unfold_formula line_no aliases definitions
-        (StringSet.add x bound) visiting f)
+      Exists (x, unfold_formula line_no aliases definitions constants
+        (StringSet.add x bound) f)
 
-let unfold ?(bound = StringSet.empty) line_no aliases definitions formula =
-  unfold_formula line_no aliases definitions bound StringSet.empty formula
+let unfold ?(bound = StringSet.empty) line_no aliases definitions environment formula =
+  let constants = StringSet.of_list (Extracted.environment_constants environment) in
+  unfold_formula line_no aliases definitions constants bound formula
 
 let split_first_word line =
   let is_space = function
@@ -339,7 +356,7 @@ let words text =
   in
   collect 0 []
 
-let split_schema_argument line_no aliases definitions bound argument =
+let split_schema_argument line_no aliases definitions environment bound argument =
   match String.index_opt argument ':' with
   | None ->
       raise (Proof_error (line_no,
@@ -357,7 +374,7 @@ let split_schema_argument line_no aliases definitions bound argument =
         let variables = match names with [] -> [] | _fact :: variables -> variables in
         try parse_formula statement |> unfold
           ~bound:(List.fold_right StringSet.add variables bound)
-          line_no aliases definitions
+          line_no aliases definitions environment
         with Parse_error (_, message) -> raise (Proof_error (line_no, message))
       in
       (names, predicate)
@@ -470,13 +487,7 @@ let all_fact_context state context =
 let rec instantiate_formula substitutions = function
   | Bottom -> Bottom
   | Named (name, arguments) ->
-      Named (name,
-        List.map
-          (fun argument ->
-             Option.value
-               (StringMap.find_opt argument substitutions)
-               ~default:argument)
-          arguments)
+      Named (name, List.map (substitute_surface_term substitutions) arguments)
   | Eq (a, b) ->
       Eq (substitute_surface_term substitutions a,
           substitute_surface_term substitutions b)
@@ -604,8 +615,8 @@ let apply_certificate_program line_no state program text =
   in
   add_step state text kernel_state
 
-let parse_formula_at ?(bound = StringSet.empty) line_no aliases definitions text =
-  try parse_formula (trim text) |> unfold ~bound line_no aliases definitions
+let parse_formula_at ?(bound = StringSet.empty) line_no aliases definitions environment text =
+  try parse_formula (trim text) |> unfold ~bound line_no aliases definitions environment
   with Parse_error (_, message) -> raise (Proof_error (line_no, message))
 
 let parse_surface_term ?(bound = StringSet.empty) line_no definitions text =
@@ -625,7 +636,7 @@ let last_space_index text =
   in
   find (String.length text - 1)
 
-let parse_separation_argument line_no aliases definitions bound argument =
+let parse_separation_argument line_no aliases definitions environment bound argument =
   match String.index_opt argument ':' with
   | None ->
       raise (Proof_error (line_no,
@@ -657,7 +668,7 @@ let parse_separation_argument line_no aliases definitions bound argument =
           "The element variable must not occur in the source term."));
       let predicate =
         try parse_formula statement |> unfold ~bound:(StringSet.add element bound)
-          line_no aliases definitions
+          line_no aliases definitions environment
         with Parse_error (_, message) -> raise (Proof_error (line_no, message))
       in
       (fact_name, source, element, predicate)
@@ -680,7 +691,7 @@ let execute_rule line_no state argument =
     | [] -> StringSet.empty
   in
   let parse_formula text =
-    parse_formula_at ~bound line_no state.aliases state.definitions text
+    parse_formula_at ~bound line_no state.aliases state.definitions state.global_environment text
   in
   let request =
     try Rule_parser.parse ~parse_formula argument with
@@ -937,11 +948,7 @@ let abstract_rewrite_term source binder formula =
   let rec abstract_formula = function
     | Bottom -> Bottom
     | Named (name, arguments) ->
-        Named (name,
-          List.map
-            (fun argument ->
-               if Name argument = source then binder else argument)
-            arguments)
+        Named (name, List.map abstract_term arguments)
     | Eq (left, right) -> Eq (abstract_term left, abstract_term right)
     | Mem (left, right) -> Mem (abstract_term left, abstract_term right)
     | Not body -> Not (abstract_formula body)
@@ -1086,13 +1093,15 @@ let execute_tactic line_no state line =
       | "resolution" -> execute_resolution line_no state goal argument
       | "separation" ->
           let fact_name, source, element, predicate =
-            parse_separation_argument line_no state.aliases state.definitions bound argument
+            parse_separation_argument line_no state.aliases state.definitions
+              state.global_environment bound argument
           in
           execute_separation line_no state
             fact_name source element predicate
       | "replacement" ->
           let names, predicate =
-            split_schema_argument line_no state.aliases state.definitions bound argument
+            split_schema_argument line_no state.aliases state.definitions
+              state.global_environment bound argument
           in
           begin match names with
           | [fact_name; source; input; output] ->
@@ -1683,7 +1692,7 @@ let parse_alias line_no aliases definitions environment line =
   if statement = "" then
     raise (Proof_error (line_no, "Expected a formula after :=."));
   let body =
-    try parse_formula statement |> unfold ~bound:parameter_set line_no aliases definitions
+    try parse_formula statement |> unfold ~bound:parameter_set line_no aliases definitions environment
     with Parse_error (_, message) -> raise (Proof_error (line_no, message))
   in
   let allowed = StringSet.union parameter_set constants in
@@ -1905,7 +1914,7 @@ let analyze_statements meaningful =
         if name = "" then
           raise (Proof_error (header_line, "Expected a theorem name."));
         let theorem =
-          try parse_formula statement |> unfold header_line aliases definitions
+          try parse_formula statement |> unfold header_line aliases definitions global_environment
           with Parse_error (_, message) -> raise (Proof_error (header_line, message))
         in
         let kernel_state =

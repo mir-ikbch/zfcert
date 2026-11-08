@@ -276,8 +276,8 @@ and parse_prefix state =
           | Name name ->
               let rec arguments result =
                 match peek state with
-                | Ident argument ->
-                    ignore (take state);
+                | Ident _ ->
+                    let argument = parse_term state in
                     arguments (argument :: result)
                 | _ -> List.rev result
               in
@@ -288,8 +288,8 @@ and parse_prefix state =
                     (state.position,
                      Printf.sprintf
                        "Function applications require parentheses. Write %s(%s) instead of %s."
-                       name (String.concat ", " arguments)
-                       (String.concat " " (name :: arguments))))
+                       name (String.concat ", " (List.map term_to_string arguments))
+                       (String.concat " " (name :: List.map term_to_string arguments))))
               | _ -> Named (name, arguments)
               end
           | App _ ->

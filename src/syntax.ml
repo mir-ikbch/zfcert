@@ -1,6 +1,6 @@
 type formula =
   | Bottom
-  | Named of string * string list
+  | Named of string * term list
   | Eq of term * term
   | Mem of term * term
   | Not of formula
@@ -35,7 +35,7 @@ let rec formula_to_string ?(outer = 0) formula =
     match formula with
     | Bottom -> "⊥"
     | Named (name, arguments) ->
-        String.concat " " (name :: arguments)
+        String.concat " " (name :: List.map term_to_string arguments)
     | Eq (left, right) -> term_to_string left ^ " = " ^ term_to_string right
     | Mem (left, right) -> term_to_string left ^ " ∈ " ^ term_to_string right
     | Not inner ->
@@ -75,9 +75,14 @@ let rec term_free_vars = function
 
 let term_all_vars = term_free_vars
 
+let term_arguments_vars variables arguments =
+  List.fold_left
+    (fun names argument -> StringSet.union names (variables argument))
+    StringSet.empty arguments
+
 let rec free_vars = function
   | Bottom -> StringSet.empty
-  | Named (_, arguments) -> StringSet.of_list arguments
+  | Named (_, arguments) -> term_arguments_vars term_free_vars arguments
   | Eq (left, right) | Mem (left, right) ->
       StringSet.union (term_free_vars left) (term_free_vars right)
   | Not formula -> free_vars formula
@@ -91,7 +96,7 @@ let rec free_vars = function
 
 let rec all_vars = function
   | Bottom -> StringSet.empty
-  | Named (_, arguments) -> StringSet.of_list arguments
+  | Named (_, arguments) -> term_arguments_vars term_all_vars arguments
   | Eq (left, right) | Mem (left, right) ->
       StringSet.union (term_all_vars left) (term_all_vars right)
   | Not formula -> all_vars formula
@@ -118,8 +123,8 @@ let rec rename_term_bound old_name new_name = function
 
 let rec rename_bound old_name new_name = function
   | Bottom -> Bottom
-  | Named (name, arguments) -> Named (name, List.map (fun argument ->
-      if argument = old_name then new_name else argument) arguments)
+  | Named (name, arguments) ->
+      Named (name, List.map (rename_term_bound old_name new_name) arguments)
   | Eq (left, right) ->
       Eq (rename_term_bound old_name new_name left,
           rename_term_bound old_name new_name right)
@@ -160,9 +165,7 @@ let rec subst_term variable replacement = function
 let rec subst variable replacement = function
   | Bottom -> Bottom
   | Named (name, arguments) ->
-      Named (name,
-        List.map (fun argument -> if argument = variable then term_to_string replacement else argument)
-          arguments)
+      Named (name, List.map (subst_term variable replacement) arguments)
   | Eq (left, right) ->
       Eq (subst_term variable replacement left,
           subst_term variable replacement right)
@@ -232,9 +235,7 @@ let alpha_equal left right =
       Named (right_name, right_arguments) ->
         left_name = right_name
         && List.length left_arguments = List.length right_arguments
-        && List.for_all2
-             (fun left right -> term_equal (Name left) (Name right))
-             left_arguments right_arguments
+        && List.for_all2 term_equal left_arguments right_arguments
     | Eq (left_first, left_second),
       Eq (right_first, right_second)
     | Mem (left_first, left_second),

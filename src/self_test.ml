@@ -304,6 +304,7 @@ let run_directional_apply_tests () =
 let run () =
   Input_test.run ();
   Definition_test.run ();
+  Alias_test.run ();
   if Syntax.fresh_name "x" Syntax.StringSet.empty <> "x0"
      || Syntax.fresh_name "x"
           (Syntax.StringSet.of_list ["x0"; "x1"]) <> "x2"

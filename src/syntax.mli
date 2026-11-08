@@ -1,6 +1,6 @@
 type formula =
   | Bottom
-  | Named of string * string list
+  | Named of string * term list
   | Eq of term * term
   | Mem of term * term
   | Not of formula
