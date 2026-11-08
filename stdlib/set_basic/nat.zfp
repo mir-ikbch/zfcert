@@ -1,0 +1,365 @@
+(** * Set-theoretic Definition of Natural Numbers *)
+
+input "set_basic.zfp".
+
+choose zero Hzero from empty_set.
+
+theorem exists_succ : forall x, exists u, forall z, (z in u <-> z in x or z in singleton(x)).
+intro x.
+specialize exists_cup x singleton(x) as Hc.
+exact Hc.
+qed.
+
+choose succ Hsucc from exists_succ.
+
+
+theorem succ_never_zero : forall x, not (succ(x) = zero).
+intro x.
+intro Heq.
+specialize Hsucc x as Hsx.
+specialize Hsx x as Hsxx.
+cases Hsxx.
+rule cut Hxin : x in succ(x).
+  apply Hsxx_backward.
+  right.
+  specialize Hsingleton x as Hsi.
+  specialize Hsi x as Hsix.
+  cases Hsix.
+  apply Hsix_backward.
+  refl.
+specialize eq_subst_mem succ(x) zero x as Hsub.
+rule cut Hxinzero : x in zero.
+  apply Hsub.
+  exact Heq.
+  exact Hxin.
+specialize Hzero x as Hnx.
+contradiction.
+qed.
+
+theorem mem_succ_self : forall x, x in succ(x).
+intro x.
+specialize Hsucc x as Hsx.
+specialize Hsx x as Hsxx.
+cases Hsxx.
+apply Hsxx_backward.
+right.
+specialize Hsingleton x as Hsi.
+specialize Hsi x as Hsix.
+cases Hsix.
+apply Hsix_backward.
+refl.
+qed.
+
+theorem succ_injective : forall m, forall n, (succ(m) = succ(n) -> m = n).
+intro m.
+intro n.
+intro Heq.
+specialize mem_succ_self m as Hmm.
+specialize eq_subst_mem succ(m) succ(n) m as Esub1.
+rule cut Hmsn : m in succ(n).
+  resolution.
+specialize Hsucc n as Hsn1.
+specialize Hsn1 m as Hsnm.
+cases Hsnm.
+rule cut Hmor : m in n or m in singleton(n).
+  resolution.
+cases Hmor.
+  rule cut Hswap : succ(n) = succ(m).
+    specialize eq_sym succ(m) succ(n) as Es.
+    resolution.
+  specialize mem_succ_self n as Hnn.
+  specialize eq_subst_mem succ(n) succ(m) n as Esub2.
+  rule cut Hnsm : n in succ(m).
+    resolution.
+  specialize Hsucc m as Hsm1.
+  specialize Hsm1 n as Hsmn.
+  cases Hsmn.
+  rule cut Hnor : n in m or n in singleton(m).
+    resolution.
+  cases Hnor.
+    rule cut Hfalse : false.
+      specialize no_two_cycle m n as Hcyc.
+      resolution.
+    contradiction.
+    specialize Hsingleton m as Hsim.
+    specialize Hsim n as Hsimn.
+    cases Hsimn.
+    rule cut Hnm_eq : n = m.
+      resolution.
+    specialize eq_sym n m as Esf.
+      resolution.
+  specialize Hsingleton n as Hsin.
+  specialize Hsin m as Hsinm.
+  cases Hsinm.
+  apply Hsinm_forward.
+  exact Hmor_right.
+qed.
+(*
+choose inf Hinf from infinity.
+
+theorem zero_in_inf : zero in inf.
+cases Hinf.
+obtain e He from Hinf_left.
+cases He.
+rule cut Heez : e = zero.
+  specialize empty_unique e zero as Heu.
+  apply Heu.
+  exact He_left.
+  exact Hzero.
+specialize eq_subst_mem_left e zero inf as Esub.
+apply Esub.
+exact Heez.
+exact He_right.
+qed.
+
+theorem inf_closed_succ : forall x, (x in inf -> succ(x) in inf).
+intro x.
+intro Hxinf.
+cases Hinf.
+specialize Hinf_right x as Hspec.
+rule cut Hex : exists s, (s in inf and forall z, (z in s <-> (z in x or z = x))).
+  apply Hspec.
+  exact Hxinf.
+obtain s Hs from Hex.
+cases Hs.
+rule cut Heq_s : s = succ(x).
+  specialize extensionality s succ(x) as Hext.
+  apply Hext.
+  intro z.
+  split.
+    intro Hzs.
+    specialize Hs_right z as Hzspec.
+    cases Hzspec.
+    rule cut Hzor : z in x or z = x.
+      apply Hzspec_forward.
+      exact Hzs.
+    specialize Hsucc x as Hsx.
+    specialize Hsx z as Hsxz.
+    cases Hsxz.
+    apply Hsxz_backward.
+    cases Hzor.
+      left.
+      exact Hzor_left.
+      right.
+      specialize Hsingleton x as Hsix.
+      specialize Hsix z as Hsixz.
+      cases Hsixz.
+      apply Hsixz_backward.
+      exact Hzor_right.
+    intro Hzsuccx.
+    specialize Hsucc x as Hsx2.
+    specialize Hsx2 z as Hsxz2.
+    cases Hsxz2.
+    rule cut Hzor2 : z in x or z in singleton(x).
+      apply Hsxz2_forward.
+      exact Hzsuccx.
+    specialize Hs_right z as Hzspec2.
+    cases Hzspec2.
+    apply Hzspec2_backward.
+    cases Hzor2.
+      left.
+      exact Hzor2_left.
+      right.
+      specialize Hsingleton x as Hsix2.
+      specialize Hsix2 z as Hsixz2.
+      cases Hsixz2.
+      apply Hsixz2_forward.
+      exact Hzor2_right.
+specialize eq_subst_mem_left s succ(x) inf as Esub2.
+apply Esub2.
+exact Heq_s.
+exact Hs_left.
+qed.
+*)
+
+alias contains_nat s := zero in s and (forall x, x in s -> succ(x) in s).
+
+alias contained_nat s := forall x, x in s -> x = zero or exists x', x = succ(x').
+
+theorem succ_unique :
+        forall x, forall sx,
+        (forall z, z in sx <-> z in x or z = x) -> succ(x) = sx.
+intros x sx H.
+specialize extensionality succ(x) sx as H'.
+apply H'.
+intro z.
+split.
+  intro H0.
+  specialize Hsucc x z as Hz.
+  cases Hz.
+  apply Hz_forward in H0 as H0z.
+  cases H0z.
+  specialize H z as Hz'.
+  cases Hz'.
+  apply Hz'_backward.
+  left.
+  apply H0z_left.
+  specialize H z as Hz'.
+  cases Hz'.
+  apply Hz'_backward.
+  right.
+  specialize Hsingleton x z as Hsing.
+  resolution.
+  intro Hzinsx.
+  specialize H z as Hz.
+  cases Hz.
+  apply Hz_forward in Hzinsx as Hz'.
+  specialize Hsucc x z as Hsuccz.
+  cases Hsuccz.
+  cases Hz'.
+    apply Hsuccz_backward.
+    left.
+    exact Hz'_left.
+    apply Hsuccz_backward.
+    right.
+    specialize Hsingleton x z as Hsing.
+    cases Hsing.
+    apply Hsing_backward.
+    apply Hz'_right.
+qed.
+  
+
+theorem inf_zs : exists i, contains_nat i.
+obtain inft Hinft from infinity.
+use inft.
+cases Hinft.
+obtain e He from Hinft_left.
+cases He.
+split.
+  rule cut Hezero : zero = e.
+    apply empty_unique.
+      exact Hzero.
+      exact He_left.
+    rewrite Hezero.
+    exact He_right.
+  intros x H.
+  specialize Hinft_right x as Hs.
+  apply Hs in H as Hs'.
+  cases Hs' y Hy.
+  cases Hy.
+  rule cut y_is_succ : succ(x) = y.
+    apply succ_unique.
+    exact Hy_right.
+  rewrite y_is_succ.
+  apply Hy_left.
+qed.
+
+choose inf Hinf from inf_zs.
+
+theorem exists_nat : exists nat, contains_nat nat and contained_nat nat.
+separation Hnat inf x : x = zero or (exists x', x = succ(x')).
+obtain nat Hnat' from Hnat.
+cases Hinf.
+use nat.
+split.
+  split.
+    specialize Hnat' zero as Hnatzero.
+    cases Hnatzero.
+    apply Hnatzero_backward.
+    split.
+      exact Hinf_left.
+      left.
+      refl.
+    intros.
+    specialize Hnat' succ(x) as Hnats.
+    cases Hnats.
+    apply Hnats_backward.
+    split.
+      resolution.
+      right.
+      use x.
+      refl.
+    intros.
+    specialize Hnat' x as Hnatx.
+    cases Hnatx.
+    apply Hnatx_forward in H as Hnatx'.
+    cases Hnatx'.
+    exact Hnatx'_right.
+qed.
+
+theorem exists_nat_minimal : exists n,
+  (contains_nat n and contained_nat n) and
+  (forall s, contains_nat s -> subset n s).
+obtain m Hm from exists_nat.
+cases Hm.
+cases Hm_left.
+separation Hsep m x : forall s, contains_nat s -> x in s.
+obtain n Hchar from Hsep.
+use n.
+split.
+  split.
+    split.
+      specialize Hchar zero as Hz.
+      cases Hz.
+      apply Hz_backward.
+      split.
+        exact Hm_left_left.
+        intros s Hs.
+        cases Hs.
+        exact Hs_left.
+      intros x Hx.
+      specialize Hchar x as Hxc.
+      cases Hxc.
+      apply Hxc_forward in Hx as Hxx.
+      cases Hxx.
+      specialize Hchar succ(x) as Hsc.
+      cases Hsc.
+      apply Hsc_backward.
+      split.
+        apply Hm_left_right.
+        exact Hxx_left.
+        intros s Hs.
+        specialize Hxx_right s as Hxs.
+        apply Hxs in Hs as Hxin.
+        cases Hs.
+        apply Hs_right.
+        exact Hxin.
+    intros x Hx.
+    specialize Hchar x as Hxc.
+    cases Hxc.
+    apply Hxc_forward in Hx as Hxx.
+    cases Hxx.
+    specialize Hm_right x as Hmx.
+    apply Hmx.
+    exact Hxx_left.
+  intros s Hs x Hx.
+  specialize Hchar x as Hxc.
+  cases Hxc.
+  apply Hxc_forward in Hx as Hxx.
+  cases Hxx.
+  specialize Hxx_right s as Huniv.
+  apply Huniv.
+  exact Hs.
+qed.
+
+choose nat Hnat_minimal from exists_nat_minimal.
+
+theorem Hnat : contains_nat nat and contained_nat nat.
+cases Hnat_minimal.
+exact Hnat_minimal_left.
+qed.
+
+theorem nat_ind :
+  forall s,
+    subset s nat ->
+    zero in s ->
+    (forall x, x in s -> succ(x) in s) ->
+    s = nat.
+intros s Hsub Hz Hs.
+cases Hnat_minimal.
+specialize Hnat_minimal_right s as Hmin.
+rule cut Hns : subset nat s.
+  apply Hmin.
+  split.
+    exact Hz.
+    exact Hs.
+apply extensionality.
+intro x.
+split.
+  intro Hx.
+  apply Hsub.
+  exact Hx.
+  intro Hx.
+  apply Hns.
+  exact Hx.
+qed.

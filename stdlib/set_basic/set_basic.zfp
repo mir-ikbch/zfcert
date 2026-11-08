@@ -171,4 +171,65 @@ qed.
 definition opair(x,y) := pair(x, pair(x,y)).
 
 theorem product_exists :
-  forall s1 s2, exists prod, forall x, x in prod <->
+  forall s1, forall s2, exists prod, forall x,
+    x in prod <-> exists xl, exists xr, xl in s1 and xr in s2 and x = opair(xl,xr).
+intros s1 s2.
+specialize power_set cup(s1,s2) as Hpower.
+obtain p Hp from Hpower.
+specialize power_set cup(cup(s1,s2),p) as Hbound.
+obtain bound Hbound_mem from Hbound.
+separation Hprod bound x : exists xl, exists xr, xl in s1 and xr in s2 and x = opair(xl,xr).
+obtain prod Hprod_mem from Hprod.
+use prod.
+intro x.
+specialize Hprod_mem x as Hx.
+split.
+  intro Hxprod.
+  apply -> Hx in Hxprod as Hparts.
+  cases Hparts.
+  exact Hparts_right.
+  intro Hex.
+  apply <- Hx.
+  split.
+    obtain xl Hxl from Hex.
+    obtain xr Hxr from Hxl.
+    cases Hxr.
+    cases Hxr_left.
+    rewrite Hxr_right.
+    specialize Hbound_mem opair(xl,xr) as Hop.
+    apply <- Hop.
+    intros z Hz.
+    specialize Hpair xl pair(xl,xr) z as Hzpair.
+    apply -> Hzpair in Hz as Hzeq.
+    specialize Hcup cup(s1,s2) p z as Hzbound.
+    apply <- Hzbound.
+    cases Hzeq.
+      left.
+      rewrite Hzeq_left.
+      specialize Hcup s1 s2 xl as Hxlcup.
+      apply <- Hxlcup.
+      left.
+      exact Hxr_left_left.
+      right.
+      rewrite Hzeq_right.
+      specialize Hp pair(xl,xr) as Hpairp.
+      apply <- Hpairp.
+      intros w Hw.
+      specialize Hpair xl xr w as Hwpair.
+      apply -> Hwpair in Hw as Hweq.
+      specialize Hcup s1 s2 w as Hwcup.
+      apply <- Hwcup.
+      cases Hweq.
+        left.
+        rewrite Hweq_left.
+        exact Hxr_left_left.
+        right.
+        rewrite Hweq_right.
+        exact Hxr_left_right.
+    exact Hex.
+qed.
+
+choose prod Hprod from product_exists.
+(*
+alias is_relation X Y R := forall x, x in R -> x in prod(X,Y).
+  *)
