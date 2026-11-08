@@ -108,9 +108,22 @@ let parse_kernel_term parse_formula text =
   | Syntax.Eq (term, _) -> Kernel_syntax.to_kernel_term term
   | _ -> raise (Error "Expected a term.")
 
+(* Include rule-local binders while elaborating the predicate so that they
+   shadow bare zero-argument term definitions just like formula quantifiers. *)
+let parse_bound_formula parse_formula binders text =
+  let wrapped = List.fold_right
+    (fun binder body -> "forall " ^ binder ^ ", " ^ body) binders text in
+  let rec unwrap binders formula =
+    match binders, formula with
+    | [], formula -> formula
+    | _ :: rest, Syntax.Forall (_, body) -> unwrap rest body
+    | _ -> raise (Error "Expected a quantified rule predicate.")
+  in
+  unwrap binders (parse_formula wrapped)
+
 let parse_schema parse_formula schema argument =
   let names, formula_text = split_formula argument in
-  let predicate = parse_formula formula_text in
+  let predicate = parse_bound_formula parse_formula names formula_text in
   match String.lowercase_ascii schema, names with
   | "separation", [source; element] ->
       if source = element then
@@ -229,7 +242,7 @@ let parse ~parse_formula argument =
         | _ -> raise (Error "Use: rule all_elim term x : P.")
       in
       let universal =
-        Syntax.Forall (binder, parse_formula formula_text)
+        Syntax.Forall (binder, parse_bound_formula parse_formula [binder] formula_text)
       in
       Kernel.NPrimitiveRule
         (Kernel.NRAllElim
@@ -250,7 +263,7 @@ let parse ~parse_formula argument =
         | _ -> raise (Error "Use: rule ex_elim x H : P.")
       in
       let existential =
-        Syntax.Exists (witness, parse_formula formula_text)
+        Syntax.Exists (witness, parse_bound_formula parse_formula [witness] formula_text)
       in
       Kernel.NPrimitiveRule
         (Kernel.NRExElim
@@ -268,7 +281,7 @@ let parse ~parse_formula argument =
         | _ -> raise (Error "Use: rule equal_elim s t x : P.")
       in
       let predicate =
-        Syntax.Forall (binder, parse_formula formula_text)
+        Syntax.Forall (binder, parse_bound_formula parse_formula [binder] formula_text)
       in
       Kernel.NPrimitiveRule
         (Kernel.NREqualElim

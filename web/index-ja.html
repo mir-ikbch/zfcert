@@ -46,6 +46,7 @@
               <option value="empty">空集合公理</option>
               <option value="separation">分出公理図式</option>
               <option value="alias">命題エイリアス</option>
+              <option value="definition">項の定義</option>
               <option value="choose">名前付き証人の選択</option>
               <option value="choose_function">関数の選択</option>
               <option value="rules">基本規則だけを使う</option>
@@ -101,6 +102,14 @@ qed.</textarea>
                 <span>次へ</span>
                 <span class="navigation-arrow">↓</span>
               </button>
+            </div>
+          </div>
+          <div class="syntax-card">
+            <p class="syntax-title">宣言</p>
+            <div class="syntax-grid">
+              <code>alias P x := ….</code><span>命題に展開可能な別名を与える</span>
+              <code>definition f(x,y) := t.</code><span>項に展開可能な別名を与える</span>
+              <code>choose f Hf from fact.</code><span>証明済みの証人と事実を選ぶ</span>
             </div>
           </div>
           <div class="syntax-card">

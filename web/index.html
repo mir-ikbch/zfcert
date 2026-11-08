@@ -46,6 +46,7 @@
               <option value="empty">Empty-set axiom</option>
               <option value="separation">Separation schema</option>
               <option value="alias">Proposition alias</option>
+              <option value="definition">Term definition</option>
               <option value="choose">Choose a named witness</option>
               <option value="choose_function">Choose a function</option>
               <option value="rules">Primitive rules only</option>
@@ -101,6 +102,14 @@ qed.</textarea>
                 <span>Next</span>
                 <span class="navigation-arrow">↓</span>
               </button>
+            </div>
+          </div>
+          <div class="syntax-card">
+            <p class="syntax-title">Declarations</p>
+            <div class="syntax-grid">
+              <code>alias P x := ….</code><span>Give a transparent alias to a proposition</span>
+              <code>definition f(x,y) := t.</code><span>Give a transparent alias to a term</span>
+              <code>choose f Hf from fact.</code><span>Choose a certified witness and its fact</span>
             </div>
           </div>
           <div class="syntax-card">

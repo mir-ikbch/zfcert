@@ -314,6 +314,13 @@ let parse_formula input =
     end;
   formula
 
+let parse_term input =
+  let state = { tokens = lex input; position = 0 } in
+  let term = parse_term state in
+  if peek state <> Eof then
+    raise (Parse_error (state.position, "Unexpected input after the term."));
+  term
+
 let split_statements script =
   let length = String.length script in
   let buffer = Buffer.create 256 in

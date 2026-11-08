@@ -1,0 +1,23 @@
+choose empty Hempty from empty_set.
+choose pair Hpair from pairing.
+
+definition zero := empty.
+definition f(x, y) := pair(y, x).
+definition singleton(x) := f(x, x).
+
+theorem definition_expansion : forall x y, f(x, y) = pair(y, x).
+intros x y.
+refl.
+qed.
+
+theorem singleton_members :
+  forall a z, (z in singleton(a) <-> (z = a or z = a)).
+intros a z.
+specialize Hpair a a z as H.
+exact H.
+qed.
+
+theorem singleton_witness : exists s, s = singleton(zero).
+use singleton(zero).
+refl.
+qed.

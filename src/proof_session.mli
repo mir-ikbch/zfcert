@@ -18,6 +18,12 @@ type proposition_alias = {
   body : Syntax.formula;
 }
 
+type term_definition = {
+  definition_name : string;
+  parameters : string list;
+  body : Syntax.term;
+}
+
 type session
 
 exception Proof_error of int * string
@@ -32,6 +38,7 @@ val check_script :
 val theorem_name : session -> string
 val theorem : session -> Syntax.formula
 val aliases : session -> proposition_alias list
+val definitions : session -> term_definition list
 val global_constants : session -> string list
 val global_facts : session -> (string * Syntax.formula) list
 val goals : session -> display_goal list

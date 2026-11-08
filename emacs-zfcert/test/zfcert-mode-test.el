@@ -194,4 +194,21 @@
     (should (string-match-p "empty (constant)" (buffer-string)))
     (should (string-match-p "Hempty : ∀y, ¬y ∈ empty" (buffer-string)))))
 
+(ert-deftest zfcert-render-result-shows-term-definitions ()
+  (zfcert--render-result
+   '((ok . t)
+     (aliasesOnly . t)
+     (definitions . (((name . "singleton")
+                      (parameters . ("x"))
+                      (term . "pair(x, x)"))
+                     ((name . "zero")
+                      (parameters . nil)
+                      (term . "empty"))))))
+  (with-current-buffer "*ZFCert Goals*"
+    (should (string-match-p "2 definitions" (buffer-string)))
+    (should (string-match-p (regexp-quote "singleton(x) := pair(x, x)")
+                            (buffer-string)))
+    (should (string-match-p (regexp-quote "zero() := empty")
+                            (buffer-string)))))
+
 ;;; zfcert-mode-test.el ends here

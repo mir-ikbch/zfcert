@@ -174,7 +174,7 @@ exact empty_is_empty.
 qed.
 ```
 
-読み込んだ `alias`、`choose`、定理は、同じファイルに書いた場合と同じように後続の
+読み込んだ `alias`、`definition`、`choose`、定理は、同じファイルに書いた場合と同じように後続の
 証明で使えます。証明の途中で、タクティクを書いたファイルを読み込むこともできます。
 名前空間は追加せず、同じファイルを複数回指定すると、その都度読み込みます。
 
@@ -195,7 +195,7 @@ CLI と、ネイティブカーネルを使う VS Code・Emacs で利用でき�
 dune exec src/main.exe -- --check examples/input.zfp
 ```
 
-### 定理、別名、choose
+### 定理、別名、definition、choose
 
 ```text
 alias is_empty x := forall y, not (y in x).
@@ -211,6 +211,33 @@ qed.
 同時に代入され、変数捕獲を避けるために必要なら内部で名前が変更されます。引数なしなら
 `alias foo := P.` と書けます。`intro x y.` のように `intro` に複数の名前を渡すことは
 できません。複数導入には `intros x y.` を使います。
+
+`definition f(x, y) := t.` は、項 `t` に透明な別名を付けます。
+
+```text
+choose pair Hpair from pairing.
+definition f(x, y) := pair(y, x).
+definition singleton(x) := pair(x, x).
+
+theorem definition_example : forall x y, f(x, y) = pair(y, x).
+intros x y.
+refl.
+qed.
+```
+
+定理の式や `specialize`、`use`、`choose`、`rule` などに渡す項では、定義が自動で
+展開されます。引数には `f(singleton(a), b)` のような関数項も渡せます。引数の代入は
+同時に行われます。別名は証明済みの事実としては使いません。
+
+本体で使う関数記号・定数は、先に `choose` で宣言してください。先に書いた
+`definition` も本体で使えます。本体の自由変数は左辺のパラメータに列挙し、各パラメータは
+重複せず、宣言済みの定数・関数記号と異なる名前にしてください。再帰定義や再定義、
+引数の個数が合わない適用はエラーになります。
+
+引数なしなら `definition zero := empty.` または `definition zero() := empty.` と書け、
+`zero` と `zero()` のどちらでも使えます。量化された変数やパラメータが同じ名前なら、
+括弧のない名前はその変数を指します。実行できる例は
+[`examples/definition.zfp`](examples/definition.zfp) です。
 
 `choose` は、存在命題の証明書を検査した後で、定数または関数記号と具体化済みの事実を
 グローバル環境に追加します。

@@ -76,6 +76,10 @@ class GoalViewProvider {
         <div class="context-row"><span class="name">${escapeHtml(
           [alias.name, ...(alias.parameters || [])].join(" ")
         )}</span> := ${escapeHtml(alias.statement)}</div>`).join("");
+      const definitions = (data.definitions || []).map((definition) => `
+        <div class="context-row"><span class="name">${escapeHtml(
+          `${definition.name}(${(definition.parameters || []).join(", ")})`
+        )}</span> := ${escapeHtml(definition.term)}</div>`).join("");
       const constants = (data.constants || []).map((name) => `
         <div class="context-row"><span class="name">${escapeHtml(name)}</span>
         (constant)</div>`).join("");
@@ -83,9 +87,9 @@ class GoalViewProvider {
         <div class="context-row"><span class="name">${escapeHtml(fact.name)}</span>
         : ${escapeHtml(fact.formula)}</div>`).join("");
       content = `
-        <div class="status">${(data.aliases || []).length} aliases · ${(data.constants || []).length} constants</div>
+        <div class="status">${(data.aliases || []).length} aliases · ${(data.definitions || []).length} definitions · ${(data.constants || []).length} constants</div>
         <div class="success">✓ ${escapeHtml(data.message)}</div>
-        <div class="context">${aliases}${constants}${facts}</div>`;
+        <div class="context">${aliases}${definitions}${constants}${facts}</div>`;
     } else if (data.qed || !Array.isArray(data.goals)) {
       content = `
         <div class="status">Verified · ${data.steps} steps</div>
@@ -321,6 +325,7 @@ function tacticCompletions() {
   const entries = [
     ["input", "input \"${1:filename.zfp}\".", "Read a saved proof file relative to this file"],
     ["alias", "alias ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.", "Give a transparent alias to a proposition, optionally with arguments"],
+    ["definition", "definition ${1:f}(${2:x,y}) := ${3:x}.", "Give a transparent alias to a term"],
     ["choose", "choose ${1:empty} ${2:Hempty} from ${3:empty_set}.", "Declare a global witness constant and its certified fact"],
     ["rule", "rule ${1|axiom,hypothesis,falsum_elim,impl_intro,impl_elim,conj_intro,conj_elim_l,conj_elim_r,disj_intro_l,disj_intro_r,disj_elim,all_intro,all_elim,ex_intro,ex_elim,equal_refl,equal_elim,cut|}.", "Apply one primitive natural-deduction rule"],
     ["rule cut", "rule cut ${1:H} : ${2:P}.", "Introduce and prove an intermediate proposition with Cut"],

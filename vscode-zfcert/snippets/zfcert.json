@@ -9,6 +9,11 @@
     "body": "alias ${1:is_empty} ${2:x} := ${3:forall y, not (y in x)}.",
     "description": "Give a transparent alias to a proposition, optionally with arguments"
   },
+  "Term definition": {
+    "prefix": "definition",
+    "body": "definition ${1:f}(${2:x,y}) := ${3:x}.",
+    "description": "Give a transparent alias to a term"
+  },
   "choose declaration": {
     "prefix": "choose",
     "body": "choose ${1:empty} ${2:Hempty} from ${3:empty_set}.",

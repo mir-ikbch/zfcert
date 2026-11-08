@@ -72,7 +72,7 @@ resolution, may legitimately take longer than a short interactive request."
 (defvar-local zfcert--error-overlay nil)
 
 (defconst zfcert--font-lock-keywords
-  `((,(regexp-opt '("input" "alias" "choose" "theorem" "qed") 'symbols)
+  `((,(regexp-opt '("input" "alias" "definition" "choose" "theorem" "qed") 'symbols)
      . font-lock-keyword-face)
     (,(regexp-opt
        '("rule" "intro" "intros" "exact" "apply" "specialize" "obtain" "put" "cases" "use"
@@ -97,6 +97,8 @@ resolution, may legitimately take longer than a short interactive request."
        'symbols)
      . font-lock-variable-name-face)
     ("\\_<theorem\\_>[[:space:]]+\\([[:word:]_']+\\)"
+     1 font-lock-function-name-face)
+    ("\\_<definition\\_>[[:space:]]+\\([[:word:]_']+\\)"
      1 font-lock-function-name-face)
     ("\\_<alias\\_>[[:space:]]+\\([[:word:]_']+\\)"
      1 font-lock-variable-name-face)))
@@ -347,6 +349,15 @@ For proof requests, send `buffer-file-name' to resolve relative input paths."
                         'face 'font-lock-variable-name-face)
             " : " (or (alist-get 'formula fact) "") "\n")))
 
+(defun zfcert--insert-definitions (definitions)
+  (dolist (definition definitions)
+    (insert
+     (propertize
+      (format "%s(%s)" (alist-get 'name definition)
+              (mapconcat #'identity (alist-get 'parameters definition) ", "))
+      'face 'font-lock-function-name-face)
+     " := " (or (alist-get 'term definition) "") "\n")))
+
 (defun zfcert--render-result (result)
   (let ((buffer (get-buffer-create "*ZFCert Goals*")))
     (with-current-buffer buffer
@@ -362,13 +373,16 @@ For proof requests, send `buffer-file-name' to resolve relative input paths."
                   (or (alist-get 'message result) "Unknown error") "\n"))
          ((alist-get 'aliasesOnly result)
           (let ((aliases (alist-get 'aliases result))
+                (definitions (alist-get 'definitions result))
                 (constants (alist-get 'constants result))
                 (facts (alist-get 'facts result)))
             (insert (propertize
-                     (format "%d aliases · %d constants\n\n"
-                             (length aliases) (length constants))
+                     (format "%d aliases · %d definitions · %d constants\n\n"
+                             (length aliases) (length definitions)
+                             (length constants))
                      'face 'success))
             (zfcert--insert-aliases aliases)
+            (zfcert--insert-definitions definitions)
             (zfcert--insert-globals constants facts)))
          ((or (alist-get 'qed result)
               (not (assq 'goals result)))

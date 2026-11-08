@@ -47,7 +47,7 @@ async function main() {
   assert.strictEqual(rejected.ok, false);
   assert.strictEqual(
     rejected.message,
-    "After aliases and choose declarations, use: theorem name : formula."
+    "After aliases, definitions and choose declarations, use: theorem name : formula."
   );
 
   const commented = await client.check(`(* A block comment may contain periods.
@@ -82,6 +82,33 @@ async function main() {
   assert.strictEqual(aliasedTheorem.ok, true);
   assert.strictEqual(aliasedTheorem.theorem, "alias_identity");
   assert.strictEqual(aliasedTheorem.aliases.length, 2);
+
+  const definitionScript = `choose pair Hpair from pairing.
+definition singleton(x) := pair(x,x).
+theorem singleton_shape :
+  forall a, forall z, (z in singleton(a) <-> (z = a or z = a)).
+intros a z.
+specialize Hpair a a z as Hsingleton.
+exact Hsingleton.
+qed.`;
+  const definitionsOnly = await client.step(textThroughLine(definitionScript, 1));
+  assert.strictEqual(definitionsOnly.ok, true, definitionsOnly.message);
+  assert.strictEqual(definitionsOnly.aliasesOnly, true);
+  assert.strictEqual(definitionsOnly.definitions[0].name, "singleton");
+  assert.deepStrictEqual(definitionsOnly.definitions[0].parameters, ["x"]);
+  assert.match(definitionsOnly.definitions[0].term, /^pair\(x,\s*x\)$/);
+
+  const definedTheorem = await client.check(definitionScript);
+  assert.strictEqual(definedTheorem.ok, true, definedTheorem.message);
+  assert.strictEqual(definedTheorem.theorem, "singleton_shape");
+  assert.strictEqual(definedTheorem.definitions.length, 1);
+
+  const definedConstant = await client.step(`choose empty Hempty from empty_set.
+definition zero := empty.`);
+  assert.strictEqual(definedConstant.ok, true, definedConstant.message);
+  assert.deepStrictEqual(definedConstant.definitions[0], {
+    name: "zero", parameters: [], term: "empty"
+  });
 
   const obtainResult = await client.check(`theorem obtain_witness :
     (exists x, x = x) -> exists y, y = y.

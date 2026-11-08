@@ -59,6 +59,14 @@ intro x.
 intro H.
 exact H.
 qed.`,
+  definition: `choose pair Hpair from pairing.
+definition singleton(x) := pair(x,x).
+theorem singleton_shape :
+  forall a, forall z, (z in singleton(a) <-> (z = a or z = a)).
+intros a z.
+specialize Hpair a a z as Hsingleton.
+exact Hsingleton.
+qed.`,
   choose: `alias is_empty x := forall y, not (y in x).
 choose empty Hempty from empty_set.
 theorem chosen_empty_is_empty : is_empty empty.
@@ -196,7 +204,7 @@ const ui = isJapanese ? {
   startInteractive: "↓で定理宣言から開始します。",
   checkedRules: count => `検証済みの基本規則を表示 (${count})`,
   constant: "定数",
-  declarationSummary: (aliases, constants) => `${aliases} 個のエイリアス · ${constants} 個の定数`,
+  declarationSummary: (aliases, definitions, constants) => `${aliases} 個のエイリアス · ${definitions} 個の項の定義 · ${constants} 個の定数`,
   current: "現在: ",
   checking: "確認中…",
   verify: "証明を検証",
@@ -251,7 +259,7 @@ const ui = isJapanese ? {
   startInteractive: "Press ↓ to begin at the theorem declaration.",
   checkedRules: count => `Show checked primitive rules (${count})`,
   constant: "constant",
-  declarationSummary: (aliases, constants) => `${aliases} aliases · ${constants} constants`,
+  declarationSummary: (aliases, definitions, constants) => `${aliases} aliases · ${definitions} definitions · ${constants} constants`,
   current: "Current: ",
   checking: "Checking…",
   verify: "Verify proof",
@@ -485,18 +493,24 @@ function declarationsHtml(data) {
       [alias.name, ...(alias.parameters || [])].join(" ")
     )}</code> := ${escapeHtml(alias.statement)}`
   );
+  const definitions = (data.definitions || []).map((definition) =>
+    `<code>${escapeHtml(
+      `${definition.name}(${(definition.parameters || []).join(", ")})`
+    )}</code> := ${escapeHtml(definition.term)}`
+  );
   const constants = (data.constants || []).map((name) =>
     `<code>${escapeHtml(name)}</code> (${ui.constant})`
   );
   const facts = (data.facts || []).map((fact) =>
     `<code>${escapeHtml(fact.name)}</code> : ${escapeHtml(fact.formula)}`
   );
-  return [...aliases, ...constants, ...facts].join("<br>");
+  return [...aliases, ...definitions, ...constants, ...facts].join("<br>");
 }
 
 function declarationSummary(data) {
   return ui.declarationSummary(
     (data.aliases || []).length,
+    (data.definitions || []).length,
     (data.constants || []).length
   );
 }

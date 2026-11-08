@@ -15,5 +15,5 @@
 
 (executable
  (name main)
- (modules main cli self_test input_test http_server native_input)
+ (modules main cli self_test input_test definition_test http_server native_input)
  (libraries unix zfcert_core))

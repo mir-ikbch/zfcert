@@ -74,6 +74,18 @@
           }
         },
         {
+          "name": "meta.definition.zfcert",
+          "match": "\\b(definition)\\s+([A-Za-z_][A-Za-z0-9_']*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.zfcert"
+            },
+            "2": {
+              "name": "entity.name.function.definition.zfcert"
+            }
+          }
+        },
+        {
           "name": "meta.choose.zfcert",
           "match": "\\b(choose)\\s+([A-Za-z_][A-Za-z0-9_']*)\\s+([A-Za-z_][A-Za-z0-9_']*)",
           "captures": {
