@@ -102,9 +102,6 @@ type choose_declaration = {
   choose_terms : string list;
 }
 
-type global_declaration =
-  | ChooseDeclaration of choose_declaration
-
 type session = {
   theorem_name : string;
   theorem : formula;
@@ -1510,7 +1507,7 @@ let find_assignment text =
   in
   search 0
 
-let parse_alias line_no aliases line =
+let parse_alias line_no aliases environment line =
   let prefix = "alias " in
   let content =
     trim (String.sub line (String.length prefix)
@@ -1538,11 +1535,17 @@ let parse_alias line_no aliases line =
   if Option.is_some (find_alias name aliases) then
     raise (Proof_error (line_no,
       "Proposition alias already exists: " ^ name));
+  let constants =
+    StringSet.of_list (Extracted.environment_constants environment)
+  in
   List.iter
     (fun parameter ->
        if not (valid_alias_name parameter) then
          raise (Proof_error (line_no,
-           "Invalid alias parameter: " ^ parameter)))
+           "Invalid alias parameter: " ^ parameter));
+       if StringSet.mem parameter constants then
+         raise (Proof_error (line_no,
+           "Alias parameter conflicts with a declared constant: " ^ parameter)))
     parameters;
   let parameter_set = StringSet.of_list parameters in
   if StringSet.cardinal parameter_set <> List.length parameters then
@@ -1558,7 +1561,8 @@ let parse_alias line_no aliases line =
     try parse_formula statement |> unfold line_no aliases
     with Parse_error (_, message) -> raise (Proof_error (line_no, message))
   in
-  let undeclared = StringSet.diff (free_vars body) parameter_set in
+  let allowed = StringSet.union parameter_set constants in
+  let undeclared = StringSet.diff (free_vars body) allowed in
   if not (StringSet.is_empty undeclared) then begin
     let variables = String.concat ", " (StringSet.elements undeclared) in
     raise (Proof_error (line_no,
@@ -1571,11 +1575,38 @@ let parse_alias line_no aliases line =
     }]
 
 let analyze_statements meaningful =
-  let rec read_declarations aliases declarations = function
+  let apply_choice environment steps declaration =
+    let context =
+      Extracted.environment_facts environment
+      |> List.map (fun (name, formula) ->
+           (name, Kernel_syntax.of_kernel formula))
+    in
+    let source_is_universal =
+      match lookup_fact declaration.choose_source context with
+      | Some (Forall _) -> true
+      | _ -> false
+    in
+    let environment =
+      if declaration.choose_terms = [] && source_is_universal
+      then declare_global_skolem environment declaration
+      else declare_global_choice environment declaration
+    in
+    let description =
+      String.concat " "
+        ("choose" :: declaration.choose_name ::
+         declaration.choose_fact :: "from" ::
+         declaration.choose_source :: declaration.choose_terms)
+    in
+    (environment, steps @ [description])
+  in
+  (* Apply choices in source order so aliases see only constants that have
+     already been certified in the global environment. *)
+  let rec read_declarations aliases environment steps declarations = function
     | (line_no, line) :: rest
       when starts_with_at (String.lowercase_ascii line) 0 "alias " ->
         read_declarations
-          (parse_alias line_no aliases line) declarations rest
+          (parse_alias line_no aliases environment line)
+          environment steps declarations rest
     | (line_no, line) :: rest
       when starts_with_at (String.lowercase_ascii line) 0 "choose " ->
         let prefix = "choose " in
@@ -1593,49 +1624,18 @@ let analyze_statements meaningful =
           choose_source = source;
           choose_terms = terms;
         } in
-        read_declarations aliases
-          (declarations @ [ChooseDeclaration declaration]) rest
+        let environment, steps = apply_choice environment steps declaration in
+        read_declarations aliases environment steps
+          (declarations @ [declaration]) rest
     | (line_no, line) :: _rest
       when starts_with_at (String.lowercase_ascii line) 0 "skolem " ->
         raise (Proof_error (line_no,
           "The Skolem keyword has been removed; use choose f H from fact."))
-    | rest -> (aliases, declarations, rest)
-  in
-  let apply_declarations environment steps declarations =
-    List.fold_left
-      (fun (environment, steps) declaration ->
-         match declaration with
-         | ChooseDeclaration declaration ->
-             let context =
-               Extracted.environment_facts environment
-               |> List.map (fun (name, formula) ->
-                    (name, Kernel_syntax.of_kernel formula))
-             in
-             let source_is_universal =
-               match lookup_fact declaration.choose_source context with
-               | Some (Forall _) -> true
-               | _ -> false
-             in
-             let environment =
-               if declaration.choose_terms = [] && source_is_universal
-               then declare_global_skolem environment declaration
-               else declare_global_choice environment declaration
-             in
-             let description =
-               String.concat " "
-                 ("choose" :: declaration.choose_name ::
-                  declaration.choose_fact :: "from" ::
-                  declaration.choose_source :: declaration.choose_terms)
-             in
-             (environment, steps @ [description]))
-      (environment, steps) declarations
+    | rest -> (aliases, environment, steps, declarations, rest)
   in
   let rec process hidden_facts aliases environment steps statements =
-    let aliases, declarations, proof =
-      read_declarations aliases [] statements
-    in
-    let global_environment, declaration_steps =
-      apply_declarations environment steps declarations
+    let aliases, global_environment, declaration_steps, declarations, proof =
+      read_declarations aliases environment steps [] statements
     in
     (* A [choose] declaration is a global declaration, not an automatic
        hypothesis of the theorem that follows it.  Keep its certified fact in
@@ -1645,9 +1645,7 @@ let analyze_statements meaningful =
     let hidden_facts =
       List.fold_left
         (fun hidden declaration ->
-           match declaration with
-           | ChooseDeclaration declaration ->
-               StringSet.add declaration.choose_fact hidden)
+           StringSet.add declaration.choose_fact hidden)
         hidden_facts declarations
     in
     match proof with

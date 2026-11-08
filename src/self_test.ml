@@ -72,6 +72,11 @@ let valid_scripts =
     "alias is_empty x := forall y, not (y in x)\nalias empty_alias x := is_empty x\ntheorem alias_identity : forall a, (empty_alias a -> is_empty a)\nintro a\nintro H\nexact H\nqed";
     "alias has_equal x := exists y, y = x\ntheorem alias_avoids_capture : forall y, (has_equal y -> exists z, z = y)\nintro y\nintro H\nexact H\nqed";
     "alias relates x y := x = y\ntheorem simultaneous_arguments : forall x, forall y, (relates y x -> y = x)\nintro x\nintro y\nintro H\nexact H\nqed";
+    "choose empty Hempty from empty_set\nalias empty_has_no_members := forall x, not (x in empty)\ntheorem alias_chosen_constant : empty_has_no_members\nput Hempty\nexact Hempty\nqed";
+    "choose empty Hempty from empty_set\nalias is_chosen_empty x := x = empty\nalias chosen_empty_reflexive := is_chosen_empty empty\ntheorem alias_nested_chosen_constant : chosen_empty_reflexive\nrefl\nqed";
+    "choose empty Hempty from empty_set\nalias has_empty_equal x := exists y, (y = x and y = empty)\ntheorem alias_constant_avoids_capture : forall y, (has_empty_equal y -> exists z, (z = y and z = empty))\nintros y H\nexact H\nqed";
+    "choose empty Hempty from empty_set\nchoose pair Hpair from pairing\nalias contains_empty_pair x := x in pair(empty, empty)\ntheorem alias_constant_in_function : forall x, (contains_empty_pair x <-> (x = empty or x = empty))\nspecialize Hpair empty empty as H\nexact H\nqed";
+    "choose empty Hempty from empty_set\ntheorem before_constant_alias : empty = empty\nrefl\nqed\nalias empty_has_no_members := forall x, not (x in empty)\ntheorem alias_previous_chosen_constant : empty_has_no_members\nput Hempty\nexact Hempty\nqed";
     "theorem obtain_local : ((exists x, x = x) -> exists y, y = y)\nintro H\nobtain x Hx from H\nuse x\nexact Hx\nqed";
     "theorem obtain_specialized : forall a, forall b, exists p, forall x, (x in p <-> (x = a or x = b))\nintro a\nintro b\nobtain p Hp from pairing a b\nuse p\nexact Hp\nqed";
     "alias is_empty x := forall y, not (y in x)\nchoose empty Hempty from empty_set\ntheorem choose_empty : is_empty empty\nput Hempty\nexact Hempty\nqed";
@@ -483,6 +488,21 @@ intro H")
           "alias foo := forall x, x = x\ntheorem bad_alias_fact : foo\nexact foo\nqed")
   then
     failwith "A proposition alias was accepted as a proof";
+  if not
+       (rejected
+          "choose empty Hempty from empty_set\nalias invalid_constant_alias := empty = missing")
+  then
+    failwith "An alias accepted an undeclared free variable beside a chosen constant";
+  if not
+       (rejected
+          "choose empty Hempty from empty_set\nalias forward_constant_alias := empty = later\nchoose later Hlater from empty_set")
+  then
+    failwith "An alias accepted a constant before its choose declaration";
+  if not
+       (rejected
+          "choose empty Hempty from empty_set\nalias empty_has_no_members := forall x, not (x in empty)\nalias captured_constant empty := empty_has_no_members")
+  then
+    failwith "An alias parameter was allowed to capture a declared constant";
   if not
        (rejected
           "Definition old := forall x, x = x\ntheorem old_definition : forall x, x = x\nintro x\nrefl\nqed")

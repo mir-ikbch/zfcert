@@ -70,6 +70,11 @@ let run () =
       verified "use_choice"
         "input \"base.zfp\".\n\
          theorem use_choice : forall x, not (x in empty).\nexact Hempty.\nqed.";
+      verified "alias_imported_choice"
+        "input \"base.zfp\".\n\
+         alias empty_has_no_members := forall x, not (x in empty).\n\
+         theorem alias_imported_choice : empty_has_no_members.\n\
+         put Hempty.\nexact Hempty.\nqed.";
       verified "prior" "input \"base.zfp\".";
       verified "prior" (Printf.sprintf "input %S." (path "base.zfp"));
       write "root-context.zfp"

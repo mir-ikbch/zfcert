@@ -217,6 +217,7 @@ qed.
 
 ```text
 choose empty Hempty from empty_set.
+alias is_chosen_empty x := x = empty.
 choose pair Hpair from pairing.
 
 theorem pair_shape :
@@ -226,6 +227,11 @@ put Hpair.
 exact Hpair.
 qed.
 ```
+
+`choose` で宣言済みの定数は、後続の `alias` 本体でも直接使えます。
+引数のない `alias empty_has_no_members := forall x, not (x in empty).` も書けます。
+定数の `choose` 宣言は、その定数を使う `alias` より前に置いてください。
+`alias` のパラメータには、宣言済みの定数と異なる名前を使ってください。
 
 `choose f H from fact.` は `forall ... exists ...` から関数記号 `f` を導入します。
 存在事実に具体化項を指定すると、0 引数の定数を選べます。choose で追加された事実や
