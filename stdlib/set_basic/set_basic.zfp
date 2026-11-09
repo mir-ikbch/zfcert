@@ -168,7 +168,159 @@ exact Heq.
 exact Ha.
 qed.
 
-definition opair(x,y) := pair(x, pair(x,y)).
+theorem pair_eq : forall x1 y1 x2 y2, pair(x1,y1) = pair(x2,y2) ->
+  (x1 = x2 and y1 = y2) or (x1 = y2 and y1 = x2).
+intros.
+rule cut H' : x1 in pair(x2,y2).
+  rewrite <- H.
+  apply <- Hpair.
+  left.
+  refl.
+specialize Hpair x2 y2 x1 as Hp.
+apply -> Hp in H' as Hp'.
+cases Hp'.
+  left.
+  split.
+    apply Hp'_left.
+
+    rule cut Hy : y1 in pair(x2,y2).
+      rewrite <- H.
+      apply <- Hpair.
+      right.
+      refl.
+    apply -> Hpair in Hy as Hy'.
+    cases Hy'.
+      rule cut Hy2 : y2 in pair(x1,y1).
+        rewrite H.
+        apply <- Hpair.
+        right.
+        refl.
+      apply -> Hpair in Hy2 as Hy2'.
+      cases Hy2'.
+        rewrite Hy2'_left.
+        rewrite Hy'_left.
+        rewrite Hp'_left.
+        refl.
+
+        rewrite Hy2'_right.
+        refl.
+      apply Hy'_right.
+  right.
+  split.
+    apply Hp'_right.
+
+    rule cut Hy1 : y1 in pair(x2,y2).
+      rewrite <- H.
+      apply <- Hpair.
+      right.
+      refl.
+    apply -> Hpair in Hy1 as Hy1'.
+    cases Hy1'.
+      apply Hy1'_left.
+
+      rule cut Hx2 : x2 in pair(x1,y1).
+        rewrite H.
+        apply <- Hpair.
+        left.
+        refl.
+      apply -> Hpair in Hx2 as Hx2'.
+      cases Hx2'.
+        rewrite Hx2'_left.
+        rewrite Hy1'_right.
+        rewrite Hp'_right.
+        refl.
+
+        rewrite Hx2'_right.
+        refl.
+qed.
+
+definition opair(x,y) := pair(singleton(x), pair(x,y)).
+
+(*
+theorem opair_l_in : forall x y, x in opair(x,y).
+intros.
+specialize Hpair x pair(x,y) x as Hpx.
+apply <- Hpx.
+left.
+refl.
+qed.
+*)
+
+theorem singleton_inj : forall x y, singleton(x) = singleton(y) -> x = y.
+intros.
+rule cut Hx : x in singleton(y).
+  rewrite <- H.
+  specialize Hsingleton x as Hsx.
+  apply <- Hsx.
+  refl.
+specialize Hsingleton y as Hsy.
+apply -> Hsy in Hx as Hx'.
+apply Hx'.
+qed.
+
+theorem singl_pair_eq : forall x y z, singleton(x) = pair(y,z) -> x = y and x = z.
+intros.
+split.
+  rule cut H' : y in singleton(x).
+    rewrite H.
+    apply <- Hpair.
+    left.
+    refl.
+  apply -> Hsingleton in H' as H''.
+  rewrite H''.
+  refl.
+
+  rule cut H' : z in singleton(x).
+    rewrite H.
+    apply <- Hpair.
+    right.
+    refl.
+  apply -> Hsingleton in H' as H''.
+  rewrite H''.
+  refl.
+qed.
+
+theorem opair_inj : forall x1 x2 y1 y2, opair(x1,y1) = opair(x2,y2) -> x1 = x2 and y1 = y2.
+intros.
+specialize pair_eq singleton(x1) pair(x1,y1) singleton(x2) pair(x2,y2) as Hp.
+apply Hp in H as Hp'.
+cases Hp'.
+  cases Hp'_left.
+  split.
+    apply singleton_inj.
+    apply Hp'_left_left.
+
+    specialize pair_eq x1 y1 x2 y2 as Hp2.
+    apply Hp2 in Hp'_left_right as Hp2'.
+    cases Hp2'.
+      cases Hp2'_left.
+      apply Hp2'_left_right.
+
+      cases Hp2'_right.
+      rewrite <- Hp2'_right_left.
+      rewrite Hp2'_right_right.
+      apply singleton_inj.
+      rewrite Hp'_left_left.
+      refl.
+
+  cases Hp'_right.
+  specialize singl_pair_eq x1 x2 y2 as Hs.
+  apply Hs in Hp'_right_left as He.
+  cases He.
+  split.
+    apply He_left.
+
+    rule cut Heq : singleton(x2) = pair(x1,y1).
+      rewrite Hp'_right_right.
+      refl.
+    specialize singl_pair_eq x2 x1 y1 as Hs'.
+    apply Hs' in Heq as He'.
+    cases He'.
+    rewrite <- He'_right.
+    rewrite <- He_right.
+    rewrite He_left.
+    refl.
+qed.
 
 theorem product_exists :
   forall s1, forall s2, exists prod, forall x,
@@ -176,8 +328,8 @@ theorem product_exists :
 intros s1 s2.
 specialize power_set cup(s1,s2) as Hpower.
 obtain p Hp from Hpower.
-specialize power_set cup(cup(s1,s2),p) as Hbound.
-obtain bound Hbound_mem from Hbound.
+specialize power_set p as Hpower2.
+obtain bound Hbound from Hpower2.
 separation Hprod bound x : exists xl, exists xr, xl in s1 and xr in s2 and x = opair(xl,xr).
 obtain prod Hprod_mem from Hprod.
 use prod.
@@ -188,6 +340,7 @@ split.
   apply -> Hx in Hxprod as Hparts.
   cases Hparts.
   exact Hparts_right.
+
   intro Hex.
   apply <- Hx.
   split.
@@ -196,36 +349,38 @@ split.
     cases Hxr.
     cases Hxr_left.
     rewrite Hxr_right.
-    specialize Hbound_mem opair(xl,xr) as Hop.
+    specialize Hbound opair(xl,xr) as Hop.
     apply <- Hop.
     intros z Hz.
-    specialize Hpair xl pair(xl,xr) z as Hzpair.
+    specialize Hpair singleton(xl) pair(xl,xr) z as Hzpair.
     apply -> Hzpair in Hz as Hzeq.
-    specialize Hcup cup(s1,s2) p z as Hzbound.
-    apply <- Hzbound.
     cases Hzeq.
-      left.
       rewrite Hzeq_left.
-      specialize Hcup s1 s2 xl as Hxlcup.
-      apply <- Hxlcup.
+      specialize Hp singleton(xl) as Hsinglep.
+      apply <- Hsinglep.
+      intros w Hw.
+      apply -> Hsingleton in Hw as Hweq.
+      rewrite Hweq.
+      apply <- Hcup.
       left.
       exact Hxr_left_left.
-      right.
+
       rewrite Hzeq_right.
       specialize Hp pair(xl,xr) as Hpairp.
       apply <- Hpairp.
       intros w Hw.
       specialize Hpair xl xr w as Hwpair.
       apply -> Hwpair in Hw as Hweq.
-      specialize Hcup s1 s2 w as Hwcup.
-      apply <- Hwcup.
+      apply <- Hcup.
       cases Hweq.
         left.
         rewrite Hweq_left.
         exact Hxr_left_left.
+
         right.
         rewrite Hweq_right.
         exact Hxr_left_right.
+
     exact Hex.
 qed.
 
@@ -233,8 +388,149 @@ choose prod Hprod from product_exists.
 
 alias is_relation X Y R := subset R prod(X,Y).
 
-alias is_function X Y R :=
-      is_relation X Y R and
-      (forall x, x in X -> exists y, opair(x,y) in R) and
-      (forall x, forall y1, forall y2, opair(x,y1) in R -> opair(x,y2) in R -> y1 = y2).
+alias is_function X Y f :=
+      is_relation X Y f and
+      (forall x, x in X -> exists y, opair(x,y) in f) and
+      (forall x y1 y2, opair(x,y1) in f -> opair(x,y2) in f -> y1 = y2).
 
+choose bigcup Hbigcup from union.
+
+theorem bigcup_singleton' : forall X x, x in X -> (forall y, y in X -> x = y) ->
+        bigcup(X) = x.
+intros.
+specialize extensionality bigcup(X) x as Hex.
+apply Hex.
+intros.
+split.
+  intros.
+  specialize Hbigcup X z as Hz.
+  apply -> Hz in H1 as Hz'.
+  cases Hz' y Hy.
+  cases Hy.
+  specialize H0 y as H0y.
+  apply H0y in Hy_right as Hy'.
+  rewrite Hy'.
+  apply Hy_left.
+  intros.
+  specialize Hbigcup X z as Hz.
+  apply <- Hz.
+  use x.
+  resolution.
+qed.
+
+theorem bigcup_singleton : forall x, bigcup(singleton(x)) = x.
+intros.
+specialize extensionality bigcup(singleton(x)) x as Hex.
+apply Hex.
+intros.
+split.
+  intros.
+  specialize Hbigcup singleton(x) as Hb.
+  apply -> Hb in H as Hb'.
+  cases Hb' y Hy.
+  cases Hy.
+  apply -> Hsingleton in Hy_right as Hsx.
+  rewrite <- Hsx.
+  apply Hy_left.
+
+  intros.
+  specialize Hbigcup singleton(x) as Hb.
+  apply <- Hb.
+  use x.
+  split.
+    apply H.
+    apply <- Hsingleton.
+    refl.
+qed.
+  
+  
+  
+
+theorem image_exists : forall Y f x, exists I, forall y, y in I <-> y in Y and opair(x,y) in f.
+intros.
+separation Hsep Y y : opair(x,y) in f.
+exact Hsep.
+qed.
+
+choose image Himage from image_exists.
+
+theorem func_val_exists : forall X Y f x, is_function X Y f -> x in X ->
+        exists y, y in image(Y,f,x).
+intros.
+cases H.
+cases H_left.
+specialize H_left_right x as Hx.
+apply Hx in H0 as Hex.
+cases Hex y Hy.
+use y.
+specialize Himage Y f x y as Him.
+apply <- Him.
+split.
+  specialize H_left_left opair(x,y) as Hxy.
+  apply Hxy in Hy as Hpr.
+  specialize Hprod X Y opair(x,y) as Hpr'.
+  apply -> Hpr' in Hpr as Hpr''.
+  cases Hpr'' x' Hx'.
+  cases Hx' y' Hy'.
+  cases Hy'.
+  cases Hy'_left.
+  apply opair_inj in Hy'_right as Heq.
+  cases Heq.
+  rewrite Heq_right.
+  apply Hy'_left_right.
+
+  apply Hy.
+qed.
+
+theorem func_val_singleton : forall X Y f x, is_function X Y f -> x in X ->
+        exists y, image(Y,f,x) = singleton(y).
+intros.
+rule cut Hyex : exists y, y in image(Y,f,x).
+  specialize func_val_exists X Y f x as Hf.
+  apply Hf.
+  apply H.
+  apply H0.
+cases Hyex y Hy.
+use y.
+specialize extensionality image(Y,f,x) singleton(y) as Hext.
+apply Hext.
+intro.
+split.
+  intros.
+  apply <- Hsingleton.
+  cases H.
+  specialize H_right x as Hx.
+  apply Hx.
+  apply -> Himage in H1 as H1'.
+  resolution.
+  apply -> Himage in Hy as Hy'.
+  resolution.
+
+  intros.
+  apply <- Himage.
+  apply -> Hsingleton in H1 as H1'.
+  rewrite H1'.
+  apply -> Himage in Hy as Hy'.
+  resolution.
+qed.
+
+definition eval(Y,f,x) := bigcup( image(Y,f,x) ).
+
+theorem eval_dom : forall X Y f x, x in X -> is_function X Y f -> eval(Y,f,x) in Y.
+intros.
+rule cut Hyex : exists y, image(Y,f,x) = singleton(y).
+specialize func_val_singleton X Y f x as Hf.
+apply Hf.
+  resolution.
+  resolution.
+  cases Hyex y Hy.
+  rewrite Hy.
+  specialize bigcup_singleton y as Hb.
+  rewrite Hb.
+  rule cut Hyin : y in image(Y,f,x).
+    rewrite Hy.
+    apply <- Hsingleton.
+    refl.
+  apply -> Himage in Hyin as Hyin'.
+  resolution.
+qed.
