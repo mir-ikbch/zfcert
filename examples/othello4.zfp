@@ -1,3 +1,5 @@
+(* 盤面とルールの定義。補題と証明書は othello_lemmas.zfp にまとめる。 *)
+
 input "../stdlib/set_basic/set_basic.zfp".
 
 definition succ(x) := cup(x, singleton(x)).
@@ -94,13 +96,13 @@ alias step s t :=
   exists B W B_next W_next,
     valid B W
     and valid B_next W_next
-    and (s = state(B,W,black)
+    and ((s = state(B,W,black)
           and t = state(B_next, W_next, white)
           and turn_step B W B_next W_next)
         or
         (s = state(B,W,white)
           and t = state(B_next, W_next, black)
-          and turn_step W B W_next B_next).
+          and turn_step W B W_next B_next)).
 
 (* 双方が着手不能になったときに終局。 *)
 alias terminal B W :=
@@ -108,7 +110,9 @@ alias terminal B W :=
    and not (has_move B W) and not (has_move W B).
 
 alias nonterminal_state s :=
-  exists B W turn, s = state(B,W,turn) and valid B W and not (terminal B W).
+  exists B W turn,
+    s = state(B,W,turn) and (turn = black or turn = white)
+    and valid B W and not (terminal B W).
 
 (* 1 マスを数える。石があれば 1 増やし、なければそのままにする。 *)
 alias count_step stones square before after :=
@@ -146,10 +150,11 @@ alias white_more B W :=
 alias white_won s :=
  exists B W turn,
    s = state(B,W,turn)
+   and (turn = black or turn = white)
    and terminal B W
    and white_more B W.
 
-(* [R] is the set of all states from which white can win *)
+(* 白勝ちの終局を含み、以下の規則で閉じている集合 R。 *)
 alias white_win_closed R :=
 
   (forall s,
@@ -162,24 +167,25 @@ alias white_win_closed R :=
 
   and
 
-  (* 3. 黒番では、すべての合法手の行き先が R に入る必要がある。
-        終局は除く。黒勝ち・引き分けの終局を空虚に認めないため。 *)
   (forall s,
     (black_turn s and nonterminal_state s and
       (forall t, step s t -> t in R))
     -> s in R).
 
-(* この三つの規則から白必勝と導ける局面。戦略関数は用いない。 *)
 alias white_forces_win s :=
   valid_state s and
   (forall R, white_win_closed R -> s in R).
 
-(* 初期配置。黒が先手。
 
-     . . . .
-     . W B .
-     . B W .
-     . . . .
+input "othello_lemmas.zfp".
 
-   主張のみ。証明はここから記述する。 *)
 theorem othello_white_wins : white_forces_win initial.
+rewrite initial_is_certificate_root.
+split.
+specialize valid_state_intro stones_cea stones_eca black as Hvalid.
+apply Hvalid.
+exact valid_cea_eca.
+left.
+refl.
+exact certificate_node_ia.
+qed.
