@@ -301,10 +301,125 @@ let run_directional_apply_tests () =
     ];
   Printf.printf "Directional apply tests passed (20 replay cases, 13 rejection cases).\n%!"
 
+let run_filtered_goal_tests () =
+  let module K = Zfcert_kernel in
+  let ok = function
+    | Ok value -> value
+    | Error _ -> failwith "Filtered-goal test setup was rejected by the kernel"
+  in
+  let proposition = K.NAll ("x", K.NEqual (K.NName "x", K.NName "x")) in
+  let run rules state = ok (K.rule_run ~axioms:[] rules state) in
+  let add_fact environment name rules =
+    let state = ok (K.start_in_environment environment proposition) |> run rules in
+    let proof = ok (K.finalize state) in
+    ok (K.declare_fact ~fact:name ~source:proposition ~proof environment)
+  in
+  let expect_visible state keep =
+    let original = ok (K.goals state) in
+    let expected =
+      List.map
+        (fun (goal : K.goal_view) ->
+           { goal with
+             assumptions =
+               List.filter (fun (name, _) -> keep name) goal.assumptions })
+        original
+    in
+    if ok (K.goals ~visible_hypothesis:keep state) <> expected then
+      failwith "Filtered goals changed variables, binders, or visible assumptions";
+    if ok (K.goals state) <> original then
+      failwith "Reading filtered goals changed the certified state"
+  in
+  let environment =
+    add_fact K.empty_environment "global_first"
+      [K.NRAllIntro "y"; K.NREqualRefl]
+  in
+  let environment =
+    add_fact environment "global_second" [K.NRHypothesis "global_first"]
+  in
+  let local = K.NAll ("x", K.NEqual (K.NName "x", K.NName "u")) in
+  let state =
+    ok (K.start_in_environment environment (K.NAll ("u", K.NImpl (local, local))))
+    |> run [K.NRAllIntro "z"; K.NRImplIntro "local"]
+  in
+  List.iter (expect_visible state)
+    [ (fun _ -> true);
+      (fun _ -> false);
+      (fun name -> name <> "global_first");
+      (fun name -> name = "local") ];
+  ignore (ok (K.finalize (run [K.NRHypothesis "local"] state)));
+  let multiple_goals =
+    ok (K.start_in_environment environment (K.NConj (proposition, proposition)))
+    |> run [K.NRConjIntro]
+  in
+  expect_visible multiple_goals (fun name -> name = "global_second");
+  let state = ok (K.start_in_environment environment proposition) in
+  expect_visible state (fun _ -> false);
+  let state = run [K.NRHypothesis "global_first"] state in
+  let proof = ok (K.finalize state) in
+  ignore (ok (K.declare_fact ~fact:"uses_hidden" ~source:proposition ~proof environment))
+
+let run_session_declaration_tests () =
+  let module K = Zfcert_kernel in
+  let ok = function
+    | Ok value -> value
+    | Error _ -> failwith "Session-declaration test setup was rejected by the kernel"
+  in
+  let reject description = function
+    | Ok _ -> failwith ("Session declaration accepted " ^ description)
+    | Error _ -> ()
+  in
+  let proposition = K.NAll ("x", K.NEqual (K.NName "x", K.NName "x")) in
+  let run rules state = ok (K.rule_run ~axioms:[] rules state) in
+  let incomplete = ok (K.start_in_environment K.empty_environment proposition) in
+  reject "an unfinished state"
+    (K.declare_session_fact ~fact:"unfinished" ~source:proposition
+       incomplete K.empty_environment);
+  let partial = run [K.NRAllIntro "y"] incomplete in
+  reject "a partially completed state"
+    (K.declare_session_fact ~fact:"partial" ~source:proposition
+       partial K.empty_environment);
+  let solved = run [K.NREqualRefl] partial in
+  let environment, certificate =
+    ok (K.declare_session_fact ~fact:"complete" ~source:proposition
+          solved K.empty_environment)
+  in
+  if K.certificate_rules certificate <> K.certificate_rules (ok (K.finalize solved)) then
+    failwith "Session declaration changed the replayed primitive certificate";
+  let false_source =
+    K.NAll ("x", K.NNeg (K.NEqual (K.NName "x", K.NName "x")))
+  in
+  reject "a false replacement source"
+    (K.declare_session_fact ~fact:"false_source" ~source:false_source
+       solved K.empty_environment);
+  reject "an unproved false conclusion"
+    (K.declare_session_fact ~fact:"false_conclusion" ~source:K.NFalsum
+       solved K.empty_environment);
+  let dependent =
+    ok (K.start_in_environment environment proposition)
+    |> run [K.NRHypothesis "complete"]
+  in
+  reject "a missing dependency environment"
+    (K.declare_session_fact ~fact:"missing_dependency" ~source:proposition
+       dependent K.empty_environment);
+  let environment, _ =
+    ok (K.declare_session_fact ~fact:"dependent" ~source:proposition
+          dependent environment)
+  in
+  reject "a duplicate fact name"
+    (K.declare_session_fact ~fact:"complete" ~source:proposition solved environment);
+  let final =
+    ok (K.start_in_environment environment proposition)
+    |> run [K.NRHypothesis "dependent"]
+  in
+  ignore (ok (K.finalize final))
+
 let run () =
   Input_test.run ();
   Definition_test.run ();
   Alias_test.run ();
+  run_filtered_goal_tests ();
+  run_session_declaration_tests ();
+  Printf.printf "Kernel facade regression tests passed.\n%!";
   if Syntax.fresh_name "x" Syntax.StringSet.empty <> "x0"
      || Syntax.fresh_name "x"
           (Syntax.StringSet.of_list ["x0"; "x1"]) <> "x2"

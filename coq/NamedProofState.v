@@ -1092,6 +1092,22 @@ Definition plan_named_rule
         next_environment)))
   end.
 
+(** Primitive rule planning inspects only the conclusion.  Assumption names
+    and binders remain in [metadata] for hypothesis indexing.  The primitive
+    de Bruijn checker still validates the complete logical context. *)
+Definition reify_rule_goal
+  (metadata : goal_metadata) (source : goal)
+  : named_result named_goal :=
+  named_bind
+    (reify
+      (metadata_constants metadata)
+      (metadata_environment metadata)
+      (metadata_conclusion_binders metadata)
+      (conclusion source))
+    (fun named_target =>
+  NOk (NamedGoal
+    (metadata_environment metadata) [] named_target)).
+
 Definition named_rule_step
   (axioms : list named_axiom)
   (primitive : named_rule)
@@ -1102,7 +1118,7 @@ Definition named_rule_step
   with
   | [], [] => NError (NCoreError NoGoals)
   | goal :: _, metadata :: metadata_rest =>
-      named_bind (reify_goal metadata goal) (fun view =>
+      named_bind (reify_rule_goal metadata goal) (fun view =>
       named_bind (plan_named_rule metadata view primitive) (fun plan =>
       named_bind
         (compile_axioms
@@ -1445,7 +1461,7 @@ Proof.
   - destruct (named_goal_metadata state)
       as [|metadata metadata_rest] eqn:Hmetadata.
     + cbn in Hstep. discriminate.
-    + destruct (reify_goal metadata g) as [view | view_error]
+    + destruct (reify_rule_goal metadata g) as [view | view_error]
         eqn:Hview.
       * destruct (plan_named_rule metadata view primitive)
           as [plan | plan_error] eqn:Hplan.

@@ -93,6 +93,12 @@ module Nat =
     rev (to_little_uint n (D0 Nil))
  end
 
+(** val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list **)
+
+let rec map f = function
+| [] -> []
+| a :: l0 -> (f a) :: (map f l0)
+
 (** val nth_error : 'a1 list -> int -> 'a1 option **)
 
 let rec nth_error l n =
@@ -102,7 +108,7 @@ let rec nth_error l n =
               | x :: _ -> Some x)
     (fun n0 -> match l with
                | [] -> None
-               | _ :: l0 -> nth_error l0 n0)
+               | _ :: l' -> nth_error l' n0)
     n
 
 (** val rev0 : 'a1 list -> 'a1 list **)
@@ -111,18 +117,12 @@ let rec rev0 = function
 | [] -> []
 | x :: l' -> app (rev0 l') (x :: [])
 
-(** val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list **)
-
-let rec map f = function
-| [] -> []
-| a :: t -> (f a) :: (map f t)
-
 (** val fold_left : ('a1 -> 'a2 -> 'a1) -> 'a2 list -> 'a1 -> 'a1 **)
 
 let rec fold_left f l a0 =
   match l with
   | [] -> a0
-  | b :: t -> fold_left f t (f a0 b)
+  | b :: l0 -> fold_left f l0 (f a0 b)
 
 type term =
 | Var of int
@@ -614,8 +614,8 @@ let empty_set_axiom =
 let extensionality_axiom =
   All (All (Impl ((All
     (iff (Member ((Var 0), (Var (Stdlib.Int.succ (Stdlib.Int.succ 0)))))
-      (Member ((Var 0), (Var (Stdlib.Int.succ 0)))))), (Equal ((Var
-    (Stdlib.Int.succ 0)), (Var 0))))))
+      (Member ((Var 0), (Var (Stdlib.Int.succ 0)))))),
+    (Equal ((Var (Stdlib.Int.succ 0)), (Var 0))))))
 
 (** val pairing_axiom : formula **)
 
@@ -1289,11 +1289,13 @@ let rec reify_with_names constants bound environment preferred = function
              (formula_eqb first_right second_left)
         then named_bind
                (reify_with_names constants bound environment preferred
-                 first_left) (fun pat ->
+                 first_left)
+               (fun pat ->
                let (left_named, after_left) = pat in
                named_bind
                  (reify_with_names constants bound environment after_left
-                   first_right) (fun pat0 ->
+                   first_right)
+                 (fun pat0 ->
                  let (right_named, after_right) = pat0 in
                  NOk ((NIff (left_named, right_named)), after_right)))
         else named_bind
@@ -1302,7 +1304,8 @@ let rec reify_with_names constants bound environment preferred = function
                let (first_named, after_first) = pat in
                named_bind
                  (reify_with_names constants bound environment after_first
-                   second) (fun pat0 ->
+                   second)
+                 (fun pat0 ->
                  let (second_named, after_second) = pat0 in
                  NOk ((NConj (first_named, second_named)), after_second)))
       | All _ ->
@@ -1438,7 +1441,8 @@ let rec reify_with_names constants bound environment preferred = function
   in
   named_bind
     (reify_with_names constants (binder :: bound) environment after_binder
-      body) (fun pat ->
+      body)
+    (fun pat ->
     let (body_named, after_body) = pat in
     NOk ((NAll (binder, body_named)), after_body))
 | Ex body ->
@@ -1447,7 +1451,8 @@ let rec reify_with_names constants bound environment preferred = function
   in
   named_bind
     (reify_with_names constants (binder :: bound) environment after_binder
-      body) (fun pat ->
+      body)
+    (fun pat ->
     let (body_named, after_body) = pat in
     NOk ((NEx (binder, body_named)), after_body))
 
@@ -1478,9 +1483,9 @@ let initial_metadata_with_assumptions constants environment named_assumptions0 s
     metadata_assumption_binders =
     (map (fun hypothesis ->
       named_binder_names hypothesis.named_hypothesis_formula)
-      named_assumptions0); metadata_conclusion_binders =
-    (named_binder_names source); metadata_environment = environment;
-    metadata_constants = constants }
+      named_assumptions0);
+    metadata_conclusion_binders = (named_binder_names source);
+    metadata_environment = environment; metadata_constants = constants }
 
 (** val named_start_with_environment :
     string list -> string list -> named_hypothesis list -> formula list ->
@@ -1532,8 +1537,9 @@ let rec reify_assumptions constants environment names binders sources =
             (fun named_source ->
             named_bind
               (reify_assumptions constants environment name_rest binder_rest
-                source_rest) (fun rest -> NOk ({ named_hypothesis_name =
-              name; named_hypothesis_formula = named_source } :: rest)))))
+                source_rest)
+              (fun rest -> NOk ({ named_hypothesis_name = name;
+              named_hypothesis_formula = named_source } :: rest)))))
 
 (** val reify_goal : goal_metadata -> goal -> named_goal named_result **)
 
@@ -1630,19 +1636,19 @@ let compile_axiom constants environment = function
 | NSeparationAxiom (source, element, predicate) ->
   named_bind
     (elaborate_schema_predicate constants (element :: (source :: []))
-      environment predicate) (fun core_predicate -> NOk
-    (separation_instance core_predicate))
+      environment predicate)
+    (fun core_predicate -> NOk (separation_instance core_predicate))
 | NSeparationTermAxiom (source, element, predicate) ->
   let dummy = named_separation_source_name source element predicate in
   named_bind
     (elaborate_schema_predicate constants (element :: (dummy :: []))
-      environment predicate) (fun core_predicate -> NOk
-    (separation_instance core_predicate))
+      environment predicate)
+    (fun core_predicate -> NOk (separation_instance core_predicate))
 | NReplacementAxiom (input, output, predicate) ->
   named_bind
     (elaborate_schema_predicate constants (output :: (input :: []))
-      environment predicate) (fun core_predicate -> NOk
-    (replacement_instance core_predicate))
+      environment predicate)
+    (fun core_predicate -> NOk (replacement_instance core_predicate))
 
 (** val compile_axioms :
     string list -> string list -> named_axiom list -> formula list
@@ -1786,7 +1792,8 @@ let plan_named_rule metadata view primitive =
          NOk { planned_rule = RImplIntro; planned_generated_metadata =
            ((metadata_with_hypothesis metadata hypothesis
               (named_binder_names premise) (named_binder_names conclusion0)
-              environment) :: []); planned_environment = environment }
+              environment) :: []);
+           planned_environment = environment }
        | NNeg premise ->
          NOk { planned_rule = RImplIntro; planned_generated_metadata =
            ((metadata_with_hypothesis metadata hypothesis
@@ -1801,9 +1808,11 @@ let plan_named_rule metadata view primitive =
        planned_generated_metadata =
        ((metadata_with_conclusion metadata
           (app (named_binder_names premise)
-            metadata.metadata_conclusion_binders) next_environment) :: (
-       (metadata_with_conclusion metadata (named_binder_names premise)
-         next_environment) :: [])); planned_environment = next_environment })
+            metadata.metadata_conclusion_binders)
+          next_environment) :: ((metadata_with_conclusion metadata
+                                  (named_binder_names premise)
+                                  next_environment) :: []));
+       planned_environment = next_environment })
    | NRConjIntro ->
      (match target with
       | NConj (first, second) ->
@@ -1827,7 +1836,8 @@ let plan_named_rule metadata view primitive =
        planned_generated_metadata =
        ((metadata_with_conclusion metadata
           (app metadata.metadata_conclusion_binders
-            (named_binder_names extra)) next_environment) :: []);
+            (named_binder_names extra))
+          next_environment) :: []);
        planned_environment = next_environment })
    | NRConjElimR extra ->
      let next_environment = extend_environment constants environment extra in
@@ -1836,21 +1846,24 @@ let plan_named_rule metadata view primitive =
        planned_generated_metadata =
        ((metadata_with_conclusion metadata
           (app (named_binder_names extra)
-            metadata.metadata_conclusion_binders) next_environment) :: []);
+            metadata.metadata_conclusion_binders)
+          next_environment) :: []);
        planned_environment = next_environment })
    | NRDisjIntroL ->
      (match target with
       | NDisj (first, _) ->
         NOk { planned_rule = RDisjIntroL; planned_generated_metadata =
           ((metadata_with_conclusion metadata (named_binder_names first)
-             environment) :: []); planned_environment = environment }
+             environment) :: []);
+          planned_environment = environment }
       | _ -> NError NWrongNamedShape)
    | NRDisjIntroR ->
      (match target with
       | NDisj (_, second) ->
         NOk { planned_rule = RDisjIntroR; planned_generated_metadata =
           ((metadata_with_conclusion metadata (named_binder_names second)
-             environment) :: []); planned_environment = environment }
+             environment) :: []);
+          planned_environment = environment }
       | _ -> NError NWrongNamedShape)
    | NRDisjElim (first, second, first_name, second_name) ->
      named_bind (ensure_hypothesis_fresh metadata first_name) (fun _ ->
@@ -1889,7 +1902,8 @@ let plan_named_rule metadata view primitive =
          let next_environment = variable :: environment in
          NOk { planned_rule = RAllIntro; planned_generated_metadata =
          ((metadata_with_conclusion metadata (named_binder_names body)
-            next_environment) :: []); planned_environment = next_environment }
+            next_environment) :: []);
+         planned_environment = next_environment }
        | _ -> NError NWrongNamedShape)
    | NRAllElim (term0, universal) ->
      (match universal with
@@ -1917,8 +1931,8 @@ let plan_named_rule metadata view primitive =
           (fun core_term -> NOk { planned_rule = (RExIntro core_term);
           planned_generated_metadata =
           ((metadata_with_conclusion metadata (named_binder_names body)
-             next_environment) :: []); planned_environment =
-          next_environment })
+             next_environment) :: []);
+          planned_environment = next_environment })
       | _ -> NError NWrongNamedShape)
    | NRExElim (witness, hypothesis, existential) ->
      named_bind (ensure_hypothesis_fresh metadata hypothesis) (fun _ ->
@@ -1964,8 +1978,8 @@ let plan_named_rule metadata view primitive =
               planned_generated_metadata =
               ((metadata_with_conclusion metadata [] next_environment) :: (
               (metadata_with_conclusion metadata (named_binder_names body)
-                next_environment) :: [])); planned_environment =
-              next_environment })))
+                next_environment) :: []));
+              planned_environment = next_environment })))
       | _ -> NError NWrongNamedShape)
    | NRCut (hypothesis, lemma) ->
      named_bind (ensure_hypothesis_fresh metadata hypothesis) (fun _ ->
@@ -1981,6 +1995,16 @@ let plan_named_rule metadata view primitive =
                                     next_environment) :: []));
          planned_environment = next_environment })))
 
+(** val reify_rule_goal : goal_metadata -> goal -> named_goal named_result **)
+
+let reify_rule_goal metadata source =
+  named_bind
+    (reify metadata.metadata_constants metadata.metadata_environment
+      metadata.metadata_conclusion_binders source.conclusion)
+    (fun named_target -> NOk { named_variables =
+    metadata.metadata_environment; named_assumptions = []; named_conclusion =
+    named_target })
+
 (** val named_rule_step :
     named_axiom list -> named_rule -> named_state -> named_state named_result **)
 
@@ -1994,11 +2018,12 @@ let named_rule_step axioms primitive state =
     (match state.named_goal_metadata with
      | [] -> NError NMetadataMismatch
      | metadata :: metadata_rest ->
-       named_bind (reify_goal metadata goal0) (fun view ->
+       named_bind (reify_rule_goal metadata goal0) (fun view ->
          named_bind (plan_named_rule metadata view primitive) (fun plan ->
            named_bind
              (compile_axioms metadata.metadata_constants
-               plan.planned_environment axioms) (fun core_axioms ->
+               plan.planned_environment axioms)
+             (fun core_axioms ->
              match rule_step (fun candidate ->
                      formula_in candidate core_axioms) plan.planned_rule
                      state.named_kernel_state with
@@ -2052,7 +2077,8 @@ let plan_named_tactic metadata view command =
           { planned_tactic = TacIntro; tactic_generated_metadata =
           ((metadata_with_hypothesis metadata name
              (named_binder_names premise) (named_binder_names conclusion0)
-             environment) :: []); tactic_environment = environment })
+             environment) :: []);
+          tactic_environment = environment })
       | NNeg premise ->
         named_bind (ensure_hypothesis_fresh metadata name) (fun _ -> NOk
           { planned_tactic = TacIntro; tactic_generated_metadata =
@@ -2064,7 +2090,8 @@ let plan_named_tactic metadata view command =
           let next_environment = name :: environment in
           NOk { planned_tactic = TacIntro; tactic_generated_metadata =
           ((metadata_with_conclusion metadata (named_binder_names body)
-             next_environment) :: []); tactic_environment = next_environment })
+             next_environment) :: []);
+          tactic_environment = next_environment })
       | _ -> NError NWrongNamedShape)
    | NTacExact hypothesis ->
      named_bind (hypothesis_index metadata hypothesis) (fun index -> NOk
@@ -2130,14 +2157,16 @@ let plan_named_tactic metadata view command =
       | NDisj (first, _) ->
         NOk { planned_tactic = TacLeft; tactic_generated_metadata =
           ((metadata_with_conclusion metadata (named_binder_names first)
-             environment) :: []); tactic_environment = environment }
+             environment) :: []);
+          tactic_environment = environment }
       | _ -> NError NWrongNamedShape)
    | NTacRight ->
      (match target with
       | NDisj (_, second) ->
         NOk { planned_tactic = TacRight; tactic_generated_metadata =
           ((metadata_with_conclusion metadata (named_binder_names second)
-             environment) :: []); tactic_environment = environment }
+             environment) :: []);
+          tactic_environment = environment }
       | _ -> NError NWrongNamedShape)
    | NTacUse term0 ->
      (match target with
@@ -2149,8 +2178,8 @@ let plan_named_tactic metadata view command =
           (fun core_term -> NOk { planned_tactic = (TacUse core_term);
           tactic_generated_metadata =
           ((metadata_with_conclusion metadata (named_binder_names body)
-             next_environment) :: []); tactic_environment =
-          next_environment })
+             next_environment) :: []);
+          tactic_environment = next_environment })
       | _ -> NError NWrongNamedShape)
    | NTacRefl ->
      NOk { planned_tactic = TacRefl; tactic_generated_metadata = [];
@@ -2550,10 +2579,10 @@ type certified_state = { certified_initial_formula : named_formula;
 let certified_start_with_environment constants environment named_assumptions0 core_assumptions source =
   named_bind
     (named_start_with_environment constants environment named_assumptions0
-      core_assumptions source) (fun state -> NOk
-    { certified_initial_formula = source; certified_constants = constants;
-    certified_initial_environment = environment;
-    certified_initial_named_assumptions = named_assumptions0;
+      core_assumptions source)
+    (fun state -> NOk { certified_initial_formula = source;
+    certified_constants = constants; certified_initial_environment =
+    environment; certified_initial_named_assumptions = named_assumptions0;
     certified_initial_core_assumptions = core_assumptions;
     certified_current_state = state; certified_reverse_certificate = [] })
 
@@ -2617,7 +2646,8 @@ let rec certified_run steps state =
 let replay_certificate_with_environment constants environment named_assumptions0 core_assumptions source steps =
   named_bind
     (named_start_with_environment constants environment named_assumptions0
-      core_assumptions source) (fun state -> replay_steps steps state)
+      core_assumptions source)
+    (fun state -> replay_steps steps state)
 
 (** val replay_certificate_with_constants :
     string list -> named_formula -> certificate -> named_state named_result **)
@@ -2642,7 +2672,8 @@ let certified_finalize state =
       state.certified_initial_environment
       state.certified_initial_named_assumptions
       state.certified_initial_core_assumptions
-      state.certified_initial_formula steps) (fun replayed ->
+      state.certified_initial_formula steps)
+    (fun replayed ->
     if named_solved replayed then NOk steps else NError NWrongNamedShape)
 
 (** val one_step : named_axiom list -> named_rule -> certificate_step **)
@@ -2768,7 +2799,8 @@ let replacement_tactic_program fact source input output predicate state =
 let certified_replacement_tactic fact source input output predicate state =
   certified_run
     (replacement_tactic_program fact source input output predicate
-      state.certified_current_state) state
+      state.certified_current_state)
+    state
 
 type global_environment = { global_constants : string list;
                             global_named_facts : named_hypothesis list;
@@ -2900,10 +2932,11 @@ let global_declare_choice constant_name fact_name source proof environment =
                           in
                           named_bind
                             (reify constants [] (named_binder_names body)
-                              core_fact) (fun named_fact -> NOk
-                            { global_constants = constants;
-                            global_named_facts = ({ named_hypothesis_name =
-                            fact_name; named_hypothesis_formula =
+                              core_fact)
+                            (fun named_fact -> NOk { global_constants =
+                            constants; global_named_facts =
+                            ({ named_hypothesis_name = fact_name;
+                            named_hypothesis_formula =
                             named_fact } :: environment.global_named_facts);
                             global_core_facts =
                             (core_fact :: environment.global_core_facts) })

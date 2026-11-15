@@ -128,11 +128,70 @@ let declare_choice ~constant ~fact ~source ~proof environment =
 let declare_fact ~fact ~source ~proof environment =
   Raw.global_declare_fact fact source proof environment |> outcome
 
+(* The global declaration replays the certificate in its complete environment. *)
+let declare_session_fact ~fact ~source state environment =
+  if not (Raw.certified_solved state) then Error WrongGoalShape
+  else
+    let proof = Raw.certified_certificate state in
+    match declare_fact ~fact ~source ~proof environment with
+    | Error failure -> Error failure
+    | Ok next_environment -> Ok (next_environment, proof)
+
 let declare_skolem ~function_name ~fact ~source ~proof environment =
   Raw.global_declare_skolem function_name fact source proof environment |> outcome
 
-let goals state =
-  match Raw.certified_goals state with
+(* This filtered value is only a planner/UI view.  The certified state and
+   all rule checking retain every assumption and its original metadata. *)
+let reify_visible_goals visible_hypothesis state =
+  let rec filter names binders sources kept_names kept_binders kept_sources =
+    match names, binders, sources with
+    | [], [], [] ->
+        Raw.NOk
+          (List.rev kept_names, List.rev kept_binders, List.rev kept_sources)
+    | name :: names, binder :: binders, source :: sources ->
+        if visible_hypothesis name then
+          filter names binders sources
+            (name :: kept_names) (binder :: kept_binders) (source :: kept_sources)
+        else filter names binders sources kept_names kept_binders kept_sources
+    | _ -> Raw.NError Raw.NMetadataMismatch
+  in
+  let rec reify metadata goals =
+    match metadata, goals with
+    | [], [] -> Raw.NOk []
+    | metadata :: metadata_rest, goal :: goal_rest ->
+        begin match filter
+          metadata.Raw.metadata_hypothesis_names
+          metadata.Raw.metadata_assumption_binders
+          goal.Raw.assumptions [] [] [] with
+        | Raw.NError failure -> Raw.NError failure
+        | Raw.NOk (names, binders, assumptions) ->
+            let visible_metadata =
+              { metadata with
+                Raw.metadata_hypothesis_names = names;
+                Raw.metadata_assumption_binders = binders }
+            in
+            let visible_goal = { goal with Raw.assumptions = assumptions } in
+            begin match Raw.reify_goal visible_metadata visible_goal with
+            | Raw.NError failure -> Raw.NError failure
+            | Raw.NOk goal ->
+                begin match reify metadata_rest goal_rest with
+                | Raw.NError failure -> Raw.NError failure
+                | Raw.NOk rest -> Raw.NOk (goal :: rest)
+                end
+            end
+        end
+    | _ -> Raw.NError Raw.NMetadataMismatch
+  in
+  let current = state.Raw.certified_current_state in
+  reify current.Raw.named_goal_metadata current.Raw.named_kernel_state
+
+let goals ?visible_hypothesis state =
+  let reified =
+    match visible_hypothesis with
+    | None -> Raw.certified_goals state
+    | Some visible -> reify_visible_goals visible state
+  in
+  match reified with
   | Raw.NError failure -> Error (error failure)
   | Raw.NOk goals ->
       Ok

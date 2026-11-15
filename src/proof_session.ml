@@ -118,6 +118,7 @@ type session = {
   put_facts : StringSet.t;
   kernel_state : Extracted.state;
   final_certificate : Extracted.certificate option;
+  (* Reverse chronological bookkeeping; public step_count is order-independent. *)
   steps : string list;
 }
 
@@ -386,7 +387,11 @@ let kernel_formula formula =
   Kernel_syntax.to_kernel formula
 
 let materialize_goals line state =
-  match Extracted.goals state.kernel_state with
+  let visible_hypothesis name =
+    not (StringSet.mem name state.hidden_global_facts)
+    || StringSet.mem name state.put_facts
+  in
+  match Extracted.goals ~visible_hypothesis state.kernel_state with
   | Error error ->
       raise (Proof_error (line,
         "Could not read the extracted proof state: "
@@ -397,14 +402,10 @@ let materialize_goals line state =
       List.map
         (fun (kernel_goal : Extracted.goal_view) ->
            let context =
-             List.map
-               (fun (name, formula) ->
-                  (name, Kernel_syntax.of_kernel formula))
-               kernel_goal.assumptions
-             |> List.filter
-                 (fun (name, _) ->
-                     not (StringSet.mem name state.hidden_global_facts)
-                     || StringSet.mem name state.put_facts)
+             kernel_goal.assumptions
+             |> List.map
+                 (fun (name, formula) ->
+                    (name, Kernel_syntax.of_kernel formula))
            in
            let target =
              Kernel_syntax.of_kernel kernel_goal.conclusion
@@ -463,14 +464,13 @@ let lookup_fact name context =
    by an earlier theorem (and facts introduced by [choose]) are deliberately
    hidden from the surface context and from automatic resolution.  Explicit
    name-based tactics may still refer to them. *)
-let global_fact_context state =
-  Extracted.environment_facts state.global_environment
-  |> List.map (fun (name, formula) -> (name, Kernel_syntax.of_kernel formula))
-
 let lookup_assumption state context name =
   match List.assoc_opt name context with
   | Some formula -> Some formula
-  | None -> List.assoc_opt name (global_fact_context state)
+  | None ->
+      Extracted.environment_facts state.global_environment
+      |> List.assoc_opt name
+      |> Option.map Kernel_syntax.of_kernel
 
 let lookup_fact_in_state state context name =
   match lookup_assumption state context name with
@@ -480,9 +480,6 @@ let lookup_fact_in_state state context name =
       | Some { parsed = Some formula; _ } -> Some formula
       | _ -> None
       end
-
-let all_fact_context state context =
-  context @ global_fact_context state
 
 let rec instantiate_formula substitutions = function
   | Bottom -> Bottom
@@ -594,7 +591,7 @@ let add_step state text kernel_state =
   { state with
     kernel_state;
     final_certificate = None;
-    steps = state.steps @ [text];
+    steps = text :: state.steps;
   }
 
 let apply_rule_transition line_no state axioms rules text =
@@ -764,6 +761,17 @@ let close_fact line_no name context =
         (Extracted.NRAxiom, [Extracted.fixed_axiom kind])
     | None -> verified_error line_no
 
+let close_fact_in_state line_no name state context =
+  if List.mem_assoc name context
+     || List.mem_assoc name
+          (Extracted.environment_facts state.global_environment) then
+    (Extracted.NRHypothesis name, [])
+  else
+    match fixed_axiom_kind (String.lowercase_ascii name) with
+    | Some kind ->
+        (Extracted.NRAxiom, [Extracted.fixed_axiom kind])
+    | None -> verified_error line_no
+
 let parse_choice_words line_no command argument =
   match Rule_parser.term_words argument with
   | witness :: hypothesis :: from_word :: source :: terms
@@ -801,7 +809,7 @@ let execute_obtain line_no state command argument =
       begin match instantiated with
       | Exists _ ->
           let close_rule, axioms =
-            close_fact line_no source (all_fact_context state goal.context)
+            close_fact_in_state line_no source state goal.context
           in
           let program =
             checked_step
@@ -1005,7 +1013,7 @@ let execute_put line_no state argument =
   { state with
     put_facts = StringSet.add name state.put_facts;
     final_certificate = None;
-    steps = state.steps @ ["put " ^ name];
+    steps = ("put " ^ name) :: state.steps;
   }
 
 let fresh_intro_name base used =
@@ -1142,8 +1150,8 @@ let execute_tactic line_no state line =
                 "Fact not found: " ^ argument))
           | Some fact when alpha_equal fact goal.target ->
               let rule, axioms =
-                close_fact line_no argument
-                  (all_fact_context state goal.context)
+                close_fact_in_state line_no argument
+                  state goal.context
               in
               apply_certificate_program line_no state
                 [checked_step ~axioms rule]
@@ -1218,8 +1226,8 @@ let execute_tactic line_no state line =
                               direction fact substitutions
                           in
                           let close_command, axioms =
-                            close_fact line_no fact_name
-                              (all_fact_context state goal.context)
+                            close_fact_in_state line_no fact_name
+                              state goal.context
                           in
                           let program =
                             [checked_step
@@ -1264,8 +1272,8 @@ let execute_tactic line_no state line =
                              Extracted.NRImplElim (kernel_formula premise))
                       in
                       let close_command, axioms =
-                        close_fact line_no fact_name
-                          (all_fact_context state goal.context)
+                        close_fact_in_state line_no fact_name
+                          state goal.context
                       in
                       let program =
                         List.map checked_step
@@ -1382,7 +1390,7 @@ let execute_tactic line_no state line =
                 specialize_rules ~bound line_no state.definitions fact terms
               in
               let close_command, axioms =
-                close_fact line_no source (all_fact_context state goal.context)
+                close_fact_in_state line_no source state goal.context
               in
               let prefix =
                 Extracted.NRCut
@@ -1819,7 +1827,7 @@ let analyze_statements meaningful =
          declaration.choose_fact :: "from" ::
          declaration.choose_source :: declaration.choose_terms)
     in
-    (environment, steps @ [description])
+    (environment, description :: steps)
   in
   (* Apply choices in source order so aliases see only constants that have
      already been certified in the global environment. *)
@@ -1941,21 +1949,22 @@ let analyze_statements meaningful =
               if not (Extracted.solved state.kernel_state) then
                 raise (Proof_error (line_no,
                   "qed cannot close a proof with unresolved goals."));
-              let certificate =
-                Extracted.finalize state.kernel_state
-                |> accept_kernel_result line_no "final certificate replay"
-              in
-              let state = { state with final_certificate = Some certificate } in
-              if rest = [] then (state, true)
+              if rest = [] then
+                let certificate =
+                  Extracted.finalize state.kernel_state
+                  |> accept_kernel_result line_no "final certificate replay"
+                in
+                ({ state with final_certificate = Some certificate }, true)
               else
-                let next_environment =
-                  Extracted.declare_fact
+                let next_environment, certificate =
+                  Extracted.declare_session_fact
                     ~fact:state.theorem_name
                     ~source:(kernel_formula state.theorem)
-                    ~proof:certificate
+                    state.kernel_state
                     state.global_environment
                   |> accept_kernel_result line_no "global theorem declaration"
                 in
+                let state = { state with final_certificate = Some certificate } in
                 process
                   (StringSet.add state.theorem_name hidden_facts)
                   aliases definitions next_environment state.steps rest

@@ -38,11 +38,11 @@ module Nat :
   val to_uint : int -> uint
  end
 
+val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list
+
 val nth_error : 'a1 list -> int -> 'a1 option
 
 val rev0 : 'a1 list -> 'a1 list
-
-val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list
 
 val fold_left : ('a1 -> 'a2 -> 'a1) -> 'a2 list -> 'a1 -> 'a1
 
@@ -445,6 +445,8 @@ val extend_environment_term :
 
 val plan_named_rule :
   goal_metadata -> named_goal -> named_rule -> rule_plan named_result
+
+val reify_rule_goal : goal_metadata -> goal -> named_goal named_result
 
 val named_rule_step :
   named_axiom list -> named_rule -> named_state -> named_state named_result

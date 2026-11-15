@@ -101,6 +101,14 @@ val declare_fact :
   environment ->
   (environment, error) result
 
+(* The global declaration independently replays the solved session's proof. *)
+val declare_session_fact :
+  fact:string ->
+  source:formula ->
+  state ->
+  environment ->
+  (environment * certificate, error) result
+
 val declare_skolem :
   function_name:string ->
   fact:string ->
@@ -109,7 +117,9 @@ val declare_skolem :
   environment ->
   (environment, error) result
 
-val goals : state -> (goal_view list, error) result
+val goals :
+  ?visible_hypothesis:(string -> bool) ->
+  state -> (goal_view list, error) result
 val solved : state -> bool
 
 val certificate_step :
