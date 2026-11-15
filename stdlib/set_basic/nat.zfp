@@ -359,3 +359,517 @@ split.
   exact Hx.
 qed.
 
+theorem nat_zero : zero in nat.
+put Hnat.
+cases Hnat Hprops Hmin.
+cases Hprops Hclosed Hcontained.
+cases Hclosed Hz Hs.
+exact Hz.
+qed.
+
+theorem nat_succ : forall x, x in nat -> succ(x) in nat.
+intros x Hx.
+put Hnat.
+cases Hnat Hprops Hmin.
+cases Hprops Hclosed Hcontained.
+cases Hclosed Hz Hs.
+apply Hs.
+exact Hx.
+qed.
+
+theorem prod_pair_intro :
+  forall X Y x y, x in X -> y in Y -> opair(x,y) in prod(X,Y).
+intros X Y x y Hx Hy.
+specialize Hprod X Y opair(x,y) as Hxy.
+apply <- Hxy.
+use x.
+use y.
+split.
+  split.
+    exact Hx.
+    exact Hy.
+  refl.
+qed.
+
+theorem prod_pair_elim :
+  forall X Y x y, opair(x,y) in prod(X,Y) -> x in X and y in Y.
+intros X Y x y Hxy.
+specialize Hprod X Y opair(x,y) as Hprodxy.
+apply -> Hprodxy in Hxy as Hex.
+obtain a Ha from Hex.
+obtain b Hb from Ha.
+cases Hb Hmembers Heq.
+cases Hmembers HaX HbY.
+specialize opair_inj x a y b as Hinj.
+apply Hinj in Heq as Hcoords.
+cases Hcoords Hxa Hyb.
+split.
+  rewrite Hxa.
+  exact HaX.
+  rewrite Hyb.
+  exact HbY.
+qed.
+
+(* Addition is the least relation closed under zero and successor. *)
+
+alias add_closed r :=
+  (forall y, y in nat -> opair(opair(zero,y),y) in r) and
+  (forall x y z, opair(opair(x,y),z) in r -> opair(opair(succ(x),y),succ(z)) in r).
+
+alias add_graph r := subset r prod(prod(nat,nat),nat) and add_closed r.
+
+theorem add_graph_exists :
+  exists a, add_graph a and (forall r, add_graph r -> subset a r).
+separation Hsep prod(prod(nat,nat),nat) t : forall r, add_graph r -> t in r.
+obtain a Hchar from Hsep.
+use a.
+split.
+  split.
+    intros t Ht.
+    specialize Hchar t as Hct.
+    apply -> Hct in Ht as Hparts.
+    cases Hparts.
+    exact Hparts_left.
+
+    split.
+      intros y Hy.
+      specialize Hchar opair(opair(zero,y),y) as Hcbase.
+      apply <- Hcbase.
+      split.
+        specialize prod_pair_intro prod(nat,nat) nat opair(zero,y) y as Houter.
+        apply Houter.
+          specialize prod_pair_intro nat nat zero y as Hinner.
+          apply Hinner.
+            exact nat_zero.
+            exact Hy.
+          exact Hy.
+        intros r Hr.
+        cases Hr.
+        cases Hr_right.
+        apply Hr_right_left.
+        exact Hy.
+
+      intros x y z Hxyz.
+      specialize Hchar opair(opair(x,y),z) as Hcxyz.
+      apply -> Hcxyz in Hxyz as Hparts.
+      cases Hparts.
+      specialize prod_pair_elim prod(nat,nat) nat opair(x,y) z as Houter.
+      apply Houter in Hparts_left as Htyped.
+      cases Htyped.
+      specialize prod_pair_elim nat nat x y as Hinner.
+      apply Hinner in Htyped_left as Hxy.
+      cases Hxy.
+      specialize Hchar opair(opair(succ(x),y),succ(z)) as Hcstep.
+      apply <- Hcstep.
+      split.
+        specialize prod_pair_intro prod(nat,nat) nat opair(succ(x),y) succ(z) as Houter2.
+        apply Houter2.
+          specialize prod_pair_intro nat nat succ(x) y as Hinner2.
+          apply Hinner2.
+            apply nat_succ.
+            exact Hxy_left.
+            exact Hxy_right.
+          apply nat_succ.
+          exact Htyped_right.
+        intros r Hr.
+        specialize Hparts_right r as Hra.
+        apply Hra in Hr as Hrin.
+        cases Hr.
+        cases Hr_right.
+        specialize Hr_right_right x y z as Hstep.
+        apply Hstep.
+        exact Hrin.
+
+  intros r Hr t Ht.
+  specialize Hchar t as Hct.
+  apply -> Hct in Ht as Hparts.
+  cases Hparts.
+  specialize Hparts_right r as Hrt.
+  apply Hrt.
+  exact Hr.
+qed.
+
+alias add_generated a t :=
+  (exists y, y in nat and t = opair(opair(zero,y),y)) or
+  (exists x y z, opair(opair(x,y),z) in a and t = opair(opair(succ(x),y),succ(z))).
+
+theorem add_graph_cases :
+  forall a, add_graph a -> (forall r, add_graph r -> subset a r) ->
+  forall x y z, opair(opair(x,y),z) in a ->
+  (x = zero and z = y) or
+  (exists xp zp, opair(opair(xp,y),zp) in a and x = succ(xp) and z = succ(zp)).
+intros a Ha Hmin.
+cases Ha.
+cases Ha_right.
+separation Hsep a t : add_generated a t.
+obtain b Hb from Hsep.
+rule cut Hba : subset b a.
+  intros t Ht.
+  specialize Hb t as Hbt.
+  apply -> Hbt in Ht as Hparts.
+  cases Hparts.
+  exact Hparts_left.
+rule cut Hbgraph : add_graph b.
+  split.
+    intros t Ht.
+    apply Ha_left.
+    apply Hba.
+    exact Ht.
+    split.
+      intros y Hy.
+      specialize Hb opair(opair(zero,y),y) as Hbt.
+      apply <- Hbt.
+      split.
+        apply Ha_right_left.
+        exact Hy.
+        left.
+        use y.
+        split.
+          exact Hy.
+          refl.
+      intros x y z Hxyz.
+      rule cut Hxyz_a : opair(opair(x,y),z) in a.
+        specialize Hba opair(opair(x,y),z) as Hba_xyz.
+        apply Hba_xyz.
+        exact Hxyz.
+      specialize Hb opair(opair(succ(x),y),succ(z)) as Hbt.
+      apply <- Hbt.
+      split.
+        apply Ha_right_right.
+        exact Hxyz_a.
+        right.
+        use x.
+        use y.
+        use z.
+        split.
+          exact Hxyz_a.
+          refl.
+rule cut Hab : subset a b.
+  apply Hmin.
+  exact Hbgraph.
+intros x y z Hxyz.
+rule cut Hxyz_b : opair(opair(x,y),z) in b.
+  specialize Hab opair(opair(x,y),z) as Hab_xyz.
+  apply Hab_xyz.
+  exact Hxyz.
+specialize Hb opair(opair(x,y),z) as Hbt.
+apply -> Hbt in Hxyz_b as Hparts.
+cases Hparts.
+cases Hparts_right.
+  obtain yy Hyy from Hparts_right_left.
+  cases Hyy.
+  specialize opair_inj opair(x,y) opair(zero,yy) z yy as Hopair_outer.
+  apply Hopair_outer in Hyy_right as Houter.
+  cases Houter.
+  specialize opair_inj x zero y yy as Hopair_inner.
+  apply Hopair_inner in Houter_left as Hinner.
+  cases Hinner.
+  left.
+  split.
+    exact Hinner_left.
+    rewrite Houter_right.
+    rewrite Hinner_right.
+    refl.
+
+  obtain xp Hxp from Hparts_right_right.
+  obtain yy Hyy from Hxp.
+  obtain zp Hzp from Hyy.
+  cases Hzp.
+  specialize opair_inj opair(x,y) opair(succ(xp),yy) z succ(zp) as Hopair_outer.
+  apply Hopair_outer in Hzp_right as Houter.
+  cases Houter.
+  specialize opair_inj x succ(xp) y yy as Hopair_inner.
+  apply Hopair_inner in Houter_left as Hinner.
+  cases Hinner.
+  right.
+  use xp.
+  use zp.
+  split.
+    split.
+      rewrite Hinner_right.
+      exact Hzp_left.
+      exact Hinner_left.
+    exact Houter_right.
+qed.
+
+(* Totality and uniqueness follow by induction on the first input. *)
+
+theorem add_graph_total :
+  forall a, add_graph a ->
+  forall x y, x in nat -> y in nat -> exists z, opair(opair(x,y),z) in a.
+intros a Ha.
+cases Ha.
+cases Ha_right.
+separation Hsep nat x : forall y, y in nat -> exists z, opair(opair(x,y),z) in a.
+obtain s Hs from Hsep.
+rule cut Hsn : subset s nat.
+  intros x Hx.
+  specialize Hs x as Hsx.
+  apply -> Hsx in Hx as Hxx.
+  resolution.
+rule cut Hzs : zero in s.
+  specialize Hs zero as Hsz.
+  apply <- Hsz.
+  split.
+    exact nat_zero.
+    intros y Hy.
+    use y.
+    apply Ha_right_left.
+    exact Hy.
+rule cut Hcs : forall x, x in s -> succ(x) in s.
+  intros x Hx.
+  specialize Hs x as Hsx.
+  apply -> Hsx in Hx as Hxx.
+  cases Hxx.
+  specialize Hs succ(x) as Hss.
+  apply <- Hss.
+  split.
+    apply nat_succ.
+    exact Hxx_left.
+    intros y Hy.
+    specialize Hxx_right y as Hxy.
+    apply Hxy in Hy as Hxy'.
+    obtain z Hz from Hxy'.
+    use succ(z).
+    apply Ha_right_right.
+    exact Hz.
+rule cut Hseq : s = nat.
+  apply nat_ind.
+  exact Hsn.
+  exact Hzs.
+  exact Hcs.
+intros x y Hx Hy.
+rule cut Hxs : x in s.
+  rewrite Hseq.
+  exact Hx.
+specialize Hs x as Hsx.
+apply -> Hsx in Hxs as Hxx.
+cases Hxx.
+apply Hxx_right.
+exact Hy.
+qed.
+
+theorem add_graph_zero_value :
+  forall a, add_graph a -> (forall r, add_graph r -> subset a r) ->
+  forall y z, opair(opair(zero,y),z) in a -> z = y.
+intros a Ha Hmin y z Hmem.
+specialize add_graph_cases a as Hcases.
+rule cut Hcases_min : forall xx yy zz, opair(opair(xx,yy),zz) in a ->
+  (xx = zero and zz = yy) or
+  (exists xp zp, opair(opair(xp,yy),zp) in a and xx = succ(xp) and zz = succ(zp)).
+  apply Hcases.
+  exact Ha.
+  exact Hmin.
+specialize Hcases_min zero y z as Hzero_cases.
+apply Hzero_cases in Hmem as Hor.
+cases Hor.
+  cases Hor_left.
+  exact Hor_left_right.
+  obtain xp Hxp from Hor_right.
+  obtain zp Hzp from Hxp.
+  cases Hzp.
+  cases Hzp_left.
+  specialize succ_never_zero xp as Hnz.
+  rule cut Hbad : succ(xp) = zero.
+    rewrite <- Hzp_left_right.
+    refl.
+  contradiction.
+qed.
+
+theorem add_graph_succ_value :
+  forall a, add_graph a -> (forall r, add_graph r -> subset a r) ->
+  forall x y z, opair(opair(succ(x),y),z) in a ->
+  exists zp, opair(opair(x,y),zp) in a and z = succ(zp).
+intros a Ha Hmin x y z Hmem.
+specialize add_graph_cases a as Hcases.
+rule cut Hcases_min : forall xx yy zz, opair(opair(xx,yy),zz) in a ->
+  (xx = zero and zz = yy) or
+  (exists xp zp, opair(opair(xp,yy),zp) in a and xx = succ(xp) and zz = succ(zp)).
+  apply Hcases.
+  exact Ha.
+  exact Hmin.
+specialize Hcases_min succ(x) y z as Hsucc_cases.
+apply Hsucc_cases in Hmem as Hor.
+cases Hor.
+  cases Hor_left.
+  specialize succ_never_zero x as Hnz.
+  contradiction.
+  obtain xp Hxp from Hor_right.
+  obtain zp Hzp from Hxp.
+  cases Hzp.
+  cases Hzp_left.
+  specialize succ_injective x xp as Hinj.
+  apply Hinj in Hzp_left_right as Heq.
+  use zp.
+  split.
+    rewrite Heq.
+    exact Hzp_left_left.
+    exact Hzp_right.
+qed.
+
+alias add_value_unique a x := forall y z1 z2,
+  opair(opair(x,y),z1) in a -> opair(opair(x,y),z2) in a -> z1 = z2.
+
+theorem add_graph_unique :
+  forall a, add_graph a -> (forall r, add_graph r -> subset a r) ->
+  forall x y z1 z2, x in nat ->
+  opair(opair(x,y),z1) in a -> opair(opair(x,y),z2) in a -> z1 = z2.
+intros a Ha Hmin.
+separation Hsep nat x : add_value_unique a x.
+obtain s Hs from Hsep.
+rule cut Hsub : subset s nat.
+  intros x Hx.
+  specialize Hs x as Hchar.
+  apply -> Hchar in Hx as Hparts.
+  cases Hparts.
+  exact Hparts_left.
+rule cut Hz : zero in s.
+  specialize Hs zero as Hchar.
+  apply <- Hchar.
+  split.
+    exact nat_zero.
+    intros y z1 z2 H1 H2.
+    specialize add_graph_zero_value a as Hzero_rule.
+    rule cut Hzero_min : forall yy zz, opair(opair(zero,yy),zz) in a -> zz = yy.
+      apply Hzero_rule.
+      exact Ha.
+      exact Hmin.
+    specialize Hzero_min y z1 as Hz1.
+    specialize Hzero_min y z2 as Hz2.
+    apply Hz1 in H1 as Heq1.
+    apply Hz2 in H2 as Heq2.
+    rewrite Heq1.
+    rewrite Heq2.
+    refl.
+rule cut Hclosed : forall x, x in s -> succ(x) in s.
+  intros x Hx.
+  specialize Hs x as Hchar.
+  apply -> Hchar in Hx as Hparts.
+  cases Hparts.
+  specialize Hs succ(x) as Hsuccchar.
+  apply <- Hsuccchar.
+  split.
+    specialize nat_succ x as Hnat_succ.
+    apply Hnat_succ.
+    exact Hparts_left.
+    intros y z1 z2 H1 H2.
+    specialize add_graph_succ_value a as Hsuccval.
+    rule cut Hsuccval_min : forall xx yy zz, opair(opair(succ(xx),yy),zz) in a ->
+      exists zp, opair(opair(xx,yy),zp) in a and zz = succ(zp).
+      apply Hsuccval.
+      exact Ha.
+      exact Hmin.
+    specialize Hsuccval_min x y z1 as Hpred1.
+    specialize Hsuccval_min x y z2 as Hpred2.
+    apply Hpred1 in H1 as Hex1.
+    apply Hpred2 in H2 as Hex2.
+    obtain zp1 Hzp1 from Hex1.
+    obtain zp2 Hzp2 from Hex2.
+    cases Hzp1.
+    cases Hzp2.
+    specialize Hparts_right y zp1 zp2 as Huniq.
+    rule cut Heq : zp1 = zp2.
+      apply Huniq.
+      exact Hzp1_left.
+      exact Hzp2_left.
+    rewrite Hzp1_right.
+    rewrite Hzp2_right.
+    rewrite Heq.
+    refl.
+rule cut Hsn : s = nat.
+  specialize nat_ind s as Hind.
+  apply Hind.
+  exact Hsub.
+  exact Hz.
+  exact Hclosed.
+intros x y z1 z2 Hx H1 H2.
+rule cut Hxs : x in s.
+  rewrite Hsn.
+  exact Hx.
+specialize Hs x as Hchar.
+apply -> Hchar in Hxs as Hparts.
+cases Hparts.
+specialize Hparts_right y z1 z2 as Huniq.
+apply Huniq.
+exact H1.
+exact H2.
+qed.
+
+theorem add_graph_function :
+  forall a, add_graph a ->
+  (forall r, add_graph r -> subset a r) ->
+  is_function prod(nat,nat) nat a.
+intros a Ha Hmin.
+rule cut Hrel : subset a prod(prod(nat,nat),nat).
+  cases Ha.
+  exact Ha_left.
+split.
+  split.
+    exact Hrel.
+    intros p Hp.
+    specialize Hprod nat nat p as Hpc.
+    apply -> Hpc in Hp as Hxy.
+    obtain x Hx from Hxy.
+    obtain y Hy from Hx.
+    cases Hy.
+    cases Hy_left.
+    rewrite Hy_right.
+    specialize add_graph_total a as Htotal.
+    apply Htotal in Ha as Htotal_a.
+    specialize Htotal_a x y as Htotal_xy.
+    apply Htotal_xy.
+    exact Hy_left_left.
+    exact Hy_left_right.
+  intros p z1 z2 H1 H2.
+  rule cut Hpz : opair(p,z1) in prod(prod(nat,nat),nat).
+    specialize Hrel opair(p,z1) as Hrel_pz.
+    apply Hrel_pz.
+    exact H1.
+  rule cut Hp : p in prod(nat,nat) and z1 in nat.
+    specialize prod_pair_elim prod(nat,nat) nat p z1 as Hprod_pz.
+    apply Hprod_pz.
+    exact Hpz.
+  cases Hp.
+  specialize Hprod nat nat p as Hpc.
+  apply -> Hpc in Hp_left as Hxy.
+  obtain x Hx from Hxy.
+  obtain y Hy from Hx.
+  cases Hy.
+  cases Hy_left.
+  rule cut Hxy1 : opair(opair(x,y),z1) in a.
+    rewrite <- Hy_right.
+    exact H1.
+  rule cut Hxy2 : opair(opair(x,y),z2) in a.
+    rewrite <- Hy_right.
+    exact H2.
+  rule cut Hunique_min : forall x y z1 z2, x in nat ->
+    opair(opair(x,y),z1) in a -> opair(opair(x,y),z2) in a -> z1 = z2.
+    specialize add_graph_unique a as Hunique.
+    apply Hunique.
+    exact Ha.
+    exact Hmin.
+  specialize Hunique_min x y z1 z2 as Hunique_xy.
+  apply Hunique_xy.
+  exact Hy_left_left.
+  exact Hxy1.
+  exact Hxy2.
+qed.
+
+theorem add_exists :
+  exists add, (is_function prod(nat,nat) nat add
+    and (forall y, y in nat -> opair(opair(zero,y),y) in add))
+    and (forall x y z, opair(opair(x,y),z) in add -> opair(opair(succ(x),y),succ(z)) in add).
+obtain add Hadd from add_graph_exists.
+cases Hadd Hgraph Hmin.
+cases Hgraph Hrel Hclosed.
+cases Hclosed Hbase Hstep.
+use add.
+split.
+  split.
+    specialize add_graph_function add as Hfunction.
+    apply Hfunction.
+      exact Hgraph.
+      exact Hmin.
+    exact Hbase.
+  exact Hstep.
+qed.

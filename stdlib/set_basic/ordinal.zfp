@@ -1,0 +1,6 @@
+input "set_basic.zfp".
+
+
+
+alias transitive x := forall y, y in x -> subset y x.
+

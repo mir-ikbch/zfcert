@@ -388,6 +388,21 @@ choose prod Hprod from product_exists.
 
 alias is_relation X Y R := subset R prod(X,Y).
 
+
+alias is_str_torder X R := is_relation X X R and
+      (forall x, not opair(x,x) in R) and
+      (forall x y, opair(x,y) in R or opair(y,x) in R or x = y) and
+      (forall x y z, opair(x,y) in R -> opair(y,z) in R -> opair(x,z) in R).
+
+alias is_least X R A a :=
+      is_str_torder X R and
+      a in A and
+      (forall x, x in A -> x = a or opair(x,a) in R).
+
+alias is_well_order X R := is_str_torder X R and
+      (forall A, subset A X -> exists a, a in A and is_least X R A a).
+
+
 alias is_function X Y f :=
       is_relation X Y f and
       (forall x, x in X -> exists y, opair(x,y) in f) and
@@ -534,3 +549,4 @@ apply Hf.
   apply -> Himage in Hyin as Hyin'.
   resolution.
 qed.
+
