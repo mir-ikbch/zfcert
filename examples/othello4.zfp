@@ -1,0 +1,185 @@
+input "../stdlib/set_basic/set_basic.zfp".
+
+definition succ(x) := cup(x, singleton(x)).
+definition zero := empty.
+definition one := succ(zero).
+definition two := succ(one).
+definition three := succ(two).
+definition four := succ(three).
+
+definition black := zero.
+definition white := one.
+definition board := prod(four, four).
+definition cell(r, c) := opair(r, c).
+
+(* A state is a triple (B,W,turn) where
+   - B is a set of coordinates of black pieces,
+   - W is a set of coordinates of white pieces, and
+   - turn is either black(=zero) or white(=one) *)
+definition state(B, W, turn) := opair(opair(B, W), turn).
+
+(* initial states *)
+definition initial :=
+  state(pair(cell(one, two), cell(two, one)),
+         pair(cell(one, one), cell(two, two)), black).
+
+alias valid B W :=
+   subset B board
+   and subset W board
+   and (forall x, not (x in B and x in W)).
+
+alias valid_with_turn s turn :=
+  exists B W,
+    s = state(B,W,turn) and valid B W and (turn = black or turn = white).
+
+alias valid_state s :=
+  exists turn, valid_with_turn s turn.
+
+alias black_turn s :=
+  valid_with_turn s black.
+
+alias white_turn s :=
+  valid_with_turn s white.
+
+alias is_pred x y :=
+  (x = zero and y = one)
+  or (x = one and y = two)
+  or (x = two and y = three).
+
+alias axis_step d x y :=
+  x in four and y in four
+  and ((d = zero and x = succ(y))
+    or (d = one and x = y)
+    or (d = two and y = succ(x))).
+
+alias direction_step dr dc p q :=
+  not (dr = one and dc = one)
+  and (exists r c rr cc,
+    p = cell(r, c) and q = cell(rr, cc)
+    and axis_step dr r rr and axis_step dc c cc).
+
+(* [move] flips [x] *)
+alias flips own other move x :=
+  exists dr dc a b,
+    direction_step dr dc move a and a in other
+    and ((direction_step dr dc a b and b in own and x = a)
+      or (exists z,
+        direction_step dr dc a b and b in other
+        and direction_step dr dc b z and z in own
+        and (x = a or x = b))).
+
+alias can_place own other move :=
+  move in board and not (move in own) and not (move in other)
+  and (exists x, flips own other move x).
+
+alias has_move own other := exists move, can_place own other move.
+
+(* 挟んだ石をすべて返し、着手した石を加える。 *)
+alias after_place own other move own_next other_next :=
+  can_place own other move
+  and (forall x,
+    x in own_next <->
+      (x in own or x = move or flips own other move x))
+  and (forall x,
+    x in other_next <->
+      (x in other and not (flips own other move x))).
+
+(* パスは自分が着手不能で、相手が着手可能な場合だけ。 *)
+alias turn_step own other own_next other_next :=
+  (exists move, after_place own other move own_next other_next)
+  or (not (has_move own other) and has_move other own
+    and own_next = own and other_next = other).
+
+alias step s t :=
+  exists B W B_next W_next,
+    valid B W
+    and valid B_next W_next
+    and (s = state(B,W,black)
+          and t = state(B_next, W_next, white)
+          and turn_step B W B_next W_next)
+        or
+        (s = state(B,W,white)
+          and t = state(B_next, W_next, black)
+          and turn_step W B W_next B_next).
+
+(* 双方が着手不能になったときに終局。 *)
+alias terminal B W :=
+   valid B W
+   and not (has_move B W) and not (has_move W B).
+
+alias nonterminal_state s :=
+  exists B W turn, s = state(B,W,turn) and valid B W and not (terminal B W).
+
+(* 1 マスを数える。石があれば 1 増やし、なければそのままにする。 *)
+alias count_step stones square before after :=
+  (square in stones and after = succ(before)) or
+  (not (square in stones) and after = before).
+
+(* 左上から行ごとに 16 マスを数える。n は有限順序数で表した石数。 *)
+alias count stones n :=
+  exists n_a n_b n_c n_d n_e n_f n_g n_h n_i n_j n_k n_l n_m n_n n_o,
+    count_step stones cell(zero, zero) zero n_a and
+    count_step stones cell(zero, one)  n_a n_b and
+    count_step stones cell(zero, two)  n_b n_c and
+    count_step stones cell(zero, three) n_c n_d and
+
+    count_step stones cell(one, zero)  n_d n_e and
+    count_step stones cell(one, one)   n_e n_f and
+    count_step stones cell(one, two)   n_f n_g and
+    count_step stones cell(one, three) n_g n_h and
+
+    count_step stones cell(two, zero)  n_h n_i and
+    count_step stones cell(two, one)   n_i n_j and
+    count_step stones cell(two, two)   n_j n_k and
+    count_step stones cell(two, three) n_k n_l and
+
+    count_step stones cell(three, zero)  n_l n_m and
+    count_step stones cell(three, one)   n_m n_n and
+    count_step stones cell(three, two)   n_n n_o and
+    count_step stones cell(three, three) n_o n.
+
+(* 有限順序数 b, w について b in w は b < w を表す。 *)
+alias white_more B W :=
+  exists b w, count B b and count W w and b in w.
+
+(* 終局しており、白石数が黒石数より真に多い。 *)
+alias white_won s :=
+ exists B W turn,
+   s = state(B,W,turn)
+   and terminal B W
+   and white_more B W.
+
+(* [R] is the set of all states from which white can win *)
+alias white_win_closed R :=
+
+  (forall s,
+    white_won s -> s in R)
+
+  and
+
+  (forall s t,
+    (white_turn s and step s t and t in R) -> s in R)
+
+  and
+
+  (* 3. 黒番では、すべての合法手の行き先が R に入る必要がある。
+        終局は除く。黒勝ち・引き分けの終局を空虚に認めないため。 *)
+  (forall s,
+    (black_turn s and nonterminal_state s and
+      (forall t, step s t -> t in R))
+    -> s in R).
+
+(* この三つの規則から白必勝と導ける局面。戦略関数は用いない。 *)
+alias white_forces_win s :=
+  valid_state s and
+  (forall R, white_win_closed R -> s in R).
+
+(* 初期配置。黒が先手。
+
+     . . . .
+     . W B .
+     . B W .
+     . . . .
+
+   主張のみ。証明はここから記述する。 *)
+theorem othello_white_wins : white_forces_win initial.
